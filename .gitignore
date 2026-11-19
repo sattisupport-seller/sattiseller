@@ -1,0 +1,15 @@
+# Python
+server/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.db
+*.sqlite3
+
+# Mobile (Expo) — см. также mobile/.gitignore
+mobile/node_modules/
+
+# Секреты и локальные файлы
+.env
+.env.*
+!.env.example
