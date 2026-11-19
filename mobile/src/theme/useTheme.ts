@@ -1,8 +1,8 @@
 import { useColorScheme } from 'react-native';
 
-import { ColorTokens, darkColors, lightColors, radii, spacing, fonts } from './tokens';
+import { useSession } from '@/session/SessionProvider';
 
-export type ThemeMode = 'system' | 'light' | 'dark';
+import { ColorTokens, darkColors, fonts, lightColors, radii, spacing } from './tokens';
 
 export type Theme = {
   mode: 'light' | 'dark';
@@ -12,10 +12,11 @@ export type Theme = {
   fonts: typeof fonts;
 };
 
-// Пока тема берётся из системы. Ручной выбор (профиль, раздел 3.7 ТЗ) добавится позже.
-export function useTheme(mode: ThemeMode = 'system'): Theme {
+/** Тема: режим из профиля (как в системе / светлая / тёмная). */
+export function useTheme(): Theme {
   const system = useColorScheme();
-  const resolved = mode === 'system' ? (system === 'dark' ? 'dark' : 'light') : mode;
+  const { themeMode } = useSession();
+  const resolved = themeMode === 'system' ? (system === 'dark' ? 'dark' : 'light') : themeMode;
   return {
     mode: resolved,
     colors: resolved === 'dark' ? darkColors : lightColors,

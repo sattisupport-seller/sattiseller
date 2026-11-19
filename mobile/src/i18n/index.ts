@@ -1,35 +1,49 @@
-// Тексты локализации (docs/design.md, раздел 9). Казахские тексты требуют проверки носителем языка.
+import { useCallback } from 'react';
+
+import { useSession } from '@/session/SessionProvider';
+
+import { kk } from './kk';
+import { ru, type Dict } from './ru';
 
 export type Locale = 'ru' | 'kk';
 
-export const messages = {
-  ru: {
-    tabs: {
-      overview: 'Обзор',
-      orders: 'Заказы',
-      products: 'Товары',
-      assistant: 'Помощник',
-      profile: 'Профиль',
-    },
-    placeholder: {
-      soon: 'Экран появится в следующих задачах плана (docs/spec.md, раздел 16).',
-    },
-  },
-  kk: {
-    tabs: {
-      overview: 'Шолу',
-      orders: 'Тапсырыстар',
-      products: 'Тауарлар',
-      assistant: 'Көмекші',
-      profile: 'Профиль',
-    },
-    placeholder: {
-      soon: 'Бұл экран жоспардың келесі тапсырмаларында пайда болады.',
-    },
-  },
-} as const;
+const dictionaries: Record<Locale, Dict> = { ru, kk };
 
-export type Messages = (typeof messages)['ru'];
+// Пути вида "overview.title" — проверяются типами: опечатка в ключе не соберётся.
+type Paths<T, P extends string = ''> = {
+  [K in keyof T & string]: T[K] extends string ? `${P}${K}` : Paths<T[K], `${P}${K}.`>;
+}[keyof T & string];
 
-// Язык по умолчанию — русский (docs/design.md, раздел 2).
-export const t: Messages = messages.ru;
+export type TKey = Paths<Dict>;
+
+function lookup(dict: Dict, key: string): string {
+  const parts = key.split('.');
+  let node: unknown = dict;
+  for (const part of parts) {
+    if (node && typeof node === 'object' && part in (node as Record<string, unknown>)) {
+      node = (node as Record<string, unknown>)[part];
+    } else {
+      return key;
+    }
+  }
+  return typeof node === 'string' ? node : key;
+}
+
+/** Подстановка {name} в тексте. */
+export function interpolate(template: string, vars?: Record<string, string | number>): string {
+  if (!vars) return template;
+  return template.replace(/\{(\w+)\}/g, (_, k: string) => (k in vars ? String(vars[k]) : `{${k}}`));
+}
+
+export function translate(locale: Locale, key: TKey, vars?: Record<string, string | number>): string {
+  return interpolate(lookup(dictionaries[locale], key), vars);
+}
+
+export function useI18n() {
+  const { locale } = useSession();
+  const t = useCallback(
+    (key: TKey, vars?: Record<string, string | number>) => translate(locale, key, vars),
+    [locale],
+  );
+  return { t, locale };
+}

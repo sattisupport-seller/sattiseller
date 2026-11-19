@@ -13,3 +13,6 @@ mobile/node_modules/
 .env
 .env.*
 !.env.example
+
+# Данные разработки сервера: база, ключ, письма
+server/data/

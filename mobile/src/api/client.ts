@@ -1,0 +1,172 @@
+// HTTP-клиент: токены в защищённом хранилище (Keychain / Keystore), обновление сессии, повторы для чтения.
+import { deleteItem, getItem, setItem } from '@/lib/storage';
+
+import { API_URL } from '@/config';
+
+import type { ApiErrorBody } from './types';
+
+const KEY_ACCESS = 'satti.access';
+const KEY_REFRESH = 'satti.refresh';
+const KEY_DEVICE = 'satti.device';
+const KEY_SHOP = 'satti.shop';
+
+export class ApiError extends Error {
+  status: number;
+  code: string;
+  constructor(status: number, code: string, message: string) {
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+
+type Tokens = { access: string | null; refresh: string | null };
+let tokens: Tokens = { access: null, refresh: null };
+let onSessionLost: (() => void) | null = null;
+let acceptLanguage = 'ru';
+
+export function setSessionLostHandler(fn: () => void) {
+  onSessionLost = fn;
+}
+
+export function setAcceptLanguage(lang: 'ru' | 'kk') {
+  acceptLanguage = lang;
+}
+
+export async function loadStoredSession(): Promise<Tokens> {
+  try {
+    const [access, refresh] = await Promise.all([
+      getItem(KEY_ACCESS),
+      getItem(KEY_REFRESH),
+    ]);
+    tokens = { access, refresh };
+  } catch {
+    tokens = { access: null, refresh: null };
+  }
+  return tokens;
+}
+
+export async function saveTokens(access: string, refresh: string) {
+  tokens = { access, refresh };
+  await Promise.all([
+    setItem(KEY_ACCESS, access),
+    setItem(KEY_REFRESH, refresh),
+  ]);
+}
+
+export async function clearSession() {
+  tokens = { access: null, refresh: null };
+  await Promise.all([
+    deleteItem(KEY_ACCESS),
+    deleteItem(KEY_REFRESH),
+    deleteItem(KEY_SHOP),
+  ]);
+}
+
+export function hasSession(): boolean {
+  return !!tokens.access || !!tokens.refresh;
+}
+
+export async function getDeviceId(): Promise<string> {
+  let id = await getItem(KEY_DEVICE);
+  if (!id) {
+    const bytes = new Uint8Array(16);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    id = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    await setItem(KEY_DEVICE, id);
+  }
+  return id;
+}
+
+export async function getStoredShopId(): Promise<string | null> {
+  return getItem(KEY_SHOP);
+}
+
+export async function setStoredShopId(id: string | null) {
+  if (id) await setItem(KEY_SHOP, id);
+  else await deleteItem(KEY_SHOP);
+}
+
+type Options = {
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  body?: unknown;
+  form?: FormData;
+  auth?: boolean;
+  retryable?: boolean;
+  text?: boolean;
+  headers?: Record<string, string>;
+};
+
+async function rawRequest(path: string, opts: Options): Promise<Response> {
+  const headers: Record<string, string> = {
+    'Accept-Language': acceptLanguage,
+    Accept: 'application/json',
+    ...(opts.headers ?? {}),
+  };
+  if (opts.auth !== false && tokens.access) headers.Authorization = `Bearer ${tokens.access}`;
+  let body: BodyInit | undefined;
+  if (opts.form) {
+    body = opts.form;
+  } else if (opts.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(opts.body);
+  }
+  const url = `${API_URL}${path}`;
+  const attempts = opts.retryable ? 3 : 1;
+  let lastError: unknown = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fetch(url, { method: opts.method ?? 'GET', headers, body });
+    } catch (e) {
+      lastError = e;
+      await new Promise((r) => setTimeout(r, 300 * 2 ** i));
+    }
+  }
+  throw new ApiError(0, 'network', String(lastError ?? 'network'));
+}
+
+async function refreshTokens(): Promise<boolean> {
+  if (!tokens.refresh) return false;
+  const res = await fetch(`${API_URL}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept-Language': acceptLanguage },
+    body: JSON.stringify({ refresh_token: tokens.refresh }),
+  });
+  if (!res.ok) return false;
+  const data = (await res.json()) as { access_token: string; refresh_token: string };
+  await saveTokens(data.access_token, data.refresh_token);
+  return true;
+}
+
+export async function request<T>(path: string, opts: Options = {}): Promise<T> {
+  let res = await rawRequest(path, opts);
+  if (res.status === 401 && opts.auth !== false) {
+    const refreshed = await refreshTokens().catch(() => false);
+    if (refreshed) {
+      res = await rawRequest(path, opts);
+    } else {
+      await clearSession();
+      onSessionLost?.();
+      throw new ApiError(401, 'unauthorized', 'Сессия истекла. Войдите снова.');
+    }
+  }
+  if (!res.ok) {
+    let body: ApiErrorBody | null = null;
+    try {
+      body = (await res.json()) as ApiErrorBody;
+    } catch {
+      body = null;
+    }
+    throw new ApiError(res.status, body?.error.code ?? 'http', body?.error.message ?? `HTTP ${res.status}`);
+  }
+  if (res.status === 204) return undefined as T;
+  if (opts.text) return (await res.text()) as unknown as T;
+  return (await res.json()) as T;
+}
+
+/** Скачивание файла (шаблоны) в виде base64 — для сохранения и отправки через системное меню. */
+export async function requestBinary(path: string): Promise<ArrayBuffer> {
+  const res = await rawRequest(path, { auth: false });
+  if (!res.ok) throw new ApiError(res.status, 'http', `HTTP ${res.status}`);
+  return res.arrayBuffer();
+}

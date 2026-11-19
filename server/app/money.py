@@ -25,10 +25,10 @@ def parse_tenge_to_minor(value: str | int | Decimal) -> int:
 
 def round_half_up_div(numerator: int, denominator: int) -> int:
     """Деление с округлением половины от нуля (как в Excel)."""
-    if denominator <= 0:
-        raise ValueError("знаменатель должен быть положительным")
-    sign = -1 if numerator < 0 else 1
-    quotient = (Decimal(abs(numerator)) / Decimal(denominator)).quantize(
+    if denominator == 0:
+        raise ValueError("деление на ноль")
+    sign = (-1 if numerator < 0 else 1) * (-1 if denominator < 0 else 1)
+    quotient = (Decimal(abs(numerator)) / Decimal(abs(denominator))).quantize(
         Decimal(1), rounding=ROUND_HALF_UP
     )
     return sign * int(quotient)
