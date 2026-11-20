@@ -3,6 +3,8 @@
 import time
 from collections import defaultdict, deque
 
+from fastapi import Request
+
 _hits: dict[str, deque[float]] = defaultdict(deque)
 WINDOW_SECONDS = 3600
 
@@ -20,3 +22,8 @@ def allow(key: str, limit: int, window: int = WINDOW_SECONDS) -> bool:
 
 def reset() -> None:
     _hits.clear()
+
+
+def client_ip(request: Request) -> str:
+    """Адрес клиента для лимитов. AUD-14: здесь же будет разбор адреса за доверенным прокси."""
+    return request.client.host if request.client else "unknown"

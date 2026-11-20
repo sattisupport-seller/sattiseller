@@ -60,6 +60,9 @@ class Settings:
     google_client_ids: str = os.environ.get("SATTI_GOOGLE_CLIENT_IDS", "")
     # Вход по email-коду — только для разработки и тестов (ADR-0004). В продакшене выключен.
     email_login_enabled: bool = os.environ.get("SATTI_EMAIL_LOGIN", "0") == "1"
+    # AUD-05: защита демо-режима — новые демо-установки с одного адреса и общий предел
+    demo_new_per_ip_per_hour: int = int(os.environ.get("SATTI_DEMO_NEW_PER_IP_PER_HOUR", "20"))
+    demo_max_installations: int = int(os.environ.get("SATTI_DEMO_MAX", "5000"))
 
 
 settings = Settings()

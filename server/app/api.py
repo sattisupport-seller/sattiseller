@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, Resp
 from fastapi.responses import PlainTextResponse
 from openpyxl import Workbook
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as DbSession
 
 from . import ai as ai_service
@@ -62,7 +62,7 @@ from .money import round_half_up_div
 from .periods import PeriodError, resolve, today_in
 from .billing import get_subscription, start_trial, subscription_view, trial_eligible
 from .exports import profit_filename, profit_workbook, user_export_zip
-from .ratelimit import allow
+from .ratelimit import allow, client_ip
 from .schemas import (
     AIQuotaOut,
     CostVersionsOut,
@@ -232,7 +232,7 @@ def auth_logout(principal: Principal = Depends(get_principal), db: DbSession = D
 # ---------- демо ----------
 
 @api.post("/demo/session", tags=["демо"])
-def demo_session(x_device_id: str = Header(..., alias="X-Device-Id"),
+def demo_session(request: Request, x_device_id: str = Header(..., alias="X-Device-Id"),
                  db: DbSession = Depends(get_session)) -> dict:
     if not (8 <= len(x_device_id) <= 128):
         raise ApiError(422, "validation")
@@ -240,6 +240,12 @@ def demo_session(x_device_id: str = Header(..., alias="X-Device-Id"),
     install_id = hash_device_id(x_device_id)
     inst = db.get(DemoInstallation, install_id)
     if inst is None:
+        # AUD-05: новая демо-установка создаёт магазин с данными — ограничиваем такие создания
+        if not allow(f"demo:{client_ip(request)}", settings.demo_new_per_ip_per_hour):
+            raise ApiError(429, "rate_limited", "Слишком много новых демо-сессий с этого адреса. Попробуйте позже.")
+        total = db.scalar(select(func.count()).select_from(DemoInstallation)) or 0
+        if total >= settings.demo_max_installations:
+            raise ApiError(503, "demo_full", "Демо-режим временно недоступен. Попробуйте позже.")
         shop = generate_demo(db, today_in(settings.default_timezone))
         inst = DemoInstallation(id=install_id, shop_id=shop.id)
         db.add(inst)
