@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session as DbSession
 
 from .money import apply_bp
+from .models import _uid as _new_id  # noqa: E402
 from .models import (
     CommissionPreset,
     ExpenseEntry,
@@ -151,11 +152,10 @@ def generate_demo(db: DbSession, anchor_date: date, seed: int = 42, shop: Shop |
                 completed_at = datetime.combine(anchor_date, time(12, 0), tzinfo=tz)
 
         order_seq += rng.randint(1, 37)
-        order = Order(shop_id=shop.id, number=str(order_seq), status=status,
+        order = Order(id=_new_id(), shop_id=shop.id, number=str(order_seq), status=status,
                       created_at=created.astimezone(timezone.utc),
                       completed_at=completed_at.astimezone(timezone.utc) if completed_at else None)
-        db.add(order)
-        db.flush()
+        db.add(order)  # QA-01: идентификаторы заданы заранее, промежуточный flush не нужен
 
         n_items = rng.choices([1, 2, 3], weights=[6, 3, 1])[0]
         chosen: list[str] = []
@@ -174,13 +174,12 @@ def generate_demo(db: DbSession, anchor_date: date, seed: int = 42, shop: Shop |
             _, _, _, price, _, _, buyer_del = price_by_sku[sku]
             qty = rng.choices([1, 2, 3], weights=[7, 2, 1])[0]
             item = OrderItem(
-                order_id=order.id, shop_id=shop.id, product_id=products[sku].id, qty=qty,
+                id=_new_id(), order_id=order.id, shop_id=shop.id, product_id=products[sku].id, qty=qty,
                 unit_price_minor=price * 100,
                 buyer_delivery_minor=buyer_del * 100,  # доставка покупателю за строку
                 commission_rate_bp=None,  # ставка берётся из пресета категории на дату продажи
             )
             db.add(item)
-            db.flush()
             if is_return and pos == 0:  # возврат — по первой позиции заказа: 15 возвратов на 15 заказов
                 _add_return(db, item, status, idx, completed_at, anchor_date, rng)
 
