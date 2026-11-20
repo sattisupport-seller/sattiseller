@@ -36,21 +36,49 @@ ADDRESS_RE = re.compile(
     r"(?i)\b(?:ул\.|улица|пр\.|проспект|пер\.|переулок|мкр\.|микрорайон|дом|д\.|кв\.|квартира|"
     r"көш\.|даңғыл|үй)(?=[\s.,\d])\s*[^\n,.;!?]{0,60}(?:\d+[^\n,.;!?]{0,20})?"
 )
-# Признаки PII для предупреждений (без замены)
-_PII_RE = (PHONE_RE, EMAIL_RE, ADDRESS_RE)
-
-
 def contains_pii(text: str | None) -> bool:
     if not text:
         return False
     return any(rx.search(text) for rx in _PII_RE)
 
 
+MASK_CARD = "[карта]"
+MASK_IIN = "[ИИН]"
+# AUD-19: номер банковской карты — 13–19 цифр (возможны пробелы и дефисы); маскируем только если проходит проверку Луна,
+# чтобы не портить номера заказов и суммы
+CARD_RE = re.compile(r"(?<![\d\w])(?:\d[ \-]?){12,18}\d(?![\d\w])")
+# ИИН (Казахстан) — ровно 12 цифр подряд
+IIN_RE = re.compile(r"(?<!\d)\d{12}(?!\d)")
+# Признаки PII для предупреждений (без замены)
+_PII_RE = (PHONE_RE, EMAIL_RE, ADDRESS_RE, IIN_RE)
+
+
+def _luhn_ok(digits: str) -> bool:
+    total = 0
+    for i, ch in enumerate(reversed(digits)):
+        d = int(ch)
+        if i % 2 == 1:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    return total % 10 == 0
+
+
+def _mask_card(match: re.Match) -> str:
+    digits = re.sub(r"\D", "", match.group(0))
+    if 13 <= len(digits) <= 19 and _luhn_ok(digits):
+        return MASK_CARD
+    return match.group(0)
+
+
 def mask_text(text: str | None) -> str:
-    """Заменяет телефоны, email и адреса в тексте. Остальной текст не меняется."""
+    """Заменяет телефоны, email, адреса, номера карт и ИИН в тексте. Остальной текст не меняется."""
     if not text:
         return text or ""
     out = EMAIL_RE.sub(MASK_EMAIL, text)
+    out = CARD_RE.sub(_mask_card, out)
+    out = IIN_RE.sub(MASK_IIN, out)
     out = PHONE_RE.sub(MASK_PHONE, out)
     out = ADDRESS_RE.sub(MASK_ADDRESS, out)
     return out
