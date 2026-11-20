@@ -283,9 +283,9 @@ def test_ai_daily_limit(client, demo):
     shop = demo["shop_id"]
     client.post("/v1/ai/consent", headers=demo["headers"], json={"granted": True})
     codes = [client.post(f"/v1/shops/{shop}/ai/ask", headers=demo["headers"],
-                         json={"question": "Сколько заказов вчера?"}).status_code for _ in range(21)]
-    assert codes[:20] == [200] * 20
-    assert codes[20] == 429
+                         json={"question": "Сколько заказов вчера?"}).status_code for _ in range(31)]
+    assert codes[:30] == [200] * 30
+    assert codes[30] == 429
 
 
 def test_ai_drafts_do_not_invent_numbers(client, demo):
