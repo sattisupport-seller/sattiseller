@@ -25,6 +25,33 @@ const GOOGLE_ANDROID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID;
 const GOOGLE_WEB = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB;
 const GOOGLE_CONFIGURED = Boolean(GOOGLE_IOS || GOOGLE_ANDROID || GOOGLE_WEB);
 
+// Хук Google выбрасывает ошибку без идентификатора клиента для платформы (QA: из-за этого падал весь экран входа),
+// поэтому он вызывается только в этом компоненте и только когда идентификаторы заданы.
+function GoogleSignInButton({ disabled, onIdToken }: { disabled: boolean; onIdToken: (token: string) => void }) {
+  const { t } = useI18n();
+  const [request, response, prompt] = Google.useIdTokenAuthRequest({
+    iosClientId: GOOGLE_IOS,
+    androidClientId: GOOGLE_ANDROID,
+    webClientId: GOOGLE_WEB,
+  });
+
+  useEffect(() => {
+    if (response?.type !== 'success') return;
+    const idToken = response.params.id_token;
+    if (idToken) onIdToken(idToken);
+  }, [response, onIdToken]);
+
+  return (
+    <Button
+      title={t('login.withGoogle')}
+      variant="secondary"
+      onPress={() => { void prompt(); }}
+      disabled={disabled || !request}
+      fullWidth
+    />
+  );
+}
+
 export default function Login() {
   const router = useRouter();
   const { t } = useI18n();
@@ -35,31 +62,23 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
 
-  // Google: токен id_token от провайдера; проверку делает сервер.
-  const [googleRequest, googleResponse, promptGoogle] = Google.useIdTokenAuthRequest({
-    iosClientId: GOOGLE_IOS,
-    androidClientId: GOOGLE_ANDROID,
-    webClientId: GOOGLE_WEB,
-  });
-
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
     AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => setAppleAvailable(false));
   }, []);
 
-  useEffect(() => {
-    if (googleResponse?.type !== 'success') return;
-    const idToken = googleResponse.params.id_token;
-    if (!idToken) {
-      setError(t('login.socialFailed'));
-      return;
-    }
+  const finishSocial = async (provider: 'apple' | 'google', idToken: string, nonce?: string) => {
+    setError(null);
     setBusy(true);
-    signInWithIdToken('google', idToken)
-      .then(() => router.replace('/'))
-      .catch((e) => setError(e instanceof ApiError ? e.message : t('login.socialFailed')))
-      .finally(() => setBusy(false));
-  }, [googleResponse, signInWithIdToken, router, t]);
+    try {
+      await signInWithIdToken(provider, idToken, nonce);
+      router.replace('/');
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : t('login.socialFailed'));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const signInApple = async () => {
     setError(null);
@@ -119,15 +138,14 @@ export default function Login() {
             />
           ) : null}
 
-          <Button
-            title={t('login.withGoogle')}
-            variant="secondary"
-            onPress={() => { setError(null); void promptGoogle(); }}
-            disabled={!GOOGLE_CONFIGURED || !googleRequest}
-            loading={busy}
-            fullWidth
-          />
-          {!GOOGLE_CONFIGURED ? <Txt variant="footnote" tone="tertiary" align="center">{t('login.providerNotSet')}</Txt> : null}
+          {GOOGLE_CONFIGURED ? (
+            <GoogleSignInButton
+              disabled={busy}
+              onIdToken={(token) => { void finishSocial('google', token); }}
+            />
+          ) : (
+            <Txt variant="footnote" tone="tertiary" align="center">{t('login.providerNotSet')}</Txt>
+          )}
 
           {EMAIL_LOGIN ? (
             <>
