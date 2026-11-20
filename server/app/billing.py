@@ -11,7 +11,8 @@ import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import DateTime, Integer, String, delete, select
+from sqlalchemy import DateTime, Integer, String, UniqueConstraint, delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session as DbSession, mapped_column
 
 from .config import settings
@@ -76,6 +77,7 @@ class BillingMark(Base):
     """Отметка защиты пробного периода: только хеш (аккаунт, телефон, магазин Kaspi). Хранится 3 года."""
 
     __tablename__ = "billing_marks"
+    __table_args__ = (UniqueConstraint("kind", "key_hash", name="uq_billing_marks_kind_key"),)  # AUD-16
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
     kind: Mapped[str] = mapped_column(String(16))  # user | device | shop
     key_hash: Mapped[str] = mapped_column(String(64), index=True)
@@ -147,7 +149,12 @@ def start_trial(db: DbSession, shop: Shop, account_key: str | None, kaspi_key_id
     for kind, value in (("user", account_key), ("shop", kaspi_key_id)):
         if value:
             db.add(BillingMark(kind=kind, key_hash=_hash(kind, value)))
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # AUD-16: два параллельных запроса прошли проверку; уникальные ограничения оставляют один пробный период
+        db.rollback()
+        raise ApiError(409, "trial_used", "Пробный период уже использован для этого аккаунта или магазина.")
     return sub
 
 
