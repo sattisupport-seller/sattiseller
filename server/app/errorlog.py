@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, Integer, String, select
+from sqlalchemy import DateTime, Integer, String, func, select
 from sqlalchemy.orm import Mapped, Session as DbSession, mapped_column
 
 from .admin import require_admin
@@ -51,15 +51,23 @@ def fingerprint(kind: str, exc_type: str, where: str) -> str:
     return hashlib.sha256(f"{kind}|{exc_type}|{where}".encode("utf-8")).hexdigest()[:32]
 
 
+MAX_GROUPS = 500  # AUD-18: предел числа групп; сверх него все новые ошибки идут в одну общую группу
+OVERFLOW_FP = "overflow"
+
+
 def record_error(db: DbSession, *, kind: str, exc_type: str, where: str, message: str,
                  app_version: str | None = None, platform: str | None = None) -> str:
     """Сохраняет или обновляет группу ошибок. Возвращает идентификатор группы (отпечаток)."""
-    fp = fingerprint(kind, exc_type[:120], where[:160])
+    exc_type, where = exc_type[:120], where[:160]
+    fp = fingerprint(kind, exc_type, where)
     safe_message = mask_text(message or "")[:MAX_MESSAGE]
     now = _now()
     row = db.get(AppError, fp)
+    if row is None and (db.scalar(select(func.count()).select_from(AppError)) or 0) >= MAX_GROUPS:
+        fp, exc_type, where = OVERFLOW_FP, "overflow", "overflow"
+        row = db.get(AppError, fp)
     if row is None:
-        row = AppError(fingerprint=fp, kind=kind, exc_type=exc_type[:120], where=where[:160], message=safe_message,
+        row = AppError(fingerprint=fp, kind=kind, exc_type=exc_type, where=where, message=safe_message,
                        app_version=(app_version or None) and app_version[:32], platform=(platform or None) and platform[:16],
                        count=0, first_seen=now, last_seen=now)
         db.add(row)
