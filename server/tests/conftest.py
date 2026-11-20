@@ -7,6 +7,7 @@ _tmp = Path(tempfile.mkdtemp(prefix="satti-test-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{(_tmp / 'test.db').as_posix()}"
 os.environ["SATTI_OUTBOX_DIR"] = str(_tmp / "outbox")
 os.environ["SATTI_DATA_DIR"] = str(_tmp / "data")
+os.environ["SATTI_EMAIL_LOGIN"] = "1"  # только тесты: вход по коду на почту
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

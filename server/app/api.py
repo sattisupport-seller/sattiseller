@@ -99,6 +99,9 @@ api = APIRouter()
 
 from . import admin as _admin  # noqa: E402  (админ-панель и поддержка, ТЗ 2.1, раздел 14)
 
+from . import social_auth as _social  # noqa: E402  (вход через Apple и Google)
+
+api.include_router(_social.router)
 api.include_router(_admin.router)
 api.include_router(_admin.me_router)
 
@@ -156,6 +159,8 @@ def _norm_email(email: str) -> str:
 
 @api.post("/auth/email/start", status_code=202, tags=["вход"])
 def auth_email_start(body: EmailIn, request: Request, db: DbSession = Depends(get_session)) -> dict:
+    if not settings.email_login_enabled:
+        raise ApiError(404, "not_found")
     email = _norm_email(body.email)
     ip = request.client.host if request.client else "unknown"
     if not allow(f"code:{email}", settings.code_requests_per_hour) or not allow(f"codeip:{ip}", 20):
@@ -170,6 +175,8 @@ def auth_email_start(body: EmailIn, request: Request, db: DbSession = Depends(ge
 
 @api.post("/auth/email/verify", tags=["вход"])
 def auth_email_verify(body: VerifyIn, db: DbSession = Depends(get_session)) -> dict:
+    if not settings.email_login_enabled:
+        raise ApiError(404, "not_found")
     email = _norm_email(body.email)
     code_row = db.scalar(select(AuthCode).where(AuthCode.email == email, AuthCode.purpose == "login",
                                                 AuthCode.used.is_(False)).order_by(AuthCode.expires_at.desc()))

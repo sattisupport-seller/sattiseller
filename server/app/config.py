@@ -36,6 +36,11 @@ class Settings:
     subscription_price_text: str = "9 900 ₸ в месяц"
     # Администратор: только владелец (spec-2.1, 14.1). Пустое значение — панель закрыта.
     admin_email: str = os.environ.get("SATTI_ADMIN_EMAIL", "").strip().lower()
+    # Вход: Apple и Google (ТЗ 2.1, раздел 5). Идентификаторы приложения у провайдеров — после аккаунтов владельца.
+    apple_client_id: str = os.environ.get("SATTI_APPLE_CLIENT_ID", "kz.satti.seller")
+    google_client_ids: str = os.environ.get("SATTI_GOOGLE_CLIENT_IDS", "")
+    # Вход по email-коду — только для разработки и тестов (ADR-0004). В продакшене выключен.
+    email_login_enabled: bool = os.environ.get("SATTI_EMAIL_LOGIN", "0") == "1"
 
 
 settings = Settings()
