@@ -76,6 +76,12 @@ def admin_page() -> HTMLResponse:
     return HTMLResponse((STATIC_DIR / "admin.html").read_text(encoding="utf-8"))
 
 
+@router.get("/admin.js", include_in_schema=False)
+def admin_script() -> FileResponse:
+    """Скрипт панели вынесен из страницы (AUD-25): так политика CSP не разрешает встроенные скрипты."""
+    return FileResponse(STATIC_DIR / "admin.js", media_type="application/javascript")
+
+
 @router.get("/privacy", response_class=HTMLResponse)
 def privacy_page() -> HTMLResponse:
     return _legal("privacy")

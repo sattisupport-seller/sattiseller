@@ -41,8 +41,9 @@ _SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-    # страницы /admin, /privacy, /terms — без внешних ресурсов; inline-скрипт панели разрешён явно
-    "Content-Security-Policy": ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+    # страницы /admin, /privacy, /terms — без внешних ресурсов. Скрипты — только свои файлы (AUD-25);
+    # инлайн-стили остаются, их используют страницы
+    "Content-Security-Policy": ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
                                 "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
                                 "form-action 'self'"),
 }
