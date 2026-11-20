@@ -1,4 +1,5 @@
 // QA-10: каждый экран рисуется без данных и с данными, на русском и казахском, в светлой и тёмной теме.
+import type { ReactElement } from 'react';
 import { render } from '@testing-library/react-native';
 
 import AssistantScreen from '@/app/(tabs)/assistant';
@@ -96,7 +97,7 @@ jest.mock('@/api/hooks', () => {
   });
 });
 
-const screens: Array<[string, () => JSX.Element]> = [
+const screens: Array<[string, () => ReactElement]> = [
   ['обзор', OverviewScreen], ['заказы', OrdersScreen], ['товары', ProductsScreen], ['профиль', ProfileScreen],
   ['помощник', AssistantScreen], ['черновик товара', ProductDraftScreen], ['ответ покупателю', ReplyDraftScreen],
   ['каталог', CatalogScreen], ['код', CodeScreen], ['импорт', ImportScreen], ['старт', IndexScreen],
@@ -106,7 +107,7 @@ const screens: Array<[string, () => JSX.Element]> = [
   ['как считается прибыль', HowProfitScreen], ['Kaspi', KaspiScreen], ['уведомления', NotificationsScreen],
   ['налог', TaxScreen], ['настройка магазина', ShopSetupScreen], ['подписка закончилась', SubscriptionEndedScreen],
   ['нужно обновить', UpdateRequiredScreen], ['приветствие', WelcomeScreen],
-] as Array<[string, () => JSX.Element]>;
+] as Array<[string, () => ReactElement]>;
 
 describe.each([
   ['ru', 'light', false], ['ru', 'light', true], ['kk', 'dark', true],
