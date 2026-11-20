@@ -6,6 +6,21 @@ from pathlib import Path
 from pydantic import BaseModel
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+def production_config_problems() -> list[str]:
+    """Что нельзя оставлять по умолчанию при SATTI_ENV=production (QA, риск R5). Пустой список — всё в порядке."""
+    if os.environ.get("SATTI_ENV", "").lower() != "production":
+        return []
+    problems: list[str] = []
+    if settings.billing_pepper == "dev-only-change-me":
+        problems.append("SATTI_BILLING_PEPPER не задан: используется значение разработки")
+    if any("localhost" in o or "127.0.0.1" in o for o in os.environ.get(
+            "SATTI_CORS_ORIGINS", "http://localhost:8081,http://127.0.0.1:8081").split(",")):
+        problems.append("SATTI_CORS_ORIGINS содержит localhost")
+    if settings.email_login_enabled:
+        problems.append("SATTI_EMAIL_LOGIN=1 в продакшене: вход по коду должен быть выключен")
+    return problems
+
+
 DATA_DIR = Path(os.environ.get("SATTI_DATA_DIR", BASE_DIR / "data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)  # база SQLite и папка писем создаются здесь
 

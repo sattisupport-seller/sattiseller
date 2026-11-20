@@ -13,6 +13,11 @@ from .errors import ApiError, api_error_handler
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    from .config import production_config_problems
+
+    problems = production_config_problems()
+    if problems:
+        raise RuntimeError("Запуск отменён, конфигурация небезопасна: " + "; ".join(problems))
     init_db()
     from .scheduler import start_builtin_scheduler, stop_builtin_scheduler
 
@@ -30,6 +35,25 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.add_exception_handler(ApiError, api_error_handler)
+
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    # страницы /admin, /privacy, /terms — без внешних ресурсов; inline-скрипт панели разрешён явно
+    "Content-Security-Policy": ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+                                "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
+                                "form-action 'self'"),
+}
+
+
+@app.middleware("http")
+async def _security_headers(request, call_next):
+    response = await call_next(request)
+    for name, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    return response
 
 from fastapi import Request as _Request  # noqa: E402
 from .db import SessionLocal as _SessionLocal  # noqa: E402
