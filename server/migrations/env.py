@@ -6,7 +6,7 @@ from logging.config import fileConfig
 from alembic import context
 
 # AUD-11: регистрируем таблицы всех модулей, иначе autogenerate предложит удалить подписки, админку и коды
-from app import admin, billing, errorlog, models, social_auth  # noqa: F401
+from app import admin, billing, errorlog, models, ratelimit, social_auth  # noqa: F401
 from app.config import settings
 from app.db import Base
 
