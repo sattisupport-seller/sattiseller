@@ -95,6 +95,9 @@ export default function ProductScreen() {
             <Line label={t('productDetail.landed')} value={formatMoney(-data.economics.landed_minor)} />
             <Line label={t('productDetail.commission', { pct: formatPercentBp(data.economics.commission_bp) })} value={formatMoney(-data.economics.commission_minor)} />
             <Line label={t('productDetail.delivery')} value={formatMoney(-data.economics.delivery_minor)} />
+            {data.economics.tax_minor != null ? (
+              <Line label={t('profit.steps.tax')} value={formatMoney(-data.economics.tax_minor)} />
+            ) : null}
             <View style={{ height: 1, backgroundColor: colors.divider }} />
             <Line label={t('productDetail.profitPerSale')} value={formatMoney(data.economics.profit_per_unit_minor, 'auto')} strong />
           </Card>

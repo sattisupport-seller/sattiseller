@@ -53,7 +53,9 @@ export default function ProfitScreen() {
               <View key={s.key} style={{ paddingVertical: spacing.md, paddingHorizontal: spacing.lg, gap: 6, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: colors.divider }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Txt variant={isTotal ? 'headline' : 'subhead'} tone={isTotal ? 'primary' : 'secondary'}>
-                    {t(`profit.steps.${s.key}` as never)}
+                    {s.key === 'tax' && s.rate_bp != null
+                      ? `${t('profit.steps.tax')} (${String(s.rate_bp / 100).replace('.', ',')}%)`
+                      : t(`profit.steps.${s.key}` as never)}
                   </Txt>
                   <Txt variant={isTotal ? 'headline' : 'subhead'} numeric tone={s.minor < 0 ? 'danger' : isTotal ? 'primary' : 'secondary'}>
                     {formatMoney(s.minor, isTotal ? 'auto' : 'none')}

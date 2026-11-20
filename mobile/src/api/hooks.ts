@@ -21,6 +21,8 @@ import type {
   ProfitBreakdown,
   ReplyDraft,
   ShopSummary,
+  TaxRow,
+  TaxSettings,
 } from './types';
 
 const STALE = 60_000;
@@ -216,6 +218,26 @@ export function useSaveCommission(shopId: string | null) {
       request<{ id: string }>(`/shops/${shopId}/commissions`, { method: 'POST', body }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['commissions', shopId] });
+      invalidateShop(qc, shopId);
+    },
+  });
+}
+
+export function useTax(shopId: string | null) {
+  return useQuery({
+    queryKey: ['tax', shopId],
+    queryFn: () => request<TaxSettings>(`/shops/${shopId}/tax`),
+    enabled: !!shopId,
+  });
+}
+
+export function useSaveTax(shopId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { enabled: boolean; rate_percent: string | null; effective_from: string | null }) =>
+      request<TaxRow>(`/shops/${shopId}/tax`, { method: 'POST', body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tax', shopId] });
       invalidateShop(qc, shopId);
     },
   });

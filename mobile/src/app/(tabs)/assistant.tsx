@@ -336,11 +336,12 @@ function AnswerCard({ answer, onFlag, onUp, onDown }: { answer: AskAnswer; onFla
       {action ? (
         <View style={{ flexDirection: 'row' }}>
           <Button
-            title={t('assistant.openProduct')}
+            title={action.type === 'open_tax_settings' ? t('assistant.openTax') : t('assistant.openProduct')}
             size="S"
             variant="secondary"
             onPress={() => {
-              if (action.entityId) router.push(`/product/${action.entityId}`);
+              if (action.type === 'open_tax_settings') router.push('/settings/tax');
+              else if (action.entityId) router.push(`/product/${action.entityId}`);
             }}
           />
         </View>

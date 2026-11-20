@@ -31,7 +31,11 @@ export type Overview = {
   series: { days: string[]; profit: number[]; sales: number[]; prev_profit: number[]; prev_sales: number[] };
 };
 
-export type BreakdownStep = { key: string; minor: number; label: string };
+export type BreakdownStep = { key: string; minor: number; label: string; rate_bp?: number | null };
+
+// Налог (ТЗ 2.1, раздел 7): ставка в базисных пунктах; enabled = false — налог выключен с этой даты.
+export type TaxRow = { id: string; enabled: boolean; rate_bp: number | null; effective_from: string | null; created_at: string };
+export type TaxSettings = { current: TaxRow | null; items: TaxRow[] };
 
 export type ProfitBreakdown = {
   period: { from: string; to: string };
@@ -71,6 +75,8 @@ export type OrderDetail = {
     gross_minor: number;
     commission_minor: number | null;
     commission_source: string;
+    tax_minor?: number | null;
+    tax_rate_bp?: number | null;
     landed_minor: number | null;
     cost_source: string;
     profit_minor: number | null;
@@ -110,6 +116,7 @@ export type ProductDetail = {
     commission_bp: number;
     commission_minor: number;
     delivery_minor: number;
+    tax_minor?: number | null;
     profit_per_unit_minor: number;
   } | null;
   current_cost: {

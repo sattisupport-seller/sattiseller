@@ -72,6 +72,9 @@ export default function OrderScreen() {
           <Row label={t('orderDetail.gross')} value={formatMoney(gross)} />
           <Row label={t('orderDetail.landed')} value={formatMoney(landed, 'none')} />
           <Row label={t('orderDetail.commission')} value={formatMoney(commission)} />
+          {data.items.some((i) => i.tax_minor != null) ? (
+            <Row label={t('profit.steps.tax')} value={formatMoney(-data.items.reduce((s, i) => s + (i.tax_minor ?? 0), 0))} />
+          ) : null}
           <Row label={t('orderDetail.profit')} value={profitKnown ? formatMoney(profit, 'auto') : '—'} strong tone={profitKnown && profit < 0 ? 'danger' : 'primary'} />
           <Txt variant="footnote" tone="tertiary">
             {data.items.map((i) => `${i.sku}: ${i.cost_source}; ${t('orderDetail.source', { src: i.commission_source })}`).join('\n')}

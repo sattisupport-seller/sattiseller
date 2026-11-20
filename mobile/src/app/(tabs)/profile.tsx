@@ -76,6 +76,7 @@ export default function ProfileScreen() {
         <GroupCard>
           <ListRow title={t('profile.importCosts')} onPress={() => router.push('/import')} />
           <ListRow title={t('profile.commissions')} onPress={() => router.push('/settings/commissions')} />
+          <ListRow title={t('profile.tax')} onPress={() => router.push('/settings/tax')} />
           <ListRow title={t('profile.expenses')} onPress={() => router.push('/settings/expenses')} last />
         </GroupCard>
       </Section>
