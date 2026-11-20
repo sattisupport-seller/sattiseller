@@ -1,0 +1,59 @@
+name: CI
+
+# Проверки на каждое изменение: тесты сервера, миграции, аудит зависимостей, тесты и типы приложения.
+# Пушить и запускать может только владелец репозитория; секреты здесь не нужны.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Установка зависимостей
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Тесты сервера
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python -m pytest -q
+      - name: Миграции на чистой базе (upgrade, проверка моделей, downgrade)
+        env:
+          DATABASE_URL: sqlite:///./ci-migrations.db
+          SATTI_DATA_DIR: ./ci-data
+        run: |
+          python -m alembic upgrade head
+          python -m alembic check
+          python -m alembic downgrade base
+      - name: Аудит зависимостей сервера
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
+
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Установка зависимостей
+        run: npm ci
+      - name: Тесты приложения
+        run: npm test
+      - name: Проверка типов
+        run: npm run typecheck

@@ -25,14 +25,14 @@ npm install
 npm test
 npm run typecheck
 ```
-Секреты и ключи — только в `.env` и `secrets/` (в .gitignore). Их значения не вставляются в чат и не попадают в коммиты.
+Секреты передаются только переменными окружения (список — ниже, «Конфигурация продакшена»). Файлы с секретами — в `secrets/` (в .gitignore). Значения не вставляются в чат и не попадают в коммиты. `.env` приложение не читает.
 
 ## Сервер
 ```bash
 cd server
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements.txt   # Windows
-.venv/Scripts/python.exe -m pytest                             # 54 теста: золотой набор, API, импорт, помощник
+.venv/Scripts/python.exe -m pytest                             # 205 тестов: расчёты, API, импорт, безопасность, биллинг, админка
 .venv/Scripts/python.exe -m uvicorn app.main:app --port 8000   # документация: http://127.0.0.1:8000/v1/docs
 .venv/Scripts/alembic.exe upgrade head                         # миграции (SQLite по умолчанию)
 ```
@@ -42,7 +42,7 @@ python -m venv .venv
 ```bash
 cd mobile
 npm install
-npm test                       # 19 тестов: форматирование, словари, версии
+npm test                       # 22 теста: форматирование, словари, версии, клиент API (обновление сессии)
 npm run typecheck
 EXPO_PUBLIC_API_URL=http://192.168.0.10:8000/v1 npx expo start   # телефон в одной сети с компьютером
 npx expo start --web --port 8081                                  # просмотр в браузере (для проверки)
@@ -67,8 +67,20 @@ npx expo start --web --port 8081                                  # просмо
 - 14 — публичный релиз: не выполнено. Нужны аккаунты Apple и Google, тестировщики.
 - 15 — подписка: не выполнено. Нужно решение о цене.
 
+## Конфигурация продакшена (сервер)
+Запуск с `SATTI_ENV=production` отказывает, если не задано следующее (проверка в `app/config.py`):
+- `SATTI_BILLING_PEPPER`, `SATTI_TOTP_KEY` — свои значения, не по умолчанию;
+- `SATTI_CORS_ORIGINS` без localhost; `SATTI_EMAIL_LOGIN` не включён;
+- блокировка по подписке: `SATTI_BILLING_ENFORCED=1` или осознанно `SATTI_FREE_ACCESS=1` (бесплатная бета); `SATTI_BILLING_TEST_MODE` не включён;
+- `SATTI_SCHEDULER=1` — иначе удаление данных по хранению не запускается;
+- хотя бы один способ входа: `SATTI_GOOGLE_CLIENT_IDS` или `SATTI_APPLE_CLIENT_ID`.
+Дополнительно: `SATTI_TRUSTED_PROXIES` — адреса доверенного обратного прокси (только для них учитываются `X-Forwarded-For`), `SATTI_DEMO_MAX`, `SATTI_DEMO_NEW_PER_IP_PER_HOUR`.
+
 ## Проверено
-- Серверные тесты: 54 из 54.
-- Мобильные тесты: 19 из 19; `tsc` без ошибок; экспорт бандла Android и iOS.
+- Серверные тесты: 205 из 205 (проверено в аудите 20.11.2026).
+- Мобильные тесты: 22 из 22; `tsc` без ошибок.
+- Миграции Alembic: чистый подъём, `alembic check` без расхождений, откат.
+- Аудит зависимостей сервера (`pip-audit`): 0 известных уязвимостей. Приложение (`npm audit`): 18 moderate в цепочке Jest — без исправления в текущем диапазоне.
+- CI описан в `.github/workflows/ci.yml`; на GitHub пока не запускался (нет удалённого репозитория).
 - Сквозной прогон в браузере (веб-просмотр, 390×844): демо-вход, Обзор, Заказы, Товары, карточка товара, помощник с согласием и ответом с основаниями.
 - На реальном телефоне приложение не запускалось.
