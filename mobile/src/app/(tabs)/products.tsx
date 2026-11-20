@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { FileUp } from 'lucide-react-native';
+import { FileSpreadsheet, FileUp } from 'lucide-react-native';
 import { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 
@@ -11,8 +11,9 @@ import { IconButton } from '@/components/ui/IconButton';
 import { SearchField, Segmented } from '@/components/ui/Inputs';
 import { Txt } from '@/components/ui/Text';
 import { Badge, Card, Chip, CoverageBar, GroupCard, ListRow, type Tone } from '@/components/ui/Surfaces';
-import { EmptyState, ErrorState, Skeleton } from '@/components/ui/Overlays';
+import { EmptyState, ErrorState, Skeleton, useToast } from '@/components/ui/Overlays';
 import { useSession } from '@/session/SessionProvider';
+import { downloadAndShare } from '@/lib/download';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
 import { formatCount, formatMoney, formatPercentBp } from '@/lib/format';
@@ -34,6 +35,7 @@ const SORTS: Sort[] = ['profit_desc', 'profit_asc', 'sales', 'margin', 'name'];
 export default function ProductsScreen() {
   const { t, locale } = useI18n();
   const { colors, spacing } = useTheme();
+  const toast = useToast();
   const router = useRouter();
   const { shopId } = useSession();
   const [preset, setPreset] = useState<Preset>('30d');
@@ -60,9 +62,23 @@ export default function ProductsScreen() {
           title={t('products.title')}
           subtitle={<Txt variant="subhead" tone="tertiary">{formatCount(total, 'products', locale)}</Txt>}
           right={
-            <IconButton label={t('products.upload')} onPress={() => router.push('/import')}>
-              <FileUp size={22} color={colors.textSecondary} />
-            </IconButton>
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <IconButton
+                label={t('products.exportExcel')}
+                onPress={() => {
+                  downloadAndShare(
+                    `/shops/${shopId}/exports/profit.xlsx?period=${preset}`,
+                    `satti-tovary-${preset}.xlsx`,
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                  ).catch(() => toast.show(t('common.unknownError')));
+                }}
+              >
+                <FileSpreadsheet size={22} color={colors.textSecondary} />
+              </IconButton>
+              <IconButton label={t('products.upload')} onPress={() => router.push('/import')}>
+                <FileUp size={22} color={colors.textSecondary} />
+              </IconButton>
+            </View>
           }
         />
 

@@ -181,6 +181,7 @@ export const kk: Dict = {
     coverageNote: '{count} тауардың пайдасы сатып алу бағасы болмағанша есептелмейді.',
     fill: 'Сатып алуды толтыру',
     upload: 'Файл жүктеу',
+    exportExcel: 'Excel-ге шығару',
     sortBy: '{period} бойынша пайда',
     sort: {
       profit_desc: 'Пайда ↓',

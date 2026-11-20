@@ -178,6 +178,7 @@ export const ru = {
     coverageNote: 'Прибыль по {count} товарам не считается, пока нет закупочной цены.',
     fill: 'Заполнить закупку',
     upload: 'Загрузить файл',
+    exportExcel: 'Выгрузить в Excel',
     sortBy: 'По прибыли за {period}',
     sort: {
       profit_desc: 'Прибыль ↓',
