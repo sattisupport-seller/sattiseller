@@ -58,6 +58,8 @@ export const ru = {
   },
   shopSetup: {
     title: 'Ваш магазин',
+    ageLabel: 'Мне исполнилось 18 лет',
+    ageRequired: 'Подтвердите, что вам 18 лет или больше.',
     name: 'Название магазина',
     namePlaceholder: 'Например, «Уют дома»',
     tz: 'Часовой пояс',

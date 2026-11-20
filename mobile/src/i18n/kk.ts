@@ -61,6 +61,8 @@ export const kk: Dict = {
   },
   shopSetup: {
     title: 'Сіздің дүкен',
+    ageLabel: 'Маған 18 жас толды',
+    ageRequired: 'Сіздің 18 жас немесе одан үлкен екеніңізді растаңыз.',
     name: 'Дүкен атауы',
     namePlaceholder: 'Мысалы, «Үй жайлылығы»',
     tz: 'Уақыт белдеуі',
