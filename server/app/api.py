@@ -664,6 +664,17 @@ def cost_version_create(shop_id: str, product_id: str, body: CostIn,
     product = db.get(Product, product_id)
     if product is None or product.shop_id != shop.id:
         raise ApiError(404, "not_found")
+    # QA-06: повтор той же отправки в течение минуты (двойной тап, повтор сети) не создаёт вторую версию
+    values = (_minor(body.purchase), _minor(body.delivery_to_warehouse), _minor(body.packaging), _minor(body.other))
+    recent = db.scalar(select(ProductCostVersion).where(
+        ProductCostVersion.shop_id == shop.id, ProductCostVersion.product_id == product.id,
+        ProductCostVersion.cancelled.is_(False),
+        ProductCostVersion.created_at >= datetime.now(timezone.utc) - timedelta(seconds=60),
+    ).order_by(ProductCostVersion.created_at.desc()).limit(1))
+    if recent is not None and (recent.purchase_minor, recent.delivery_to_warehouse_minor,
+                               recent.packaging_minor, recent.other_minor) == values \
+            and (body.effective_from is None or recent.effective_from == body.effective_from):
+        return _version_json(recent)
     v = _add_cost(db, shop, product, body, "manual")
     db.commit()
     reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились

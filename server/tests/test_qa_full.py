@@ -54,7 +54,6 @@ def test_random_bytes_named_xlsx_are_rejected(client, demo):
     assert r.json()["error"]["code"] == "import_bad_file"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-07: бинарный файл с расширением .csv принимается (201) с мусорными колонками")
 def test_binary_file_named_csv_is_not_accepted_as_price_list(client, demo):
     """Бинарный файл с расширением .csv не должен приниматься как прайс-лист (известный дефект QA-07)."""
     body = b"\x00\x01\x02\xff\xfe\x00" * 50
@@ -173,7 +172,6 @@ def test_truncated_xlsx_is_rejected_cleanly(client, demo):
     assert r.json()["error"]["code"] == "import_bad_file"
 
 
-@pytest.mark.xfail(strict=True, reason="QA-06: повторная отправка той же затраты создаёт вторую версию (нет идемпотентности)")
 def test_repeated_cost_submit_does_not_duplicate_version(client, demo):
     products = client.get(f"/v1/shops/{demo['shop_id']}/products?period=30d", headers=demo["headers"]).json()
     pid = products["items"][0]["product_id"]

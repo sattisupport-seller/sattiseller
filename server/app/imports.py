@@ -131,6 +131,11 @@ def _parse_csv(content: bytes) -> ParsedFile:
             continue
     if text is None:
         raise ApiError(400, "import_bad_file", "Не удалось определить кодировку файла.")
+    # QA-07: бинарный файл с расширением .csv не принимается: много управляющих символов — не таблица
+    sample_chars = text[:5000]
+    binary = sum(1 for ch in sample_chars if (ord(ch) < 32 and ch not in "\t\r\n") or ch == "\ufffd")
+    if sample_chars and binary > 0.01 * len(sample_chars):
+        raise ApiError(400, "import_bad_file", "Это не таблица CSV. Сохраните файл как XLSX или CSV.")
     sample = text[:2048]
     delimiter = ";" if sample.count(";") > sample.count(",") else ","
     reader = csv.reader(io.StringIO(text), delimiter=delimiter)
