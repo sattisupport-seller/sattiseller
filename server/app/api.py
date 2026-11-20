@@ -29,6 +29,7 @@ from .auth import (
 from .config import AppConfig, get_app_config, settings
 from .db import get_session
 from .demo import generate_demo
+from .flags import is_enabled, require_ai
 from .errors import ApiError
 from .imports import (
     FIELDS,
@@ -136,8 +137,13 @@ def _minute() -> str:
 # ---------- служебное ----------
 
 @api.get("/app/config", response_model=AppConfig, tags=["служебное"])
-def app_config() -> AppConfig:
-    return get_app_config()
+def app_config(db: DbSession = Depends(get_session)) -> AppConfig:
+    cfg = get_app_config()
+    # флаги берутся из админки (выключатель ИИ, подписка, Kaspi), а не из констант
+    cfg.flags.ai_assistant = is_enabled(db, "ai_assistant")
+    cfg.flags.kaspi_connection = is_enabled(db, "kaspi_connection")
+    cfg.flags.subscription = is_enabled(db, "subscription")
+    return cfg
 
 
 # ---------- вход ----------
@@ -1066,6 +1072,7 @@ class AskIn(BaseModel):
 def ai_ask(shop_id: str, body: AskIn, principal: Principal = Depends(get_principal),
            db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
+    require_ai(db)  # выключатель ИИ (QA-02)
     _, active = ai_consent_state(db, principal)
     if not active:
         raise ApiError(403, "ai_consent_required")
@@ -1135,6 +1142,7 @@ async def ai_product_draft(shop_id: str = Form(...), facts: str = Form(...), lan
                            principal: Principal = Depends(get_principal),
                            db: DbSession = Depends(get_session)) -> dict:
     shop_for(db, principal, shop_id)  # проверка доступа к магазину
+    require_ai(db)  # выключатель ИИ (QA-02)
     _, active = ai_consent_state(db, principal)
     if not active:
         raise ApiError(403, "ai_consent_required")
@@ -1158,6 +1166,7 @@ class ReplyDraftIn(BaseModel):
 def ai_reply_draft(body: ReplyDraftIn, shop_id: str = Query(...), principal: Principal = Depends(get_principal),
                    db: DbSession = Depends(get_session)) -> dict:
     shop_for(db, principal, shop_id)
+    require_ai(db)  # выключатель ИИ (QA-02)
     _, active = ai_consent_state(db, principal)
     if not active:
         raise ApiError(403, "ai_consent_required")

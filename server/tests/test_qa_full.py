@@ -188,7 +188,7 @@ def test_repeated_cost_submit_does_not_duplicate_version(client, demo):
 
 # ---------- ИИ: выключатель и бюджет (ТЗ 2.1, 11.2) ----------
 
-@pytest.mark.xfail(strict=True, reason="QA-AI-1: выключатель ИИ в админке не действует (флаг нигде не читается)")
+
 def test_ai_kill_switch_stops_the_assistant(client, demo, monkeypatch):
     from tests.test_admin import ADMIN, _admin_headers, _enable_2fa, _headers
 
@@ -201,3 +201,21 @@ def test_ai_kill_switch_stops_the_assistant(client, demo, monkeypatch):
     r = client.post(f"/v1/shops/{demo['shop_id']}/ai/ask", json={"question": "Сколько прибыли?"},
                     headers=demo["headers"])
     assert r.status_code != 200, "помощник отвечает при выключенном выключателе"
+
+
+def test_ai_kill_switch_is_visible_to_the_app(client, demo, monkeypatch):
+    """Выключатель: приложение получает флаг из /app/config, ответ помощника — 503 с понятным текстом."""
+    from tests.test_admin import ADMIN, _admin_headers, _enable_2fa, _headers
+
+    monkeypatch.setattr(settings, "admin_email", ADMIN)
+    admin = _headers(client, ADMIN)
+    ah = _admin_headers(client, admin, _enable_2fa(client, admin))
+    client.put("/v1/admin/flags/ai_assistant", headers=ah, json={"enabled": False})
+    assert client.get("/v1/app/config").json()["flags"]["ai_assistant"] is False
+    client.post("/v1/ai/consent", json={"granted": True}, headers=demo["headers"])
+    r = client.post(f"/v1/shops/{demo['shop_id']}/ai/ask", json={"question": "Сколько прибыли?"}, headers=demo["headers"])
+    assert r.status_code == 503
+    assert r.json()["error"]["code"] == "ai_disabled"
+    assert "Отчёты работают как обычно" in r.json()["error"]["message"]
+    client.put("/v1/admin/flags/ai_assistant", headers=ah, json={"enabled": True})
+    assert client.get("/v1/app/config").json()["flags"]["ai_assistant"] is True
