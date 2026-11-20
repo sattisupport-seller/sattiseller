@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Satti Admin</title>
+<style>
+:root { color-scheme: light dark; --fg:#111827; --bg:#f5f6fa; --card:#ffffff; --muted:#6b7280; --accent:#4F46E5; --danger:#b91c1c; --line:#d1d5db; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --fg:#F3F4F6; --bg:#0F172A; --card:#1E293B; --muted:#9CA3AF; --accent:#8B93FF; --danger:#F87171; --line:#334155; } }
+:root[data-theme="dark"] { --fg:#F3F4F6; --bg:#0F172A; --card:#1E293B; --muted:#9CA3AF; --accent:#8B93FF; --danger:#F87171; --line:#334155; }
+body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; }
+header { padding:12px 16px; background:var(--card); border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+main { max-width: 960px; margin: 0 auto; padding: 16px; display:grid; gap:16px; }
+section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+h2 { font-size:17px; margin:0 0 10px; }
+input { font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:transparent; color:var(--fg); }
+button { font:inherit; padding:8px 12px; border:0; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer; }
+button.secondary { background:transparent; color:var(--accent); border:1px solid var(--accent); }
+button.danger { background:var(--danger); }
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th, td { text-align:left; border-bottom:1px solid var(--line); padding:6px 4px; vertical-align:top; }
+.muted { color:var(--muted); font-size:13px; }
+.error { color:var(--danger); }
+.grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap:10px; }
+.kpi { border:1px solid var(--line); border-radius:10px; padding:10px; }
+.kpi b { display:block; font-size:22px; }
+.row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+[hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<header>
+  <strong>Satti Admin</strong>
+  <button class="secondary" id="logout" hidden>Выйти</button>
+</header>
+<main>
+  <section id="sign-in">
+    <h2>Вход</h2>
+    <p class="muted">Панель доступна только владельцу. Каждое действие требует код двухфакторной защиты.</p>
+    <div class="row">
+      <input id="email" type="email" placeholder="email владельца" autocomplete="username">
+      <button id="send-code">Прислать код</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="code" inputmode="numeric" maxlength="6" placeholder="код из письма">
+      <button id="verify-code">Войти</button>
+    </div>
+    <p class="muted" id="sign-in-note">Вход по коду на почту включён только в режиме разработки. В боевой сборке вход — через Apple или Google (задача 21).</p>
+    <p class="error" id="sign-in-error"></p>
+  </section>
+
+  <section id="two-factor" hidden>
+    <h2>Двухфакторная защита</h2>
+    <p class="muted" id="tf-text"></p>
+    <div class="row">
+      <button id="tf-setup" class="secondary">Создать секрет</button>
+      <code id="tf-secret"></code>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input id="tf-code" inputmode="numeric" maxlength="6" placeholder="6-значный код из приложения">
+      <button id="tf-enable">Подтвердить</button>
+    </div>
+    <p class="error" id="tf-error"></p>
+  </section>
+
+  <section id="panel" hidden>
+    <h2>Код двухфакторной защиты для действий</h2>
+    <div class="row">
+      <input id="admin-code" inputmode="numeric" maxlength="6" placeholder="код из приложения-аутентификатора">
+      <button id="reload">Обновить данные</button>
+    </div>
+    <p class="error" id="panel-error"></p>
+  </section>
+
+  <section id="stats-section" hidden>
+    <h2>Статистика</h2>
+    <div class="grid" id="stats"></div>
+  </section>
+
+  <section id="flags-section" hidden>
+    <h2>Флаги функций</h2>
+    <table><thead><tr><th>Флаг</th><th>Состояние</th><th></th></tr></thead><tbody id="flags"></tbody></table>
+  </section>
+
+  <section id="users-section" hidden>
+    <h2>Пользователи</h2>
+    <table><thead><tr><th>Email</th><th>Магазинов</th><th>Статус</th><th>Поддержка до</th><th></th></tr></thead><tbody id="users"></tbody></table>
+    <p class="muted">Магазины пользователя открываются только если он разрешил доступ поддержки на 24 часа.</p>
+    <div id="user-shops"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+const API = "/v1";
+const $ = (id) => document.getElementById(id);
+let token = sessionStorage.getItem("satti-admin-token") || null;
+let emailAddress = "";
+
+function show(id, on) { $(id).hidden = !on; }
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+async function api(path, { method = "GET", body, admin = false } = {}) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = "Bearer " + token;
+  if (admin) headers["X-Admin-Code"] = $("admin-code").value.trim();
+  const res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  let data = null;
+  try { data = await res.json(); } catch (_) { data = null; }
+  if (!res.ok) {
+    const code = data && data.error ? data.error.code : "http";
+    const msg = data && data.error ? data.error.message : "Ошибка " + res.status;
+    const err = new Error(msg); err.code = code; err.status = res.status; throw err;
+  }
+  return data;
+}
+
+async function sendCode() {
+  $("sign-in-error").textContent = "";
+  emailAddress = $("email").value.trim().toLowerCase();
+  try { await api("/auth/email/start", { method: "POST", body: { email: emailAddress } }); $("sign-in-error").textContent = "Код отправлен на почту."; }
+  catch (e) { $("sign-in-error").textContent = e.message; }
+}
+
+async function verifyCode() {
+  $("sign-in-error").textContent = "";
+  try {
+    const res = await api("/auth/email/verify", { method: "POST", body: { email: emailAddress, code: $("code").value.trim() } });
+    token = res.access_token;
+    sessionStorage.setItem("satti-admin-token", token);
+    await afterSignIn();
+  } catch (e) { $("sign-in-error").textContent = e.message; }
+}
+
+async function afterSignIn() {
+  show("sign-in", false);
+  show("logout", true);
+  try {
+    await api("/admin/stats", { admin: true });
+    show("two-factor", false);
+    show("panel", true);
+    loadAll();
+  } catch (e) {
+    if (e.code === "two_factor_required") { show("two-factor", true); $("tf-text").textContent = "Включите двухфакторную защиту: создайте секрет и введите код из приложения-аутентификатора."; }
+    else if (e.status === 404) { $("sign-in-error").textContent = "Панель недоступна для этого аккаунта."; show("sign-in", true); show("logout", true); }
+    else if (e.code === "admin_code_invalid") { show("panel", true); $("panel-error").textContent = "Введите код двухфакторной защиты в поле выше."; }
+    else { $("sign-in-error").textContent = e.message; show("sign-in", true); }
+  }
+}
+
+async function setupTwoFactor() {
+  $("tf-error").textContent = "";
+  try { const r = await api("/admin/2fa/setup", { method: "POST" }); $("tf-secret").textContent = r.secret; }
+  catch (e) { $("tf-error").textContent = e.message; }
+}
+
+async function enableTwoFactor() {
+  $("tf-error").textContent = "";
+  try { await api("/admin/2fa/enable", { method: "POST", body: { code: $("tf-code").value.trim() } }); show("two-factor", false); show("panel", true); loadAll(); }
+  catch (e) { $("tf-error").textContent = e.message; }
+}
+
+async function loadStats() {
+  const s = await api("/admin/stats", { admin: true });
+  const labels = { users: "Пользователей", shops: "Магазинов", orders: "Заказов", ai_conversations: "Диалогов ИИ", ai_questions: "Вопросов ИИ", blocked_users: "Заблокировано" };
+  $("stats").innerHTML = Object.entries(labels).map(([k, label]) => `<div class="kpi"><b>${esc(s[k])}</b>${esc(label)}</div>`).join("");
+  show("stats-section", true);
+}
+
+async function loadFlags() {
+  const f = await api("/admin/flags", { admin: true });
+  const names = { kaspi_connection: "Подключение Kaspi", ai_assistant: "ИИ-помощник", subscription: "Подписка" };
+  $("flags").innerHTML = Object.entries(f).map(([k, on]) =>
+    `<tr><td>${esc(names[k] || k)}<div class="muted">${esc(k)}</div></td><td>${on ? "включён" : "выключен"}</td>` +
+    `<td><button class="secondary" data-flag="${esc(k)}" data-on="${on ? 0 : 1}">${on ? "Выключить" : "Включить"}</button></td></tr>`).join("");
+  show("flags-section", true);
+}
+
+async function loadUsers() {
+  const r = await api("/admin/users", { admin: true });
+  $("users").innerHTML = r.items.map((u) =>
+    `<tr><td>${esc(u.email)}</td><td>${esc(u.shops_count)}</td><td>${u.blocked ? "заблокирован" : "активен"}</td>` +
+    `<td>${u.support_access_until ? esc(u.support_access_until.slice(0, 16).replace("T", " ")) : "—"}</td>` +
+    `<td class="row"><button class="secondary" data-block="${esc(u.id)}" data-on="${u.blocked ? 0 : 1}">${u.blocked ? "Разблокировать" : "Заблокировать"}</button>` +
+    `<button class="secondary" data-shops="${esc(u.id)}">Магазины</button></td></tr>`).join("");
+  show("users-section", true);
+}
+
+async function showUserShops(id) {
+  try {
+    const r = await api(`/admin/users/${id}/shops`, { admin: true });
+    $("user-shops").innerHTML = "<h2>Магазины (доступ поддержки до " + esc(r.access_until.slice(0, 16).replace("T", " ")) + ")</h2>" +
+      "<ul>" + r.items.map((s) => `<li>${esc(s.name)} · ${esc(s.timezone)} · ${esc(s.language)}</li>`).join("") + "</ul>";
+  } catch (e) {
+    $("user-shops").innerHTML = `<p class="error">${esc(e.message)}</p>`;
+  }
+}
+
+async function loadAll() {
+  $("panel-error").textContent = "";
+  try { await loadStats(); await loadFlags(); await loadUsers(); }
+  catch (e) { $("panel-error").textContent = e.message; }
+}
+
+$("send-code").onclick = sendCode;
+$("verify-code").onclick = verifyCode;
+$("tf-setup").onclick = setupTwoFactor;
+$("tf-enable").onclick = enableTwoFactor;
+$("reload").onclick = loadAll;
+$("logout").onclick = () => { sessionStorage.removeItem("satti-admin-token"); location.reload(); };
+
+document.addEventListener("click", async (ev) => {
+  const t = ev.target;
+  if (t.dataset.flag) {
+    try { await api(`/admin/flags/${t.dataset.flag}`, { method: "PUT", body: { enabled: t.dataset.on === "1" }, admin: true }); loadFlags(); }
+    catch (e) { $("panel-error").textContent = e.message; }
+  }
+  if (t.dataset.block) {
+    try { await api(`/admin/users/${t.dataset.block}/block`, { method: "POST", body: { blocked: t.dataset.on === "1" }, admin: true }); loadUsers(); }
+    catch (e) { $("panel-error").textContent = e.message; }
+  }
+  if (t.dataset.shops) showUserShops(t.dataset.shops);
+});
+
+if (token) afterSignIn(); else { show("sign-in", true); }
+</script>
+</body>
+</html>

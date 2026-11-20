@@ -25,6 +25,7 @@ from .ratelimit import allow
 from .security import hash_code, new_code
 
 LEGAL_DIR = Path(__file__).resolve().parents[2] / "docs" / "legal"
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 PAGES = {
     "privacy": ("Политика конфиденциальности", "privacy-policy-draft.md"),
     "terms": ("Пользовательское соглашение", "terms-draft.md"),
@@ -66,6 +67,12 @@ def _legal(slug: str) -> HTMLResponse:
         return _page(title, "<h1>Текст готовится</h1>")
     text = path.read_text(encoding="utf-8")
     return _page(title, markdown.markdown(text, extensions=["tables"]))
+
+
+@router.get("/admin", response_class=HTMLResponse)
+def admin_page() -> HTMLResponse:
+    """Веб-страница панели поверх API /v1/admin. Данные отдаёт только API, и только владельцу с кодом 2FA."""
+    return HTMLResponse((STATIC_DIR / "admin.html").read_text(encoding="utf-8"))
 
 
 @router.get("/privacy", response_class=HTMLResponse)
