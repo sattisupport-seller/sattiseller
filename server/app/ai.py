@@ -23,6 +23,7 @@ from .errors import ApiError
 from .models import AIConversation, AIFeedback, AITurn, AIUsageEvent, Shop
 from .money import format_tenge, round_half_up_div
 from .periods import Period, resolve
+from .privacy import contains_pii, mask_text
 from .reports import (
     ItemFact,
     ShopData,
@@ -38,7 +39,6 @@ TOOL_LIMIT = 3
 PLACEHOLDER = re.compile(r"\{(F\d+)\}")
 DIGIT = re.compile(r"\d")
 KK_LETTERS = set("әғқңөұүһі")
-PHONE_RE = re.compile(r"\+?\d[\d\s\-()]{8,}\d")
 MONTHS_RU = ["янв.", "февр.", "мар.", "апр.", "мая", "июн.", "июл.", "авг.", "сент.", "окт.", "нояб.", "дек."]
 # Человекочитаемые подписи фактов для блока «Основания» (ТЗ, раздел 8.5).
 FACT_LABELS = {
@@ -416,6 +416,7 @@ def ask(db: DbSession, shop: Shop, question: str, user_id: str | None, conversat
         raise ApiError(422, "validation", "Напишите вопрос.")
     if len(text) > settings.ai_max_question_length:
         raise ApiError(422, "validation", "Вопрос длиннее 500 символов.")
+    text = mask_text(text)  # ADR-0004: ни модель, ни журнал диалогов не получают телефоны, email и адреса
 
     conv = None
     if conversation_id:
@@ -489,6 +490,7 @@ def product_draft(facts_text: str, languages: str, photos: int) -> dict:
         raise ApiError(422, "validation", "Факты длиннее 1000 символов.")
     if photos > 5:
         raise ApiError(422, "validation", "Можно добавить не больше 5 фото.")
+    facts_text = mask_text(facts_text)  # ADR-0004
 
     lines = [ln.strip(" -•\t") for ln in re.split(r"[\n;]+", facts_text) if ln.strip()]
     base = lines[0][:60]
@@ -537,8 +539,9 @@ def reply_draft(question: str, tone: str) -> dict:
     if len(q) > 500:
         raise ApiError(422, "validation", "Вопрос длиннее 500 символов.")
     warnings = ["Отправьте ответ в Kaspi сами: приложение ничего не отправляет."]
-    if PHONE_RE.search(q):
-        warnings.insert(0, "В вопросе есть номер телефона. Не вставляйте его в ответ.")
+    if contains_pii(q):
+        warnings.insert(0, "В вопросе есть личные данные покупателя (телефон, email или адрес). Их не вставляйте в ответ.")
+    q = mask_text(q)  # ADR-0004: модель видит вопрос без личных данных
     greeting = "Здравствуйте!" if tone == "polite" else "Здравствуйте."
     body = ("Спасибо за вопрос. Уточните, пожалуйста, что именно вас интересует, и мы подскажем."
             if tone == "polite" else "Уточните, что именно нужно, и ответим.")
