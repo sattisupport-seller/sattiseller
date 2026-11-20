@@ -40,8 +40,9 @@ def demo(client):
     return {"shop_id": body["shop_id"], "headers": headers, "refresh": body["refresh_token"]}
 
 
-def login(client, email: str) -> dict:
-    """Вход по email-коду: код берётся из папки писем (outbox), как в разработке."""
+def login(client, email: str, accept_terms: bool = True) -> dict:
+    """Вход по email-коду: код берётся из папки писем (outbox), как в разработке.
+    accept_terms — галочка условий на экране входа (1.19); по умолчанию принята, как в приложении."""
     from app.config import settings
 
     outbox = settings.outbox_dir
@@ -49,7 +50,7 @@ def login(client, email: str) -> dict:
     assert client.post("/v1/auth/email/start", json={"email": email}).status_code == 202
     new = sorted(set(outbox.glob("*.eml")) - before)
     code = new[-1].read_text(encoding="utf-8").split("Ваш код: ")[1].split()[0]
-    r = client.post("/v1/auth/email/verify", json={"email": email, "code": code})
+    r = client.post("/v1/auth/email/verify", json={"email": email, "code": code, "accept_terms": accept_terms})
     assert r.status_code == 200, r.text
     return r.json()
 

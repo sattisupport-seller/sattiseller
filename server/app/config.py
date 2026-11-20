@@ -65,6 +65,8 @@ class Settings:
     kaspi_connection_enabled: bool = False
     # QA-15: публичный адрес сайта (политика и условия по путям /privacy и /terms)
     public_base_url: str = os.environ.get("SATTI_PUBLIC_BASE_URL", "").rstrip("/")
+    # 1.19: версия условий и политики; при смене — повторное согласие всех пользователей
+    legal_version: str = os.environ.get("SATTI_LEGAL_VERSION", "2026-11-20-1")
     # Подписка (ТЗ 2.1, раздел 8–9). В разработке и до подключения магазинов приложения выключено.
     billing_enforced: bool = os.environ.get("SATTI_BILLING_ENFORCED", "0") == "1"
     # AUD-10: бесплатная бета осознанно, а не по умолчанию (блокировка выключена, пока нет оплаты)
@@ -96,6 +98,7 @@ class FeatureFlags(BaseModel):
 
 
 class AppConfig(BaseModel):
+    legal_version: str = ""  # 1.19: версия условий и политики
     min_supported_version_ios: str = "1.0.0"
     min_supported_version_android: str = "1.0.0"
     maintenance_message: str | None = None
@@ -108,6 +111,7 @@ class AppConfig(BaseModel):
 
 def get_app_config() -> AppConfig:
     cfg = AppConfig()
+    cfg.legal_version = settings.legal_version
     # адреса берутся на момент запроса: переменная может измениться без перезапуска модуля (QA-15)
     if settings.public_base_url:
         cfg.privacy_url = f"{settings.public_base_url}/privacy"

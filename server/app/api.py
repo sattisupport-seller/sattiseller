@@ -155,6 +155,7 @@ class EmailIn(BaseModel):
 class VerifyIn(BaseModel):
     email: str = Field(min_length=5, max_length=255)
     code: str = Field(min_length=6, max_length=6)
+    accept_terms: bool = False  # 1.19: галочка на экране входа
 
 
 class RefreshIn(BaseModel):
@@ -213,7 +214,10 @@ def auth_email_verify(body: VerifyIn, db: DbSession = Depends(get_session)) -> d
         created = True
     tokens = issue_tokens(db, user_id=user.id)
     db.commit()
-    return {**tokens, "user": {"id": user.id, "email": user.email}, "needs_shop_setup": created or
+    if body.accept_terms:
+        _record_terms(user)
+    db.commit()
+    return {**tokens, "user": {"id": user.id, "email": user.email}, "terms_consent_required": user.terms_version != settings.legal_version, "needs_shop_setup": created or
             db.scalar(select(Shop.id).where(Shop.owner_user_id == user.id).limit(1)) is None}
 
 
@@ -321,6 +325,12 @@ def _check_device_demo_limit(install_id: str) -> None:
         raise ApiError(429, "rate_limited", "За сутки с этого устройства создано максимум демо-магазинов. Попробуйте завтра.")
 
 
+def _record_terms(user) -> None:
+    """1.19: фиксирует согласие с текущей версией условий и политики (версия и время)."""
+    user.terms_version = settings.legal_version
+    user.terms_accepted_at = utcnow()
+
+
 def _purge_idle_demos(db: DbSession) -> None:
     # ADR-0005: демо живёт demo_lifetime_hours от создания (для записей без created_at — от последней активности)
     cutoff = utcnow() - timedelta(hours=settings.demo_lifetime_hours)
@@ -355,6 +365,17 @@ def me(principal: Principal = Depends(get_principal), db: DbSession = Depends(ge
             "age_confirmed": user.age_confirmed_at is not None}
 
 
+@api.post("/me/terms", tags=["пользователь"])
+def me_terms(body: TermsIn, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+    """1.19: согласие с текущей версией условий и политики. Без accepted=true — отказ."""
+    user = current_user(principal, db)
+    if body.accepted is not True:
+        raise ApiError(422, "validation", "Нужно принять условия и политику конфиденциальности.")
+    _record_terms(user)
+    db.commit()
+    return {"terms_version": user.terms_version, "accepted_at": user.terms_accepted_at.isoformat()}
+
+
 @api.post("/me/age-confirm", tags=["пользователь"], response_model=AgeConfirmOut)
 def age_confirm(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     """Подтверждение возраста 18+ (ADR-0004). Без него магазин не создаётся."""
@@ -384,6 +405,10 @@ def deletion_start(principal: Principal = Depends(get_principal), db: DbSession 
     db.commit()
     send_code_email(user.email, code, "delete")
     return {"status": "sent"}
+
+
+class TermsIn(BaseModel):
+    accepted: bool
 
 
 class ConfirmIn(BaseModel):
@@ -426,6 +451,8 @@ def shops_create(body: ShopIn, principal: Principal = Depends(get_principal), db
     user = current_user(principal, db)
     if user.age_confirmed_at is None:
         raise ApiError(403, "age_required", "Подтвердите, что вам 18 лет или больше.")
+    if user.terms_version != settings.legal_version:
+        raise ApiError(403, "terms_consent_required", "Примите обновлённые условия и политику конфиденциальности.")
     try:
         resolve("7d", body.timezone)
     except Exception as exc:  # noqa: BLE001
