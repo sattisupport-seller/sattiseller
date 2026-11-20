@@ -316,6 +316,7 @@ export const ru = {
     missing: 'Недостающие данные',
     confidence: 'Уверенность: {level}',
     levelHigh: 'высокая',
+    aiLabel: 'Ответ создан ИИ',
     levelMedium: 'средняя',
     levelLow: 'низкая',
     dataAt: 'Демо-данные на {time}',

@@ -319,6 +319,7 @@ export const kk: Dict = {
     missing: 'Жетпейтін деректер',
     confidence: 'Сенімділік: {level}',
     levelHigh: 'жоғары',
+    aiLabel: 'Жауап ЖИ арқылы жасалды',  // перевод требует проверки носителем языка (задача 17)
     levelMedium: 'орташа',
     levelLow: 'төмен',
     dataAt: 'Демо-деректер {time} уақытында',

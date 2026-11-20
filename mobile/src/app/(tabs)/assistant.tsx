@@ -308,6 +308,7 @@ function AnswerCard({ answer, onFlag, onUp, onDown }: { answer: AskAnswer; onFla
   const action = answer.suggestedActions[0];
   return (
     <View style={{ alignSelf: 'stretch', backgroundColor: colors.surface, borderRadius: radii.xl, borderBottomLeftRadius: 6, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, gap: spacing.md }}>
+      <Txt variant="footnote" tone="secondary">{t('assistant.aiLabel')}</Txt>
       <Txt variant="body">{answer.renderedAnswer}</Txt>
 
       {answer.evidence.length > 0 ? (

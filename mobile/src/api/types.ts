@@ -81,6 +81,7 @@ export type ImportUpload = {
 
 export type AskAnswer = {
   turnId: string;
+  generatedBy?: 'ai';  // QA-05: каждый ответ помечается
   conversationId: string;
   answerTemplate: string;
   renderedAnswer: string;
