@@ -15,6 +15,7 @@ import { ActivityIndicator, View } from 'react-native';
 // Нативный экран запуска (spec-2.1, раздел 15.2) держим, пока не загружены шрифты.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+import { setSubscriptionRequiredHandler } from '@/api/client';
 import { SessionProvider, useSession } from '@/session/SessionProvider';
 import { ToastProvider } from '@/components/ui/Overlays';
 import { useTheme } from '@/theme/useTheme';
@@ -64,6 +65,11 @@ function Shell() {
   const router = useRouter();
   const segments = useSegments();
   const { t } = useI18n();
+
+  // Сервер ответил subscription_required — показываем экран блокировки (ТЗ 2.1, 9.2).
+  useEffect(() => {
+    setSubscriptionRequiredHandler(() => router.push('/subscription-ended'));
+  }, [router]);
 
   // Смена статуса сессии (вход, выход, истёкшая сессия) — переход на стартовый маршрут.
   useEffect(() => {

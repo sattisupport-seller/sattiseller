@@ -1,6 +1,7 @@
 // Запросы данных через React Query: кэш, повторы и обновление при возврате в приложение.
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import type { components } from './schema';
 import { request } from './client';
 import type {
   AIQuota,
@@ -393,3 +394,25 @@ export function invalidateShop(qc: ReturnType<typeof useQueryClient>, shopId: st
   });
 }
 
+
+// Подписка (ТЗ 2.1, раздел 8). Состояние хранит сервер.
+type SubscriptionView = components['schemas']['SubscriptionOut'];
+
+export function useSubscription(shopId: string | null) {
+  return useQuery({
+    queryKey: ['subscription', shopId],
+    queryFn: () => request<SubscriptionView>(`/shops/${shopId}/subscription`),
+    enabled: !!shopId,
+  });
+}
+
+export function useStartTrial(shopId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => request<SubscriptionView>(`/shops/${shopId}/subscription/trial`, { method: 'POST', body: {} }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['subscription', shopId] });
+      invalidateShop(qc, shopId);
+    },
+  });
+}

@@ -25,6 +25,15 @@ let tokens: Tokens = { access: null, refresh: null };
 let onSessionLost: (() => void) | null = null;
 let acceptLanguage = 'ru';
 
+// Подписка закончилась: сервер отвечает subscription_required (ТЗ 2.1, 9.1). Экран блокировки открывает приложение.
+let onSubscriptionRequired: (() => void) | null = null;
+export function setSubscriptionRequiredHandler(fn: () => void) {
+  onSubscriptionRequired = fn;
+}
+function notifyError(body: ApiErrorBody | null) {
+  if (body?.error.code === 'subscription_required') onSubscriptionRequired?.();
+}
+
 export function setSessionLostHandler(fn: () => void) {
   onSessionLost = fn;
 }
@@ -157,6 +166,7 @@ export async function request<T>(path: string, opts: Options = {}): Promise<T> {
     } catch {
       body = null;
     }
+    notifyError(body);
     throw new ApiError(res.status, body?.error.code ?? 'http', body?.error.message ?? `HTTP ${res.status}`);
   }
   if (res.status === 204) return undefined as T;
@@ -190,6 +200,7 @@ export async function requestFile(path: string): Promise<ArrayBuffer> {
     } catch {
       body = null;
     }
+    notifyError(body);
     throw new ApiError(res.status, body?.error.code ?? 'http', body?.error.message ?? `HTTP ${res.status}`);
   }
   return res.arrayBuffer();
