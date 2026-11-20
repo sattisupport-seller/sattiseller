@@ -144,23 +144,50 @@ async function rawRequest(path: string, opts: Options): Promise<Response> {
   throw new ApiError(0, 'network', String(lastError ?? 'network'));
 }
 
-async function refreshTokens(): Promise<boolean> {
-  if (!tokens.refresh) return false;
+/** 'ok' — токены обновлены; 'rejected' — сервер отказал (сессия закончилась); сетевой сбой поднимается как исключение. */
+async function refreshTokens(): Promise<'ok' | 'rejected'> {
+  if (!tokens.refresh) return 'rejected';
   const res = await fetch(`${API_URL}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Accept-Language': acceptLanguage },
     body: JSON.stringify({ refresh_token: tokens.refresh }),
   });
-  if (!res.ok) return false;
+  if (!res.ok) return 'rejected';
   const data = (await res.json()) as { access_token: string; refresh_token: string };
   await saveTokens(data.access_token, data.refresh_token);
-  return true;
+  return 'ok';
+}
+
+// AUD-04: сервер меняет refresh-токен при каждом обновлении. Если несколько запросов получили 401 одновременно,
+// обновление должно выполниться один раз, а остальные повторить уже с новым токеном.
+let refreshing: Promise<'ok' | 'rejected'> | null = null;
+
+async function refreshOnce(usedAccess: string | null): Promise<'ok' | 'rejected'> {
+  if (tokens.access && tokens.access !== usedAccess) return 'ok'; // другой запрос уже обновил токен
+  if (!refreshing) {
+    refreshing = refreshTokens().finally(() => {
+      refreshing = null;
+    });
+  }
+  return refreshing;
+}
+
+/** Обновление сессии после 401. Сетевой сбой — ошибка сети, а не выход из аккаунта. */
+async function renewSession(usedAccess: string | null): Promise<boolean> {
+  let outcome: 'ok' | 'rejected';
+  try {
+    outcome = await refreshOnce(usedAccess);
+  } catch {
+    throw new ApiError(0, 'network', 'Нет связи с сервером. Проверьте интернет.');
+  }
+  return outcome === 'ok';
 }
 
 export async function request<T>(path: string, opts: Options = {}): Promise<T> {
+  const usedAccess = tokens.access;
   let res = await rawRequest(path, opts);
   if (res.status === 401 && opts.auth !== false) {
-    const refreshed = await refreshTokens().catch(() => false);
+    const refreshed = await renewSession(usedAccess);
     if (refreshed) {
       res = await rawRequest(path, opts);
     } else {
@@ -193,9 +220,10 @@ export async function requestBinary(path: string): Promise<ArrayBuffer> {
 
 /** Выгрузки с авторизацией (Excel, «Мои данные»): то же обновление токена, что и в request. */
 export async function requestFile(path: string): Promise<ArrayBuffer> {
+  const usedAccess = tokens.access;
   let res = await rawRequest(path, {});
   if (res.status === 401) {
-    const refreshed = await refreshTokens().catch(() => false);
+    const refreshed = await renewSession(usedAccess);
     if (!refreshed) {
       await clearSession();
       onSessionLost?.();
