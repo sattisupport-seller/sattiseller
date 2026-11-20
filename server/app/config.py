@@ -20,7 +20,7 @@ class Settings:
     code_max_attempts: int = 5
     code_requests_per_hour: int = 5
     import_requests_per_hour: int = 10
-    ai_daily_limit: int = 20
+    ai_daily_limit: int = 30  # ТЗ 2.1, раздел 11.2: вопросы и черновики вместе
     ai_max_question_length: int = 500
     import_max_bytes: int = 5 * 1024 * 1024
     import_max_rows: int = 5000
