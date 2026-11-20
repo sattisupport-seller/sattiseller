@@ -41,6 +41,25 @@ def test_unzipped_size_counts_real_bytes(client, demo, monkeypatch):
     assert r.json()["error"]["code"] == "import_too_large"
 
 
+def test_import_limit_is_not_bypassed_by_refresh(client, demo):
+    """AUD-07: каждое обновление токена создаёт новую сессию; лимит всё равно общий на установку."""
+    from app.config import settings as cfg
+
+    body = b"sku;purchase\nS1;100\n"
+    headers = demo["headers"]
+    refresh = demo["refresh"]
+    codes = []
+    for _ in range(cfg.import_requests_per_hour + 2):
+        codes.append(client.post(f"/v1/shops/{demo['shop_id']}/imports", headers=headers,
+                                 files={"file": ("a.csv", body, "text/csv")}).status_code)
+        r = client.post("/v1/auth/refresh", json={"refresh_token": refresh})
+        assert r.status_code == 200
+        refresh = r.json()["refresh_token"]
+        headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    assert codes[:cfg.import_requests_per_hour] == [201] * cfg.import_requests_per_hour
+    assert codes[-2:] == [429, 429]
+
+
 def test_normal_xlsx_still_imports(client, demo):
     r = client.post(f"/v1/shops/{demo['shop_id']}/imports", headers=demo["headers"],
                     files={"file": ("ok.xlsx", _xlsx(20), XLSX_MIME)})

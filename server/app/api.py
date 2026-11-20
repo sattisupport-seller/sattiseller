@@ -853,7 +853,8 @@ def _batch(db: DbSession, shop: Shop, batch_id: str) -> ImportBatch:
 async def import_upload(shop_id: str, file: UploadFile = File(...),
                         principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
-    key = f"imp:{principal.session_id}"
+    # AUD-07: лимит на аккаунт (или демо-установку), а не на сессию: обновление токена создаёт новую сессию
+    key = f"imp:{principal.user_id or principal.demo_install_id or principal.session_id}"
     if not allow(key, settings.import_requests_per_hour):
         raise ApiError(429, "rate_limited")
     content = await file.read(settings.import_max_bytes + 1)
