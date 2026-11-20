@@ -1,0 +1,57 @@
+{
+ "id": "e03cdf9d7d5748c38c85f9fcb4381ae6",
+ "number": "584110157",
+ "status": "in_progress",
+ "created_at": "2026-11-20T21:34:00+05:00",
+ "completed_at": null,
+ "items": [
+  {
+   "product_id": "8b19b036ee634b3b98978242a6146f04",
+   "sku": "D028",
+   "name": "Игрушка антистресс набор",
+   "qty": 1,
+   "unit_price_minor": 190000,
+   "gross_minor": 190000,
+   "commission_minor": 19000,
+   "commission_source": "демо-ставка",
+   "tax_minor": null,
+   "tax_rate_bp": null,
+   "landed_minor": 124500,
+   "cost_source": "демо",
+   "profit_minor": 1500,
+   "returns": []
+  },
+  {
+   "product_id": "fc77f13482034d71ad3bce4914562d6d",
+   "sku": "D006",
+   "name": "Гантели неопреновые 2 кг",
+   "qty": 1,
+   "unit_price_minor": 310000,
+   "gross_minor": 310000,
+   "commission_minor": 31000,
+   "commission_source": "демо-ставка",
+   "tax_minor": null,
+   "tax_rate_bp": null,
+   "landed_minor": 190500,
+   "cost_source": "демо",
+   "profit_minor": 43500,
+   "returns": []
+  },
+  {
+   "product_id": "7ce4a1ac262e4dbcaec1e50778bc8242",
+   "sku": "D024",
+   "name": "Аромадиффузор 200 мл",
+   "qty": 1,
+   "unit_price_minor": 640000,
+   "gross_minor": 640000,
+   "commission_minor": 64000,
+   "commission_source": "демо-ставка",
+   "tax_minor": null,
+   "tax_rate_bp": null,
+   "landed_minor": 372000,
+   "cost_source": "демо",
+   "profit_minor": 159000,
+   "returns": []
+  }
+ ]
+}

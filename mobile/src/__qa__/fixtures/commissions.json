@@ -1,0 +1,58 @@
+{
+ "items": [
+  {
+   "id": "fc03d0f4cf0c42ad9ea2fd0c5d13acd0",
+   "category": "Посуда",
+   "rate_bp": 1000,
+   "effective_from": null,
+   "source": "demo",
+   "verified": false,
+   "demo": true
+  },
+  {
+   "id": "d6ea362b35c249faad1e07ca01fd07cf",
+   "category": "Электроника",
+   "rate_bp": 1000,
+   "effective_from": null,
+   "source": "demo",
+   "verified": false,
+   "demo": true
+  },
+  {
+   "id": "2d84e7a676b74db8952e4a82ec5b2543",
+   "category": "Дом",
+   "rate_bp": 1000,
+   "effective_from": null,
+   "source": "demo",
+   "verified": false,
+   "demo": true
+  },
+  {
+   "id": "ad5d210a265645eb8213d43d367ba293",
+   "category": "Спорт",
+   "rate_bp": 1000,
+   "effective_from": null,
+   "source": "demo",
+   "verified": false,
+   "demo": true
+  },
+  {
+   "id": "fed873a4fca74cd392aaf90859faef97",
+   "category": "Детям",
+   "rate_bp": 1000,
+   "effective_from": null,
+   "source": "demo",
+   "verified": false,
+   "demo": true
+  },
+  {
+   "id": "5f8e21c1bdee4a8aadb7cdf9a14d1981",
+   "category": "Красота",
+   "rate_bp": 1000,
+   "effective_from": null,
+   "source": "demo",
+   "verified": false,
+   "demo": true
+  }
+ ]
+}

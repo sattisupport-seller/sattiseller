@@ -1,0 +1,15 @@
+{
+ "items": [
+  {
+   "id": "2f0f905978084b69a68869fa6c9e35f1",
+   "purchase_minor": 280000,
+   "delivery_to_warehouse_minor": 30000,
+   "packaging_minor": 0,
+   "other_minor": 0,
+   "landed_unit_minor": 310000,
+   "effective_from": null,
+   "source": "demo",
+   "cancelled": false
+  }
+ ]
+}

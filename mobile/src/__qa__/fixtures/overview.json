@@ -1,0 +1,106 @@
+{
+ "shop_id": "93e045e71843438f80c85b62a1f793b6",
+ "period": {
+  "from": "2026-11-14",
+  "to": "2026-11-20"
+ },
+ "comparison_period": {
+  "from": "2026-11-07",
+  "to": "2026-11-13"
+ },
+ "data_as_of": "2026-11-20T14:05:39.025676+00:00",
+ "is_today_in_period": true,
+ "kpi": {
+  "net_sales_minor": 5840000,
+  "net_sales_delta_bp": -6055,
+  "profit_minor": 1086500,
+  "profit_delta_bp": -6101,
+  "coverage_bp": 8579,
+  "orders_count": 44,
+  "orders_delta": 25,
+  "returns_cancels_count": 0,
+  "returns_cancels_delta": -7
+ },
+ "attention": {
+  "in_minus": [
+   {
+    "product_id": "a068f46ec004451ab26847320ef06201",
+    "sku": "D023",
+    "name": "Детский рюкзак с подсветкой",
+    "profit_minor": -106000
+   }
+  ],
+  "no_cost_count": 10,
+  "many_returns": []
+ },
+ "best_products": [
+  {
+   "product_id": "296ca301327d46f19f1f36ad9a6fb6f1",
+   "sku": "D002",
+   "name": "Органайзер для ванной",
+   "profit_minor": 567000,
+   "margin_bp": 2953
+  },
+  {
+   "product_id": "0bbcb388199d463297fc2e3d53e2726f",
+   "sku": "D012",
+   "name": "Беспроводные наушники TWS",
+   "profit_minor": 201000,
+   "margin_bp": 2716
+  },
+  {
+   "product_id": "d4edf3079cfe49b6b0dc21103edba0f2",
+   "sku": "D004",
+   "name": "Светильник ночной с датчиком",
+   "profit_minor": 159000,
+   "margin_bp": 2484
+  }
+ ],
+ "series": {
+  "days": [
+   "2026-11-14",
+   "2026-11-15",
+   "2026-11-16",
+   "2026-11-17",
+   "2026-11-18",
+   "2026-11-19",
+   "2026-11-20"
+  ],
+  "profit": [
+   461000,
+   154000,
+   68000,
+   0,
+   244500,
+   159000,
+   0
+  ],
+  "sales": [
+   2800000,
+   660000,
+   380000,
+   310000,
+   1050000,
+   640000,
+   0
+  ],
+  "prev_profit": [
+   934800,
+   1004500,
+   120000,
+   0,
+   45000,
+   -250100,
+   932100
+  ],
+  "prev_sales": [
+   4287000,
+   4025000,
+   900000,
+   520000,
+   1220000,
+   -649000,
+   4499000
+  ]
+ }
+}

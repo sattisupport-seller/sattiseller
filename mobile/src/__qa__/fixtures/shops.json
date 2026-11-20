@@ -1,0 +1,11 @@
+{
+ "items": [
+  {
+   "id": "93e045e71843438f80c85b62a1f793b6",
+   "name": "Демо-магазин",
+   "timezone": "Asia/Almaty",
+   "language": "ru",
+   "is_demo": true
+  }
+ ]
+}
