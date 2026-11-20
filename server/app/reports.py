@@ -728,6 +728,7 @@ class ProductPeriodFacts:
     cost_u: Fraction
     comm_u: Fraction
     del_u: Fraction
+    tax_u: Fraction
     complete: bool
 
 
@@ -737,7 +738,7 @@ def comparable_facts(data: ShopData, facts: list[ItemFact], period: Period) -> d
         if not f.is_sale or not _in(period, f.sale_day) and not any(_in(period, r.day) for r in f.returns):
             continue
         a = acc.setdefault(f.product_id, {"units": 0, "S": 0, "R": 0, "gross": 0, "landed": 0, "comm": 0,
-                                           "del": 0, "ok": True, "product": data.products[f.product_id]})
+                                           "del": 0, "tax": 0, "ok": True, "product": data.products[f.product_id]})
         if _in(period, f.sale_day):
             a["units"] += f.qty
             if f.complete:
@@ -746,6 +747,7 @@ def comparable_facts(data: ShopData, facts: list[ItemFact], period: Period) -> d
                 a["landed"] += f.landed or 0
                 a["comm"] += f.commission or 0
                 a["del"] += f.delivery or 0
+                a["tax"] += f.tax
             else:
                 a["ok"] = False
         for r in f.returns:
@@ -766,6 +768,7 @@ def comparable_facts(data: ShopData, facts: list[ItemFact], period: Period) -> d
             cost_u=Fraction(a["landed"], units) if units else Fraction(0),
             comm_u=Fraction(a["comm"], units) if units else Fraction(0),
             del_u=Fraction(a["del"], units) if units else Fraction(0),
+            tax_u=Fraction(a["tax"], units) if units else Fraction(0),
             complete=a["ok"],
         )
     return out
@@ -786,7 +789,7 @@ def explain_profit_change(data: ShopData, facts: list[ItemFact], a: Period, b: P
     outside_a = outside_b = 0
     contrib: dict[str, Fraction] = defaultdict(Fraction)
     comp_totals = {"volume": Fraction(0), "price": Fraction(0), "cost": Fraction(0),
-                   "commission": Fraction(0), "delivery": Fraction(0), "returns": Fraction(0)}
+                   "commission": Fraction(0), "delivery": Fraction(0), "tax": Fraction(0), "returns": Fraction(0)}
     for pid in pids:
         A = fa.get(pid)
         B = fb.get(pid)
@@ -802,28 +805,30 @@ def explain_profit_change(data: ShopData, facts: list[ItemFact], a: Period, b: P
         qA = Fraction(A.sale_units) if A else Fraction(0)
         qB = Fraction(B.sale_units) if B else Fraction(0)
         # Удельные компоненты: при q = 0 в периоде берём значения другого периода (u_A = u_B, раздел 8.4)
-        comp_a = (A.price_u, A.cost_u, A.comm_u, A.del_u) if qA else None
-        comp_b = (B.price_u, B.cost_u, B.comm_u, B.del_u) if qB else None
-        comp_a = comp_a or comp_b or (Fraction(0),) * 4
+        comp_a = (A.price_u, A.cost_u, A.comm_u, A.del_u, A.tax_u) if qA else None
+        comp_b = (B.price_u, B.cost_u, B.comm_u, B.del_u, B.tax_u) if qB else None
+        comp_a = comp_a or comp_b or (Fraction(0),) * 5
         comp_b = comp_b or comp_a
-        pA, cA, kA, dA = comp_a
-        pB, cB, kB, dB = comp_b
-        uA = pA - cA - kA - dA
+        pA, cA, kA, dA, tA = comp_a
+        pB, cB, kB, dB, tB = comp_b
+        uA = pA - cA - kA - dA - tA
         volume = (qB - qA) * uA
         price_e = (pB - pA) * qB
         cost_e = -(cB - cA) * qB
         comm_e = -(kB - kA) * qB
         del_e = -(dB - dA) * qB
+        tax_e = -(tB - tA) * qB
         ret_a = Fraction(A.return_loss) if A else Fraction(0)
         ret_b = Fraction(B.return_loss) if B else Fraction(0)
         returns_e = -(ret_b - ret_a)
-        total = volume + price_e + cost_e + comm_e + del_e + returns_e
+        total = volume + price_e + cost_e + comm_e + del_e + tax_e + returns_e
         contrib[pid] = total
         comp_totals["volume"] += volume
         comp_totals["price"] += price_e
         comp_totals["cost"] += cost_e
         comp_totals["commission"] += comm_e
         comp_totals["delivery"] += del_e
+        comp_totals["tax"] += tax_e
         comp_totals["returns"] += returns_e
         product = (A or B).product
         comparable.append({
@@ -867,7 +872,8 @@ def explain_profit_change(data: ShopData, facts: list[ItemFact], a: Period, b: P
         "effects": {
             "volume_minor": _round_fraction(comp_totals["volume"]),
             "unit_economics_minor": _round_fraction(comp_totals["price"] + comp_totals["cost"]
-                                                     + comp_totals["commission"] + comp_totals["delivery"]),
+                                                     + comp_totals["commission"] + comp_totals["delivery"]
+                                                     + comp_totals["tax"]),
             "returns_minor": _round_fraction(comp_totals["returns"]),
             "outside_comparable_minor": outside_change,
             "store_expenses_minor": store_exp_change,
