@@ -13,6 +13,8 @@ def production_config_problems() -> list[str]:
     problems: list[str] = []
     if settings.billing_pepper == "dev-only-change-me":
         problems.append("SATTI_BILLING_PEPPER не задан: используется значение разработки")
+    if settings.admin_totp_key == "dev-only-change-me":
+        problems.append("SATTI_TOTP_KEY не задан: секрет 2FA администратора шифруется ключом разработки")
     if any("localhost" in o or "127.0.0.1" in o for o in os.environ.get(
             "SATTI_CORS_ORIGINS", "http://localhost:8081,http://127.0.0.1:8081").split(",")):
         problems.append("SATTI_CORS_ORIGINS содержит localhost")
@@ -48,6 +50,8 @@ class Settings:
     billing_enforced: bool = os.environ.get("SATTI_BILLING_ENFORCED", "0") == "1"
     billing_test_mode: bool = os.environ.get("SATTI_BILLING_TEST_MODE", "0") == "1"
     billing_pepper: str = os.environ.get("SATTI_BILLING_PEPPER", "dev-only-change-me")
+    # Ключ шифрования секрета 2FA администратора в базе (O2, QA). В продакшене обязателен.
+    admin_totp_key: str = os.environ.get("SATTI_TOTP_KEY", "dev-only-change-me")
     subscription_price_text: str = "9 900 ₸ в месяц"
     # Администратор: только владелец (spec-2.1, 14.1). Пустое значение — панель закрыта.
     admin_email: str = os.environ.get("SATTI_ADMIN_EMAIL", "").strip().lower()

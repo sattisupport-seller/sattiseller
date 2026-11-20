@@ -16,6 +16,7 @@ import time
 
 from datetime import datetime, timedelta, timezone
 
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel
 from sqlalchemy import DateTime, String, Boolean, func, select
@@ -42,11 +43,11 @@ def _aware(dt: datetime | None) -> datetime | None:
 
 
 class AdminTotp(Base):
-    """Секрет двухфакторной защиты администратора. Хранится на сервере; в ответах не показывается повторно."""
+    """Секрет двухфакторной защиты администратора. В базе хранится зашифрованным (см. _seal); в ответах не показывается повторно."""
 
     __tablename__ = "admin_totp"
     user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    secret: Mapped[str] = mapped_column(String(64))
+    secret: Mapped[str] = mapped_column(String(255))  # шифротекст, не сам секрет
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -56,6 +57,25 @@ class FeatureFlag(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+# ---------- шифрование секрета в базе (Fernet, ключ из SATTI_TOTP_KEY) ----------
+
+def _fernet() -> Fernet:
+    key = base64.urlsafe_b64encode(hashlib.sha256(settings.admin_totp_key.encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def _seal(secret_b32: str) -> str:
+    return _fernet().encrypt(secret_b32.encode("ascii")).decode("ascii")
+
+
+def _open(token: str) -> str | None:
+    """Расшифровывает секрет. None — если ключ сменился или значение повреждено: 2FA нужно настроить заново."""
+    try:
+        return _fernet().decrypt(token.encode("ascii")).decode("ascii")
+    except (InvalidToken, UnicodeError, ValueError):
+        return None
 
 
 # ---------- TOTP (RFC 6238, HMAC-SHA1, 6 цифр, шаг 30 с) ----------
@@ -93,7 +113,8 @@ def require_admin(principal: Principal = Depends(get_principal), code: str | Non
     row = db.get(AdminTotp, user.id)
     if row is None or not row.enabled:
         raise ApiError(403, "two_factor_required", "Включите двухфакторную защиту администратора.")
-    if not totp_verify(row.secret, code):
+    secret = _open(row.secret)
+    if secret is None or not totp_verify(secret, code):
         raise ApiError(403, "admin_code_invalid", "Неверный код двухфакторной защиты.")
     return user
 
@@ -122,10 +143,10 @@ def two_factor_setup(principal: Principal = Depends(get_principal), db: DbSessio
         raise ApiError(409, "already_enabled", "Двухфакторная защита уже включена.")
     secret = base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
     if row is None:
-        row = AdminTotp(user_id=user.id, secret=secret, enabled=False)
+        row = AdminTotp(user_id=user.id, secret=_seal(secret), enabled=False)
         db.add(row)
     else:
-        row.secret = secret
+        row.secret = _seal(secret)
     db.commit()
     return {"secret": secret, "otpauth": f"otpauth://totp/Satti%20Admin?secret={secret}&issuer=Satti"}
 
@@ -137,7 +158,8 @@ def two_factor_enable(body: CodeIn, principal: Principal = Depends(get_principal
     row = db.get(AdminTotp, user.id)
     if row is None:
         raise ApiError(409, "not_setup", "Сначала создайте секрет: POST /admin/2fa/setup.")
-    if not totp_verify(row.secret, body.code):
+    secret = _open(row.secret)
+    if secret is None or not totp_verify(secret, body.code):
         raise ApiError(403, "admin_code_invalid", "Неверный код.")
     row.enabled = True
     db.commit()
