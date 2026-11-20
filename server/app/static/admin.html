@@ -88,6 +88,11 @@ th, td { text-align:left; border-bottom:1px solid var(--line); padding:6px 4px; 
     <p class="muted">Магазины пользователя открываются только если он разрешил доступ поддержки на 24 часа.</p>
     <div id="user-shops"></div>
   </section>
+  <section id="errors-section" hidden>
+    <h2>Ошибки</h2>
+    <p class="muted">Группы по месту и типу. Тексты очищены от персональных данных на сервере.</p>
+    <table><thead><tr><th>Где</th><th>Тип</th><th>Сообщение</th><th>Счётчик</th><th>Последний раз</th></tr></thead><tbody id="errors"></tbody></table>
+  </section>
 </main>
 
 <script>
@@ -196,9 +201,18 @@ async function showUserShops(id) {
   }
 }
 
+async function loadErrors() {
+  const r = await api("/admin/errors", { admin: true });
+  $("errors").innerHTML = r.items.map((e) =>
+    `<tr><td>${esc(e.where)}<div class="muted">${esc(e.kind)}${e.platform ? " · " + esc(e.platform) : ""}</div></td>` +
+    `<td>${esc(e.exc_type)}</td><td>${esc(e.message)}</td><td>${esc(e.count)}</td>` +
+    `<td>${esc(e.last_seen.slice(0, 16).replace("T", " "))}</td></tr>`).join("");
+  show("errors-section", true);
+}
+
 async function loadAll() {
   $("panel-error").textContent = "";
-  try { await loadStats(); await loadFlags(); await loadUsers(); }
+  try { await loadStats(); await loadFlags(); await loadUsers(); await loadErrors(); }
   catch (e) { $("panel-error").textContent = e.message; }
 }
 

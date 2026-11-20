@@ -30,6 +30,21 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.add_exception_handler(ApiError, api_error_handler)
+
+from fastapi import Request as _Request  # noqa: E402
+from .db import SessionLocal as _SessionLocal  # noqa: E402
+from .errorlog import admin_router as _err_admin, router as _err_router, unhandled_error_response  # noqa: E402
+
+
+async def _unhandled(request: _Request, exc: Exception):
+    db = _SessionLocal()
+    try:
+        return unhandled_error_response(request, exc, db)
+    finally:
+        db.close()
+
+
+app.add_exception_handler(Exception, _unhandled)
 # CORS только для веб-разработки (localhost). Нативные приложения CORS не используют.
 app.add_middleware(
     CORSMiddleware,
@@ -42,6 +57,8 @@ app.include_router(api, prefix="/v1")
 from .web import router as web_router  # noqa: E402  (страницы политики, условий, удаление аккаунта)
 
 app.include_router(web_router)
+app.include_router(_err_router, prefix="/v1")
+app.include_router(_err_admin, prefix="/v1")
 
 
 @app.get("/v1/health", tags=["служебное"])

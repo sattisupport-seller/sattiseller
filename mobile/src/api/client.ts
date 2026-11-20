@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 // HTTP-клиент: токены в защищённом хранилище (Keychain / Keystore), обновление сессии, повторы для чтения.
 import { deleteItem, getItem, setItem } from '@/lib/storage';
 
@@ -24,6 +25,15 @@ type Tokens = { access: string | null; refresh: string | null };
 let tokens: Tokens = { access: null, refresh: null };
 let onSessionLost: (() => void) | null = null;
 let acceptLanguage = 'ru';
+
+// Ошибки приложения на сервер (ТЗ 2.1, 14.4): без персональных данных, сервер маскирует текст.
+export function reportClientError(where: string, message: string) {
+  fetch(`${API_URL}/telemetry/errors`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ where: where.slice(0, 160), message: message.slice(0, 2000), exc_type: 'ClientError', platform: Platform.OS }),
+  }).catch(() => undefined);
+}
 
 // Подписка закончилась: сервер отвечает subscription_required (ТЗ 2.1, 9.1). Экран блокировки открывает приложение.
 let onSubscriptionRequired: (() => void) | null = null;

@@ -15,7 +15,7 @@ import { ActivityIndicator, View } from 'react-native';
 // Нативный экран запуска (spec-2.1, раздел 15.2) держим, пока не загружены шрифты.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-import { setSubscriptionRequiredHandler } from '@/api/client';
+import { reportClientError, setSubscriptionRequiredHandler } from '@/api/client';
 import { SessionProvider, useSession } from '@/session/SessionProvider';
 import { ToastProvider } from '@/components/ui/Overlays';
 import { useTheme } from '@/theme/useTheme';
@@ -28,6 +28,14 @@ const queryClient = new QueryClient({
 });
 
 export default function RootLayout() {
+  // Необработанные ошибки приложения уходят на сервер (ТЗ 2.1, 14.4); стандартная реакция сохраняется.
+  useEffect(() => {
+    const previous = ErrorUtils.getGlobalHandler();
+    ErrorUtils.setGlobalHandler((error, isFatal) => {
+      reportClientError('global', String((error as Error)?.message ?? error));
+      previous?.(error, isFatal);
+    });
+  }, []);
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
