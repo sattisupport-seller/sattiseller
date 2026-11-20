@@ -7,9 +7,13 @@ import {
 } from '@expo-google-fonts/inter';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
+
+// Нативный экран запуска (spec-2.1, раздел 15.2) держим, пока не загружены шрифты.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 import { SessionProvider, useSession } from '@/session/SessionProvider';
 import { ToastProvider } from '@/components/ui/Overlays';
@@ -31,6 +35,9 @@ export default function RootLayout() {
   });
   // Если шрифт не загрузился, интерфейс работает на системном шрифте (docs/design.md, 4.1).
   const ready = fontsLoaded || !!fontError;
+  useEffect(() => {
+    if (ready) SplashScreen.hideAsync().catch(() => {});
+  }, [ready]);
   return (
     <QueryClientProvider client={queryClient}>
       <SessionProvider>
