@@ -301,7 +301,17 @@ def me(principal: Principal = Depends(get_principal), db: DbSession = Depends(ge
     if principal.user_id is None:
         return {"demo": True, "email": None, "name": None, "locale": "ru"}
     user = current_user(principal, db)
-    return {"demo": False, "id": user.id, "email": user.email, "name": user.name, "locale": user.locale}
+    return {"demo": False, "id": user.id, "email": user.email, "name": user.name, "locale": user.locale,
+            "age_confirmed": user.age_confirmed_at is not None}
+
+
+@api.post("/me/age-confirm", tags=["пользователь"])
+def age_confirm(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+    """Подтверждение возраста 18+ (ADR-0004). Без него магазин не создаётся."""
+    user = current_user(principal, db)
+    user.age_confirmed_at = _now()
+    db.commit()
+    return {"age_confirmed": True}
 
 
 @api.patch("/me", tags=["пользователь"])
@@ -368,6 +378,8 @@ def shops_list(principal: Principal = Depends(get_principal), db: DbSession = De
 @api.post("/shops", status_code=201, tags=["магазины"])
 def shops_create(body: ShopIn, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     user = current_user(principal, db)
+    if user.age_confirmed_at is None:
+        raise ApiError(403, "age_required", "Подтвердите, что вам 18 лет или больше.")
     try:
         resolve("7d", body.timezone)
     except Exception as exc:  # noqa: BLE001
@@ -460,25 +472,31 @@ def get_products(shop_id: str, period: str = Query("30d"), filter: str | None = 
 
 @api.get("/shops/{shop_id}/subscription", tags=["подписка"])
 def get_subscription_state(shop_id: str, principal: Principal = Depends(get_principal),
-                           x_device_id: str | None = Header(default=None),
                            db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id, guard_access=False)
     body = subscription_view(db, shop)
-    # Пробный период доступен, если подписки у магазина не было и все отметки защиты отсутствуют (раздел 8.2).
+    # Пробный период доступен, если подписки у магазина не было и отметки защиты отсутствуют (раздел 8.2).
+    account_key = _account_key(db, principal)
     body["trial_available"] = (get_subscription(db, shop.id) is None
-                               and trial_eligible(db, principal.user_id, x_device_id, None))
+                               and trial_eligible(db, account_key, None))
     return body
+
+
+def _account_key(db: DbSession, principal: Principal) -> str | None:
+    """Ключ аккаунта для защиты пробного периода: нормализованный email."""
+    if principal.user_id is None:
+        return None
+    return current_user(principal, db).email.strip().lower()
 
 
 @api.post("/shops/{shop_id}/subscription/trial", status_code=201, tags=["подписка"])
 def post_start_trial(shop_id: str, principal: Principal = Depends(get_principal),
-                     x_device_id: str | None = Header(default=None),
                      db: DbSession = Depends(get_session)) -> dict:
     """Пробный период. В боевом режиме выдаётся только после подтверждения магазина приложений (раздел 8.2)."""
     shop = shop_for(db, principal, shop_id, guard_access=False)
     if not settings.billing_test_mode:
         raise ApiError(501, "store_not_configured", "Оформление через App Store и Google Play ещё не подключено.")
-    start_trial(db, shop, principal.user_id, x_device_id, None)
+    start_trial(db, shop, _account_key(db, principal), None)
     return subscription_view(db, shop)
 
 

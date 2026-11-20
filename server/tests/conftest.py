@@ -50,3 +50,9 @@ def login(client, email: str) -> dict:
     r = client.post("/v1/auth/email/verify", json={"email": email, "code": code})
     assert r.status_code == 200, r.text
     return r.json()
+
+
+def confirm_age(client, headers) -> None:
+    """Подтверждение 18+ перед созданием магазина (ADR-0004)."""
+    r = client.post("/v1/me/age-confirm", headers=headers)
+    assert r.status_code == 200, r.text

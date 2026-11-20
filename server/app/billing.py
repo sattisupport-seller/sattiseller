@@ -114,9 +114,15 @@ def effective_state(sub: Subscription | None, now: datetime) -> str:
     return "expired"
 
 
-def trial_eligible(db: DbSession, user_id: str | None, device_id: str | None, kaspi_key_id: str | None) -> bool:
-    """Все три отметки должны отсутствовать (ТЗ 2.1, 8.2, пункты 1–3)."""
-    checks = [("user", user_id), ("device", device_id), ("shop", kaspi_key_id)]
+def trial_eligible(db: DbSession, account_key: str | None, kaspi_key_id: str | None) -> bool:
+    """Отметки защиты пробного периода (ТЗ 2.1, 8.2, решение владельца 20.11.2026).
+
+    Телефон не используется: входа по телефону нет, а идентификатор устройства из заголовка клиент может подменить.
+    Постоянный идентификатор телефона даст DeviceCheck (iOS) и Android ID — нужны нативные модули, задача 21.
+    Отметка магазина появится при подключении Kaspi (задача 34): до этого магазин не проверяется.
+    """
+    checks = [("user", account_key), ("shop", kaspi_key_id)]
+    # account_key — нормализованный email; хеш с секретом сервера (BillingMark.key_hash)
     for kind, value in checks:
         if not value:
             continue
@@ -126,18 +132,18 @@ def trial_eligible(db: DbSession, user_id: str | None, device_id: str | None, ka
     return True
 
 
-def start_trial(db: DbSession, shop: Shop, user_id: str | None, device_id: str | None,
-                kaspi_key_id: str | None, now: datetime | None = None) -> Subscription:
-    """Пробный период 14 дней. Отметки ставятся сразу, чтобы второй пробный не выдать."""
+def start_trial(db: DbSession, shop: Shop, account_key: str | None, kaspi_key_id: str | None,
+                now: datetime | None = None) -> Subscription:
+    """Пробный период 14 дней. account_key — нормализованный email аккаунта. Отметки ставятся сразу."""
     now = now or _now()
     if get_subscription(db, shop.id) is not None:
         raise ApiError(409, "trial_used", "Подписка для этого магазина уже была.")
-    if not trial_eligible(db, user_id, device_id, kaspi_key_id):
-        raise ApiError(409, "trial_used", "Пробный период уже использован на этом телефоне или для этого магазина.")
+    if not trial_eligible(db, account_key, kaspi_key_id):
+        raise ApiError(409, "trial_used", "Пробный период уже использован для этого аккаунта или магазина.")
     sub = Subscription(shop_id=shop.id, state="trial", access_until=now + timedelta(days=TRIAL_DAYS),
                        trial_started_at=now, store="test" if settings.billing_test_mode else "none")
     db.add(sub)
-    for kind, value in (("user", user_id), ("device", device_id), ("shop", kaspi_key_id)):
+    for kind, value in (("user", account_key), ("shop", kaspi_key_id)):
         if value:
             db.add(BillingMark(kind=kind, key_hash=_hash(kind, value)))
     db.commit()

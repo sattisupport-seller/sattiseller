@@ -59,6 +59,8 @@ def test_demo_cannot_export_account_data(client, demo):
 def test_my_data_zip_contents_and_daily_limit(client):
     tokens = login(client, "exporter@example.com")
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    from tests.conftest import confirm_age
+    confirm_age(client, headers)
     created = client.post("/v1/shops", headers=headers,
                           json={"name": "Мой магазин", "timezone": "Asia/Almaty", "language": "ru"})
     assert created.status_code == 201, created.text

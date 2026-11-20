@@ -130,6 +130,8 @@ def test_login_creates_user_and_shop(client):
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     me = client.get("/v1/me", headers=headers).json()
     assert me["email"] == "seller@example.com"
+    from tests.conftest import confirm_age
+    confirm_age(client, headers)
     shop = client.post("/v1/shops", headers=headers, json={"name": "Уют дома", "timezone": "Asia/Almaty"})
     assert shop.status_code == 201
     ov = client.get(f"/v1/shops/{shop.json()['id']}/overview?period=7d", headers=headers)

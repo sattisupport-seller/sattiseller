@@ -39,6 +39,8 @@ def _account(client, email, device=None):
 
 
 def _shop(client, headers, name="Магазин"):
+    from tests.conftest import confirm_age
+    confirm_age(client, headers)
     r = client.post("/v1/shops", headers=headers, json={"name": name, "timezone": "Asia/Almaty", "language": "ru"})
     assert r.status_code == 201, r.text
     return r.json()["id"]
@@ -62,18 +64,33 @@ def test_new_shop_is_blocked_until_trial(client, enforced):
     assert state["price_text"] == "9 900 ₸ в месяц"
 
 
-def test_trial_unblocks_and_is_once_per_device(client, enforced):
-    headers = _account(client, "owner2@example.com", device="phone-1")
+def test_trial_unblocks_the_shop(client, enforced):
+    headers = _account(client, "owner2@example.com")
     shop_id = _shop(client, headers)
     trial = client.post(f"/v1/shops/{shop_id}/subscription/trial", headers=headers, json={})
     assert trial.status_code == 201, trial.text
     assert trial.json()["state"] == "trial"
     assert client.get(f"/v1/shops/{shop_id}/overview", headers=headers).status_code == 200
 
-    # другой аккаунт на том же телефоне — пробного периода нет (раздел 8.2)
-    other = _account(client, "owner3@example.com", device="phone-1")
+
+def test_device_header_does_not_change_trial_rules(client, enforced):
+    """Телефон не учитывается (решение владельца 20.11.2026): заголовок устройства ни на что не влияет."""
+    headers = _account(client, "owner3@example.com", device="phone-1")
+    shop_id = _shop(client, headers)
+    assert client.post(f"/v1/shops/{shop_id}/subscription/trial", headers=headers, json={}).status_code == 201
+    # другой аккаунт с тем же заголовком устройства получает пробный период: защиты по телефону нет
+    other = _account(client, "owner3b@example.com", device="phone-1")
     other_shop = _shop(client, other, name="Второй")
-    r = client.post(f"/v1/shops/{other_shop}/subscription/trial", headers=other, json={})
+    assert client.post(f"/v1/shops/{other_shop}/subscription/trial", headers=other, json={}).status_code == 201
+
+
+def test_same_email_cannot_get_second_trial(client, enforced):
+    headers = _account(client, "owner3c@example.com")
+    _shop(client, headers, name="Первый")
+    second = _shop(client, headers, name="Второй")
+    assert client.post(f"/v1/shops/{second}/subscription/trial", headers=headers, json={}).status_code == 201
+    third = _shop(client, headers, name="Третий")
+    r = client.post(f"/v1/shops/{third}/subscription/trial", headers=headers, json={})
     assert r.status_code == 409
     assert r.json()["error"]["code"] == "trial_used"
 
@@ -110,7 +127,7 @@ def test_access_ends_on_expiry_and_letters_follow_schedule(client, enforced, out
     with DbSession(engine) as db:
         shop = db.get(Shop, shop_id)
         # пробный период закончился сутки назад
-        billing.start_trial(db, shop, None, None, None, now=T0 - timedelta(days=15))
+        billing.start_trial(db, shop, "owner@example.com", None, now=T0 - timedelta(days=15))
         assert billing.has_access(billing.get_subscription(db, shop_id), T0) is False
 
     before = outbox_count()
@@ -131,7 +148,7 @@ def test_data_is_deleted_on_day_90_and_account_stays(client, enforced):
     shop_id = _shop(client, headers)
     with DbSession(engine) as db:
         shop = db.get(Shop, shop_id)
-        billing.start_trial(db, shop, None, None, None, now=T0 - timedelta(days=15))
+        billing.start_trial(db, shop, "owner@example.com", None, now=T0 - timedelta(days=15))
         db.add(Product(shop_id=shop_id, sku="K002", name="Товар", category="Без категории"))
         db.commit()
         done = billing.run_retention(db, now=T0 + timedelta(days=90))
@@ -147,7 +164,7 @@ def test_renewal_before_day_90_cancels_the_countdown(client, enforced):
     shop_id = _shop(client, headers)
     with DbSession(engine) as db:
         shop = db.get(Shop, shop_id)
-        billing.start_trial(db, shop, None, None, None, now=T0 - timedelta(days=15))
+        billing.start_trial(db, shop, "owner@example.com", None, now=T0 - timedelta(days=15))
         billing.run_retention(db, now=T0 + timedelta(days=60))
         billing.activate_paid(db, shop, until=T0 + timedelta(days=100), store="test", now=T0 + timedelta(days=61))
         assert billing.run_retention(db, now=T0 + timedelta(days=95)) == []
@@ -165,6 +182,6 @@ def test_export_is_blocked_after_expiry_but_my_data_is_not(client, enforced):
     shop_id = _shop(client, headers)
     with DbSession(engine) as db:
         shop = db.get(Shop, shop_id)
-        billing.start_trial(db, shop, None, None, None, now=T0 - timedelta(days=15))
+        billing.start_trial(db, shop, "owner@example.com", None, now=T0 - timedelta(days=15))
     assert client.get(f"/v1/shops/{shop_id}/exports/profit.xlsx", headers=headers).status_code == 403
     assert client.get("/v1/me/export", headers=headers).status_code == 200
