@@ -1,6 +1,7 @@
 """Админ-панель (ТЗ 2.1, раздел 14): владелец, двухфакторная защита, флаги, блокировка, доступ поддержки."""
 
 import base64
+import time
 
 import pytest
 
@@ -31,8 +32,18 @@ def _enable_2fa(client, headers):
     return secret
 
 
+_SESSIONS: dict[str, str] = {}  # секрет -> сессия панели (в тесте секреты разные)
+
+
 def _admin_headers(client, headers, secret):
-    return {**headers, "X-Admin-Code": totp_code(secret)}
+    """Сессия панели: код меняется на сессию один раз. Включение 2FA уже использовало текущий шаг,
+    поэтому берём код следующего шага (он в допуске ±30 с)."""
+    if secret not in _SESSIONS:
+        code = totp_code(secret, at=time.time() + 30)
+        r = client.post("/v1/admin/session", headers=headers, json={"code": code})
+        assert r.status_code == 200, r.text
+        _SESSIONS[secret] = r.json()["admin_session"]
+    return {**headers, "X-Admin-Session": _SESSIONS[secret]}
 
 
 def test_rfc6238_reference_vector():
@@ -53,14 +64,37 @@ def test_admin_needs_2fa_and_code(client, admin_email):
     headers = _headers(client, ADMIN)
     assert client.get("/v1/admin/stats", headers=headers).status_code == 403  # 2FA не включена
     secret = _enable_2fa(client, headers)
-    assert client.get("/v1/admin/stats", headers=headers).status_code == 403  # нет кода
-    bad = {**headers, "X-Admin-Code": "000000"}
-    r = client.get("/v1/admin/stats", headers=bad)
+    r = client.get("/v1/admin/stats", headers=headers)  # нет сессии панели
+    assert r.status_code == 403
+    assert r.json()["error"]["code"] == "admin_session_required"
+    r = client.post("/v1/admin/session", headers=headers, json={"code": "000000"})  # неверный код
     assert r.status_code == 403
     assert r.json()["error"]["code"] == "admin_code_invalid"
     ok = client.get("/v1/admin/stats", headers=_admin_headers(client, headers, secret))
     assert ok.status_code == 200
     assert set(ok.json()) >= {"users", "shops", "orders", "ai_questions", "blocked_users"}
+
+
+def test_code_is_accepted_once_and_session_expires(client, admin_email):
+    from app.admin import _session_token
+
+    headers = _headers(client, ADMIN)
+    secret = _enable_2fa(client, headers)
+    code = totp_code(secret, at=time.time() + 30)
+    first = client.post("/v1/admin/session", headers=headers, json={"code": code})
+    assert first.status_code == 200, first.text
+    # тот же код второй раз (в пределах 90 с) — отказ
+    again = client.post("/v1/admin/session", headers=headers, json={"code": code})
+    assert again.status_code == 403
+    assert again.json()["error"]["code"] == "admin_code_used"
+    token = first.json()["admin_session"]
+    assert client.get("/v1/admin/stats", headers={**headers, "X-Admin-Session": token}).status_code == 200
+    # сессия с истёкшим сроком не работает (тот же механизм подписи, срок в прошлом)
+    user_id = client.get("/v1/me", headers=headers).json()["id"]
+    expired = _session_token(user_id, int(time.time()) - 5)
+    assert client.get("/v1/admin/stats", headers={**headers, "X-Admin-Session": expired}).status_code == 403
+    # подделанная сессия не работает
+    assert client.get("/v1/admin/stats", headers={**headers, "X-Admin-Session": "9999999999.deadbeef"}).status_code == 403
 
 
 def test_flags_can_be_switched(client, admin_email):

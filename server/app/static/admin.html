@@ -105,15 +105,25 @@ let emailAddress = "";
 function show(id, on) { $(id).hidden = !on; }
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
+// Сессия панели (30 минут) хранится только в памяти вкладки; код из приложения вводится один раз на сессию.
+let adminSession = null;
+async function ensureAdminSession() {
+  if (adminSession) return;
+  const r = await api("/admin/session", { method: "POST", body: { code: $("admin-code").value.trim() } });
+  adminSession = r.admin_session;
+  setTimeout(() => { adminSession = null; }, Math.max(0, r.expires_in - 30) * 1000);
+}
+
 async function api(path, { method = "GET", body, admin = false } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = "Bearer " + token;
-  if (admin) headers["X-Admin-Code"] = $("admin-code").value.trim();
+  if (admin) { await ensureAdminSession(); headers["X-Admin-Session"] = adminSession; }
   const res = await fetch(API + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   let data = null;
   try { data = await res.json(); } catch (_) { data = null; }
   if (!res.ok) {
     const code = data && data.error ? data.error.code : "http";
+    if (code === "admin_session_required") adminSession = null;
     const msg = data && data.error ? data.error.message : "Ошибка " + res.status;
     const err = new Error(msg); err.code = code; err.status = res.status; throw err;
   }

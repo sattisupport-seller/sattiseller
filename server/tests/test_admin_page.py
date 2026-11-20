@@ -8,4 +8,5 @@ def test_admin_page_is_served_without_data(client):
     assert "Satti Admin" in r.text
     # в самой странице нет ни токенов, ни данных магазинов
     assert "Bearer " not in r.text.split("<script>")[0]
-    assert "X-Admin-Code" in r.text  # код 2FA уходит с каждым административным запросом
+    assert "X-Admin-Session" in r.text  # код 2FA меняется на сессию (AUD-15), а не уходит с каждым запросом
+    assert "X-Admin-Code" not in r.text

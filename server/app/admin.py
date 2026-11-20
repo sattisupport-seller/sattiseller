@@ -1,6 +1,7 @@
 """Админ-панель (ТЗ 2.1, раздел 14.1–14.3). Доступ — только владелец (SATTI_ADMIN_EMAIL).
 
-Каждый запрос администратора требует код двухфакторной защиты (TOTP, RFC 6238) в заголовке X-Admin-Code.
+Администратор вводит код двухфакторной защиты (TOTP, RFC 6238) один раз: POST /admin/session выдаёт сессию
+на 30 минут (заголовок X-Admin-Session). Каждый шаг кода принимается только один раз (AUD-15).
 Данные пользователя открываются только при его разрешении: POST /me/support-access даёт доступ на 24 часа.
 Панель показывает счётчики и управление; тексты диалогов ИИ и данные покупателей здесь не выводятся.
 """
@@ -19,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel
-from sqlalchemy import DateTime, String, Boolean, func, select
+from sqlalchemy import Boolean, DateTime, Integer, String, func, select
 from sqlalchemy.orm import Mapped, Session as DbSession, mapped_column
 
 from .auth import Principal, current_user, get_principal
@@ -49,6 +50,7 @@ class AdminTotp(Base):
     user_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     secret: Mapped[str] = mapped_column(String(255))  # шифротекст, не сам секрет
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_step: Mapped[int] = mapped_column(Integer, default=0)  # последний принятый шаг TOTP: код не повторяется
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -89,12 +91,54 @@ def totp_code(secret_b32: str, at: float | None = None, step: int = 30, digits: 
     return str(value % (10 ** digits)).zfill(digits)
 
 
-def totp_verify(secret_b32: str, code: str | None, at: float | None = None) -> bool:
-    """Принимает текущий код и соседние два (допуск на расхождение часов ±30 с)."""
+def totp_step_matched(secret_b32: str, code: str | None, at: float | None = None) -> int | None:
+    """Номер шага (30 с), которому соответствует код; None — код неверен.
+
+    Принимаются текущий шаг и соседние два (допуск на расхождение часов ±30 с).
+    """
     if not code or not code.isdigit() or len(code) != 6:
-        return False
+        return None
     now = at if at is not None else time.time()
-    return any(hmac.compare_digest(totp_code(secret_b32, now + shift), code) for shift in (-30, 0, 30))
+    for shift in (-30, 0, 30):
+        t = now + shift
+        if hmac.compare_digest(totp_code(secret_b32, t), code):
+            return int(t // 30)
+    return None
+
+
+def totp_verify(secret_b32: str, code: str | None, at: float | None = None) -> bool:
+    return totp_step_matched(secret_b32, code, at) is not None
+
+
+SESSION_TTL_SECONDS = 30 * 60
+
+
+def _session_token(user_id: str, expires: int) -> str:
+    from .security import hash_token
+
+    return f"{expires}.{hash_token(f'admin-session|{user_id}|{expires}')}"
+
+
+def _check_session_token(token: str | None, user_id: str) -> bool:
+    from .security import hash_token
+
+    if not token or "." not in token:
+        return False
+    exp_text, sig = token.split(".", 1)
+    try:
+        expires = int(exp_text)
+    except ValueError:
+        return False
+    if expires < int(time.time()):
+        return False
+    return hmac.compare_digest(sig, hash_token(f"admin-session|{user_id}|{expires}"))
+
+
+def _accept_new_step(row: "AdminTotp", step: int) -> None:
+    """Шаг TOTP принимается один раз: повторный код (в пределах 90 с) отклоняется."""
+    if step <= (row.last_step or 0):
+        raise ApiError(403, "admin_code_used", "Этот код уже использован. Дождитесь нового кода в приложении.")
+    row.last_step = step
 
 
 def _admin_user(principal: Principal, db: DbSession) -> User:
@@ -107,15 +151,15 @@ def _admin_user(principal: Principal, db: DbSession) -> User:
     return user
 
 
-def require_admin(principal: Principal = Depends(get_principal), code: str | None = Header(default=None, alias="X-Admin-Code"),
+def require_admin(principal: Principal = Depends(get_principal),
+                  session: str | None = Header(default=None, alias="X-Admin-Session"),
                   db: DbSession = Depends(get_session)) -> User:
     user = _admin_user(principal, db)
     row = db.get(AdminTotp, user.id)
     if row is None or not row.enabled:
         raise ApiError(403, "two_factor_required", "Включите двухфакторную защиту администратора.")
-    secret = _open(row.secret)
-    if secret is None or not totp_verify(secret, code):
-        raise ApiError(403, "admin_code_invalid", "Неверный код двухфакторной защиты.")
+    if not _check_session_token(session, user.id):
+        raise ApiError(403, "admin_session_required", "Введите код двухфакторной защиты, чтобы открыть панель.")
     return user
 
 
@@ -159,11 +203,31 @@ def two_factor_enable(body: CodeIn, principal: Principal = Depends(get_principal
     if row is None:
         raise ApiError(409, "not_setup", "Сначала создайте секрет: POST /admin/2fa/setup.")
     secret = _open(row.secret)
-    if secret is None or not totp_verify(secret, body.code):
+    step = totp_step_matched(secret, body.code) if secret is not None else None
+    if step is None:
         raise ApiError(403, "admin_code_invalid", "Неверный код.")
+    _accept_new_step(row, step)
     row.enabled = True
     db.commit()
     return {"enabled": True}
+
+
+@router.post("/session")
+def open_session(body: CodeIn, principal: Principal = Depends(get_principal),
+                 db: DbSession = Depends(get_session)) -> dict:
+    """Код двухфакторной защиты меняется на сессию на 30 минут. Один и тот же код второй раз не принимается."""
+    user = _admin_user(principal, db)
+    row = db.get(AdminTotp, user.id)
+    if row is None or not row.enabled:
+        raise ApiError(403, "two_factor_required", "Включите двухфакторную защиту администратора.")
+    secret = _open(row.secret)
+    step = totp_step_matched(secret, body.code) if secret is not None else None
+    if step is None:
+        raise ApiError(403, "admin_code_invalid", "Неверный код двухфакторной защиты.")
+    _accept_new_step(row, step)
+    db.commit()
+    expires = int(time.time()) + SESSION_TTL_SECONDS
+    return {"admin_session": _session_token(user.id, expires), "expires_in": SESSION_TTL_SECONDS}
 
 
 @router.get("/stats")

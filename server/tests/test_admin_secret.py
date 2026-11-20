@@ -22,18 +22,20 @@ def test_2fa_still_works_with_encrypted_secret(client, admin_email):
     headers = _headers(client, ADMIN)
     secret = _enable_2fa(client, headers)
     assert client.get("/v1/admin/stats", headers=_admin_headers(client, headers, secret)).status_code == 200
-    assert client.get("/v1/admin/stats", headers={**headers, "X-Admin-Code": "000000"}).status_code == 403
+    assert client.get("/v1/admin/stats", headers={**headers, "X-Admin-Session": "000"}).status_code == 403
 
 
 def test_secret_sealed_with_other_key_is_rejected(client, admin_email, monkeypatch):
+    import time as _time
+
     headers = _headers(client, ADMIN)
     secret = _enable_2fa(client, headers)
-    code = totp_code(secret)
+    code = totp_code(secret, at=_time.time() + 30)
     with Session(engine) as db:
         token = db.query(AdminTotp).one().secret
     monkeypatch.setattr(settings, "admin_totp_key", "другой-ключ")
     assert _open(token) is None  # ключ сменился → секрет не расшифровать
-    r = client.get("/v1/admin/stats", headers={**headers, "X-Admin-Code": code})
+    r = client.post("/v1/admin/session", headers=headers, json={"code": code})
     assert r.status_code == 403
     assert r.json()["error"]["code"] == "admin_code_invalid"
 
