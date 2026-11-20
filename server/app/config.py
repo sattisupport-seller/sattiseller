@@ -20,6 +20,16 @@ def production_config_problems() -> list[str]:
         problems.append("SATTI_CORS_ORIGINS содержит localhost")
     if settings.email_login_enabled:
         problems.append("SATTI_EMAIL_LOGIN=1 в продакшене: вход по коду должен быть выключен")
+    # AUD-10: критичные флаги не должны молча оставаться в состоянии разработки
+    if settings.billing_test_mode:
+        problems.append("SATTI_BILLING_TEST_MODE=1 в продакшене: пробный период выдаётся без магазина приложений")
+    if not settings.billing_enforced and not settings.free_access:
+        problems.append("блокировка по подписке выключена: задайте SATTI_BILLING_ENFORCED=1 "
+                        "или SATTI_FREE_ACCESS=1 для бесплатной беты")
+    if os.environ.get("SATTI_SCHEDULER", "0") != "1":
+        problems.append("SATTI_SCHEDULER не включён: удаление данных по хранению (90 дней) не запустится")
+    if not settings.google_client_ids and not os.environ.get("SATTI_APPLE_CLIENT_ID") and not settings.email_login_enabled:
+        problems.append("не задан ни один способ входа: SATTI_GOOGLE_CLIENT_IDS или SATTI_APPLE_CLIENT_ID")
     return problems
 
 
@@ -48,6 +58,8 @@ class Settings:
     kaspi_connection_enabled: bool = False
     # Подписка (ТЗ 2.1, раздел 8–9). В разработке и до подключения магазинов приложения выключено.
     billing_enforced: bool = os.environ.get("SATTI_BILLING_ENFORCED", "0") == "1"
+    # AUD-10: бесплатная бета осознанно, а не по умолчанию (блокировка выключена, пока нет оплаты)
+    free_access: bool = os.environ.get("SATTI_FREE_ACCESS", "0") == "1"
     billing_test_mode: bool = os.environ.get("SATTI_BILLING_TEST_MODE", "0") == "1"
     billing_pepper: str = os.environ.get("SATTI_BILLING_PEPPER", "dev-only-change-me")
     # Ключ шифрования секрета 2FA администратора в базе (O2, QA). В продакшене обязателен.
