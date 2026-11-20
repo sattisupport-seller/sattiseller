@@ -1,0 +1,102 @@
+{
+  "results": [
+    {
+      "name": "страница /privacy открывается",
+      "ok": true,
+      "detail": "200"
+    },
+    {
+      "name": "страница /privacy содержит текст и пометку черновика",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "страница /terms открывается",
+      "ok": true,
+      "detail": "200"
+    },
+    {
+      "name": "страница /terms содержит текст и пометку черновика",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "форма удаления: пустой email не отправляется (обязательное поле)",
+      "ok": true,
+      "detail": "Заполните это поле."
+    },
+    {
+      "name": "форма удаления: неизвестный адрес получает тот же ответ, что и существующий",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "админ-панель открывается",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "код входа пришёл в почтовый журнал (outbox)",
+      "ok": true,
+      "detail": "код получен"
+    },
+    {
+      "name": "без 2FA панель показывает настройку защиты (данные не открыты)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "после подтверждения 2FA открыт раздел панели",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "без кода 2FA данные не загружаются, видна ошибка",
+      "ok": true,
+      "detail": "Неверный код двухфакторной защиты."
+    },
+    {
+      "name": "с кодом 2FA загружается статистика",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "с кодом 2FA загружаются флаги",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "с кодом 2FA загружаются пользователи",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "переключение флага ИИ меняет состояние",
+      "ok": true,
+      "detail": "Выключить → Включить"
+    },
+    {
+      "name": "двойной клик «Обновить» не ломает страницу",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "панель на 390 px без горизонтальной прокрутки",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "админ-панель: значение токена не попадает в HTML страницы",
+      "ok": true,
+      "detail": "токен есть только в sessionStorage"
+    }
+  ],
+  "consoleErrors": [
+    "http://127.0.0.1:8090/privacy :: Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "http://127.0.0.1:8090/admin :: Failed to load resource: the server responded with a status of 403 (Forbidden)",
+    "http://127.0.0.1:8090/admin :: Failed to load resource: the server responded with a status of 403 (Forbidden)",
+    "http://127.0.0.1:8090/admin :: Failed to load resource: the server responded with a status of 403 (Forbidden)",
+    "http://127.0.0.1:8090/admin :: Failed to load resource: the server responded with a status of 403 (Forbidden)",
+    "http://127.0.0.1:8090/admin :: Failed to load resource: the server responded with a status of 403 (Forbidden)"
+  ]
+}

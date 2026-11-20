@@ -13,7 +13,7 @@ from pathlib import Path
 
 import markdown
 from fastapi import APIRouter, Depends, Form
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as DbSession
 
@@ -147,3 +147,9 @@ def delete_account_confirm(email: str = Form(...), code: str = Form(...),
         return _page("Не удалось", "<h1>Код неверный или истёк</h1><p><a href='/delete-account'>Начать сначала</a></p>")
     delete_user_account(db, user)
     return _page("Аккаунт удалён", "<h1>Аккаунт удалён</h1><p>Данные магазина удалены. Спасибо, что были с нами.</p>")
+
+
+@router.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    """Иконка вкладки для веб-страниц (QA: раньше отдавало 404)."""
+    return FileResponse(STATIC_DIR / "favicon.png", media_type="image/png")

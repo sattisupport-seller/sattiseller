@@ -1,0 +1,11 @@
+Дефект B1 (критичный): экран входа падает целиком, приложение в вебе показывает пустую страницу.
+Шаги воспроизведения:
+  1. Открыть веб-версию приложения (390x844) с чистым хранилищем.
+  2. На приветствии нажать «Войти по email».
+Фактический результат (до исправления), текст ошибок страницы:
+  PAGEERROR Client Id property `webClientId` must be defined to use Google auth on this platform.
+  warning: An error occurred in the <Login(./login.tsx)> component. Consider adding an error boundary...
+Причина: хук Google.useIdTokenAuthRequest вызывался безусловно и без идентификатора клиента выбрасывает исключение.
+Исправление: хук вынесен в компонент GoogleSignInButton, он рендерится только при заданных идентификаторах.
+Проверка после исправления: docs/qa/e2e/qa_app_web.js — 10 из 10, ошибок консоли 0; скриншот app-login-invalid-email.png.
+Скриншот состояния до исправления: screenshots/evidence-B1-login-crash-before-fix.png

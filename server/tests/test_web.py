@@ -52,3 +52,9 @@ def test_wrong_code_is_refused(client):
     login(client, "wrongcode@example.com")
     r = client.post("/delete-account/confirm", data={"email": "wrongcode@example.com", "code": "000000"})
     assert "Код неверный" in r.text
+
+
+def test_favicon_is_served(client):
+    r = client.get("/favicon.ico")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
