@@ -39,6 +39,10 @@ export const ru = {
     independent: 'Satti Seller — независимый сервис, не связан с Kaspi.kz',
   },
   login: {
+    acceptLabel: 'Я принимаю условия использования и политику конфиденциальности',
+    acceptFirst: 'Сначала примите условия использования и политику конфиденциальности.',
+    privacyLink: 'Политика конфиденциальности',
+    termsLink: 'Условия использования',
     title: 'Вход',
     withApple: 'Войти с Apple',
     withGoogle: 'Войти с Google',

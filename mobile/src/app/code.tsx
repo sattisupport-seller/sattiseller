@@ -14,7 +14,7 @@ export default function Code() {
   const router = useRouter();
   const { t } = useI18n();
   const { colors, spacing, radii } = useTheme();
-  const { email: emailParam } = useLocalSearchParams<{ email: string }>();
+  const { email: emailParam, accepted } = useLocalSearchParams<{ email: string; accepted?: string }>();
   const email = String(emailParam ?? '');
   const { verifyCode, requestCode } = useSession();
   const [code, setCode] = useState('');
@@ -34,7 +34,7 @@ export default function Code() {
     setBusy(true);
     setError(null);
     try {
-      await verifyCode(email, value);
+      await verifyCode(email, value, accepted === '1');  // галочка условий стояла на экране входа (1.19)
       router.replace('/');
     } catch (e) {
       setCode('');

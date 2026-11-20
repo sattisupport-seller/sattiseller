@@ -31,8 +31,8 @@ type SessionValue = {
   themeMode: ThemeMode;
   startDemo: () => Promise<void>;
   requestCode: (email: string) => Promise<void>;
-  verifyCode: (email: string, code: string) => Promise<void>;
-  signInWithIdToken: (provider: 'apple' | 'google', idToken: string, nonce?: string) => Promise<void>;
+  verifyCode: (email: string, code: string, acceptTerms?: boolean) => Promise<void>;
+  signInWithIdToken: (provider: 'apple' | 'google', idToken: string, nonce?: string, acceptTerms?: boolean) => Promise<void>;
   createShop: (name: string, timezone: string, language: Locale) => Promise<void>;
   selectShop: (id: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -123,10 +123,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setEmail(address);
   }, []);
 
-  const verifyCode = useCallback(async (address: string, code: string) => {
+  const verifyCode = useCallback(async (address: string, code: string, acceptTerms = false) => {
     const res = await request<{ access_token: string; refresh_token: string; needs_shop_setup: boolean }>(
       '/auth/email/verify',
-      { method: 'POST', auth: false, body: { email: address, code } },
+      { method: 'POST', auth: false, body: { email: address, code, accept_terms: acceptTerms } },
     );
     await saveTokens(res.access_token, res.refresh_token);
     setEmail(address);
@@ -135,10 +135,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [resolveShops]);
 
   // Вход через Apple или Google: токен провайдера проверяет сервер (ТЗ 2.1, раздел 5).
-  const signInWithIdToken = useCallback(async (provider: 'apple' | 'google', idToken: string, nonce?: string) => {
+  const signInWithIdToken = useCallback(async (provider: 'apple' | 'google', idToken: string, nonce?: string, acceptTerms = false) => {
     const res = await request<{ access_token: string; refresh_token: string; user: { email: string } }>(
       `/auth/${provider}`,
-      { method: 'POST', auth: false, body: { id_token: idToken, nonce: nonce ?? null } },
+      { method: 'POST', auth: false, body: { id_token: idToken, nonce: nonce ?? null, accept_terms: acceptTerms } },
     );
     await saveTokens(res.access_token, res.refresh_token);
     setEmail(res.user.email);
