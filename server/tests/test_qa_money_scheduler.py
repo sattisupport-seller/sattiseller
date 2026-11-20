@@ -1,6 +1,5 @@
 """QA: добор покрытия критичных модулей — округления в тенге и ежедневные задачи хранения."""
 
-import os
 from datetime import datetime, timezone
 
 import pytest

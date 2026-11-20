@@ -3,20 +3,16 @@
 Фейковые данные, тестовая база (см. conftest). Ничего не меняет вне тестов.
 """
 
-import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-import pytest
-from sqlalchemy.orm import Session as DbSession
 
 from app import ai as ai_service
 from app import auth as auth_module
 from app.config import settings
-from app.db import engine
 from app.periods import resolve
-from tests.conftest import confirm_age, login
+from tests.conftest import login
 
 
 # ---------- сессии ----------

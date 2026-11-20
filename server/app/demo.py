@@ -97,7 +97,7 @@ def _no_sales_skus() -> set[str]:
 
 
 def generate_demo(db: DbSession, anchor_date: date, seed: int = 42, shop: Shop | None = None) -> Shop:
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # nosec B311 — детерминированные демо-данные (фиксированный seed), не криптография
     tz = ZoneInfo(TZ)
     if shop is None:
         shop = Shop(is_demo=True, name="Демо-магазин", timezone=TZ, language="ru", owner_user_id=None)

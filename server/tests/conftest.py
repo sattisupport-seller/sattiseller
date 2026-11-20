@@ -57,3 +57,12 @@ def confirm_age(client, headers) -> None:
     """Подтверждение 18+ перед созданием магазина (ADR-0004)."""
     r = client.post("/v1/me/age-confirm", headers=headers)
     assert r.status_code == 200, r.text
+
+
+@pytest.fixture
+def admin_email(monkeypatch):
+    """Владелец панели для тестов админки (общая фикстура, см. test_admin.py)."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "admin_email", "boss@example.com")
+    return "boss@example.com"

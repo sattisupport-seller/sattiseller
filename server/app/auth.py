@@ -57,7 +57,7 @@ def issue_tokens(db: DbSession, *, user_id: str | None = None, demo_install_id: 
     return {
         "access_token": access,
         "refresh_token": refresh,
-        "token_type": "bearer",
+        "token_type": "bearer",  # nosec B105 — это тип токена по RFC 6750 («bearer»), не пароль
         "expires_in": settings.access_ttl_minutes * 60,
     }
 

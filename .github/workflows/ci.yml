@@ -38,8 +38,7 @@ jobs:
           python -m alembic upgrade head
           python -m alembic check
           python -m alembic downgrade base
-      - name: Статический анализ безопасности (bandit, medium и выше) — отчёт, пока не блокирует
-        continue-on-error: true  # три срабатывания разобраны в QA_REPORT.md; решение о блокировке — за владельцем
+      - name: Статический анализ безопасности (bandit, medium и выше), блокирующий
         run: python -m bandit -r app -ll
       - name: Аудит зависимостей сервера
         run: pip-audit -r requirements.txt
