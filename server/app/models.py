@@ -262,6 +262,8 @@ class AIUsageEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
     model: Mapped[str] = mapped_column(String(64), default="mock")
     tool_calls: Mapped[int] = mapped_column(Integer, default=0)
+    kind: Mapped[str] = mapped_column(String(16), default="question")  # question | draft (QA-04)
+    cost_micro_usd: Mapped[int] = mapped_column(Integer, default=0)  # стоимость вызова, миллионные доли доллара (QA-03)
 
 
 class ProductDraft(Base):

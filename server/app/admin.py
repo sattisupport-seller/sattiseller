@@ -230,6 +230,11 @@ def open_session(body: CodeIn, principal: Principal = Depends(get_principal),
     return {"admin_session": _session_token(user.id, expires), "expires_in": SESSION_TTL_SECONDS}
 
 
+def _ai_budget(db: DbSession) -> dict:
+    from .ai import budget_state  # локально: ai импортирует модели, admin — лёгкий модуль
+    return budget_state(db, _now())
+
+
 @router.get("/stats")
 def stats(_: User = Depends(require_admin), db: DbSession = Depends(get_session)) -> dict:
     """Счётчики без персональных данных (раздел 14.1)."""
@@ -241,6 +246,7 @@ def stats(_: User = Depends(require_admin), db: DbSession = Depends(get_session)
         "ai_conversations": db.scalar(select(func.count()).select_from(AIConversation)) or 0,
         "ai_questions": db.scalar(select(func.count()).select_from(AITurn)) or 0,
         "blocked_users": db.scalar(select(func.count()).select_from(User).where(User.blocked_at.is_not(None))) or 0,
+        "ai_budget": _ai_budget(db),  # расходы ИИ и уровень бюджета: ok | warn (80%) | exhausted (100%)
     }
 
 

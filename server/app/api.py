@@ -1078,6 +1078,7 @@ def ai_ask(shop_id: str, body: AskIn, principal: Principal = Depends(get_princip
         raise ApiError(403, "ai_consent_required")
     # AUD-17: проверка квоты и запись вопроса — под одной блокировкой на субъекта квоты
     with quota_guard(principal.user_id or shop.id):
+        ai_service.require_budget(db, _now())  # бюджет ИИ (QA-03)
         ai_service.check_quota(db, principal.user_id, shop.id, _now())
         result = ai_service.ask(db, shop, body.question, principal.user_id, body.conversation_id)
         db.commit()
@@ -1136,12 +1137,24 @@ def ai_feedback(body: FeedbackIn, principal: Principal = Depends(get_principal),
     return {"id": fb.id}
 
 
+def _metered_draft(db: DbSession, principal: Principal, shop: Shop, make) -> dict:
+    """Черновик ИИ: та же квота и бюджет, что у вопросов (QA-04). Списывается только успешный черновик."""
+    with quota_guard(principal.user_id or shop.id):
+        ai_service.require_budget(db, _now())
+        ai_service.check_quota(db, principal.user_id, shop.id, _now())
+        result = make()  # при ошибке ввода (422) квота не тратится
+        ai_service.record_usage(db, principal.user_id, shop.id, _now(), "draft")
+        db.commit()
+    result["generatedBy"] = "ai"  # QA-05
+    return result
+
+
 @api.post("/ai/product-drafts", status_code=201, tags=["ИИ"])
 async def ai_product_draft(shop_id: str = Form(...), facts: str = Form(...), languages: str = Form("ru"),
                            photos: list[UploadFile] = File(default=[]),
                            principal: Principal = Depends(get_principal),
                            db: DbSession = Depends(get_session)) -> dict:
-    shop_for(db, principal, shop_id)  # проверка доступа к магазину
+    shop = shop_for(db, principal, shop_id)  # проверка доступа к магазину
     require_ai(db)  # выключатель ИИ (QA-02)
     _, active = ai_consent_state(db, principal)
     if not active:
@@ -1154,7 +1167,7 @@ async def ai_product_draft(shop_id: str = Form(...), facts: str = Form(...), lan
         if not (head.startswith(b"\xff\xd8\xff") or head.startswith(b"\x89PNG") or head[:4] == b"RIFF"):
             raise ApiError(422, "validation", "Фото должно быть в формате JPG, PNG или WebP.")
     # Фото не сохраняются: читаются только для проверки формата и удаляются вместе с запросом.
-    return ai_service.product_draft(facts, languages, len(photos))
+    return await run_in_threadpool(_metered_draft, db, principal, shop, lambda: ai_service.product_draft(facts, languages, len(photos)))
 
 
 class ReplyDraftIn(BaseModel):
@@ -1165,12 +1178,12 @@ class ReplyDraftIn(BaseModel):
 @api.post("/ai/reply-drafts", status_code=201, tags=["ИИ"])
 def ai_reply_draft(body: ReplyDraftIn, shop_id: str = Query(...), principal: Principal = Depends(get_principal),
                    db: DbSession = Depends(get_session)) -> dict:
-    shop_for(db, principal, shop_id)
+    shop = shop_for(db, principal, shop_id)
     require_ai(db)  # выключатель ИИ (QA-02)
     _, active = ai_consent_state(db, principal)
     if not active:
         raise ApiError(403, "ai_consent_required")
-    return ai_service.reply_draft(body.question, body.tone)
+    return _metered_draft(db, principal, shop, lambda: ai_service.reply_draft(body.question, body.tone))
 
 
 # ---------- уведомления и Kaspi (за флагом) ----------

@@ -468,11 +468,43 @@ def ask(db: DbSession, shop: Shop, question: str, user_id: str | None, conversat
     turn = AITurn(conversation_id=conv.id, shop_id=shop.id, user_id=user_id, question=text,
                   answer_json=json.dumps(answer, ensure_ascii=False), created_at=now)
     db.add(turn)
-    db.add(AIUsageEvent(user_id=user_id, shop_id=shop.id, created_at=now, tool_calls=tools.calls))
+    record_usage(db, user_id, shop.id, now, "question", tools.calls)
     db.flush()
     answer["turnId"] = turn.id
     answer["conversationId"] = conv.id
+    answer["generatedBy"] = "ai"  # QA-05: каждый ответ помечается
     return answer
+
+
+# ---------- бюджет и учёт расходов (QA-03, ТЗ 2.1, 11.2) ----------
+
+def record_usage(db: DbSession, user_id: str | None, shop_id: str, now: datetime, kind: str, tool_calls: int = 0) -> None:
+    """Запись вызова ИИ: идёт и в квоту (вопросы и черновики вместе, QA-04), и в учёт расходов."""
+    db.add(AIUsageEvent(user_id=user_id, shop_id=shop_id, created_at=now, tool_calls=tool_calls, kind=kind,
+                        cost_micro_usd=settings.ai_cost_per_call_micro_usd))
+
+
+def budget_state(db: DbSession, now: datetime) -> dict:
+    """Расход за месяц и день (UTC-даты) относительно бюджета. level: ok | warn (80%) | exhausted (100%)."""
+    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+    day_start = datetime.combine(now.date(), datetime.min.time(), tzinfo=timezone.utc)
+    month_micro = db.scalar(select(func.coalesce(func.sum(AIUsageEvent.cost_micro_usd), 0)).where(
+        AIUsageEvent.created_at >= month_start)) or 0
+    day_micro = db.scalar(select(func.coalesce(func.sum(AIUsageEvent.cost_micro_usd), 0)).where(
+        AIUsageEvent.created_at >= day_start)) or 0
+    monthly = settings.ai_budget_monthly_usd
+    daily = monthly / 20  # ТЗ 2.1, 11.2: дневной бюджет — 1/20 месячного
+    month_usd = month_micro / 1_000_000
+    day_usd = day_micro / 1_000_000
+    ratio = max(month_usd / monthly if monthly else 1.0, day_usd / daily if daily else 1.0)
+    level = "exhausted" if ratio >= 1 else ("warn" if ratio >= 0.8 else "ok")
+    return {"monthSpentUsd": round(month_usd, 6), "monthBudgetUsd": monthly,
+            "daySpentUsd": round(day_usd, 6), "dayBudgetUsd": round(daily, 6), "level": level}
+
+
+def require_budget(db: DbSession, now: datetime) -> None:
+    if budget_state(db, now)["level"] == "exhausted":
+        raise ApiError(503, "ai_budget_exhausted", "Помощник временно недоступен. Отчёты работают как обычно.")
 
 
 def _period_json(p: Period | None) -> dict | None:
