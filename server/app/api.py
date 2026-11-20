@@ -63,6 +63,19 @@ from .periods import PeriodError, resolve, today_in
 from .billing import get_subscription, start_trial, subscription_view, trial_eligible
 from .exports import profit_filename, profit_workbook, user_export_zip
 from .ratelimit import allow
+from .schemas import (
+    AgeConfirmOut,
+    CommissionCreatedOut,
+    CommissionsOut,
+    MeOut,
+    OrderDetailOut,
+    OverviewOut,
+    ProductDetailOut,
+    ProfitBreakdownOut,
+    ShopsOut,
+    SubscriptionOut,
+    TaxOut,
+)
 from .reports import (
     build_facts,
     load_shop,
@@ -296,7 +309,7 @@ class MeIn(BaseModel):
     locale: Literal["ru", "kk"] | None = None
 
 
-@api.get("/me", tags=["пользователь"])
+@api.get("/me", tags=["пользователь"], response_model=MeOut)
 def me(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     if principal.user_id is None:
         return {"demo": True, "email": None, "name": None, "locale": "ru"}
@@ -305,7 +318,7 @@ def me(principal: Principal = Depends(get_principal), db: DbSession = Depends(ge
             "age_confirmed": user.age_confirmed_at is not None}
 
 
-@api.post("/me/age-confirm", tags=["пользователь"])
+@api.post("/me/age-confirm", tags=["пользователь"], response_model=AgeConfirmOut)
 def age_confirm(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     """Подтверждение возраста 18+ (ADR-0004). Без него магазин не создаётся."""
     user = current_user(principal, db)
@@ -366,7 +379,7 @@ class ShopIn(BaseModel):
     language: Literal["ru", "kk"] = "ru"
 
 
-@api.get("/shops", tags=["магазины"])
+@api.get("/shops", tags=["магазины"], response_model=ShopsOut)
 def shops_list(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     if principal.demo_shop_id:
         shop = db.get(Shop, principal.demo_shop_id)
@@ -415,7 +428,7 @@ def _shop_json(shop: Shop) -> dict:
 
 # ---------- отчёты ----------
 
-@api.get("/shops/{shop_id}/overview", tags=["обзор"])
+@api.get("/shops/{shop_id}/overview", tags=["обзор"], response_model=OverviewOut)
 def get_overview(shop_id: str, period: str = Query("7d"), principal: Principal = Depends(get_principal),
                  db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
@@ -423,7 +436,7 @@ def get_overview(shop_id: str, period: str = Query("7d"), principal: Principal =
     return overview(data, build_facts(data), _period(period, shop), _now())
 
 
-@api.get("/shops/{shop_id}/profit-breakdown", tags=["обзор"])
+@api.get("/shops/{shop_id}/profit-breakdown", tags=["обзор"], response_model=ProfitBreakdownOut)
 def get_profit_breakdown(shop_id: str, period: str = Query("7d"), principal: Principal = Depends(get_principal),
                          db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
@@ -440,7 +453,7 @@ def get_orders(shop_id: str, period: str = Query("7d"), status: str | None = Non
     return orders_list(data, _period(period, shop), status, q, _cursor(cursor), _limit(limit))
 
 
-@api.get("/shops/{shop_id}/orders/{order_id}", tags=["заказы"])
+@api.get("/shops/{shop_id}/orders/{order_id}", tags=["заказы"], response_model=OrderDetailOut)
 def get_order(shop_id: str, order_id: str, principal: Principal = Depends(get_principal),
               db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
@@ -470,7 +483,7 @@ def get_products(shop_id: str, period: str = Query("30d"), filter: str | None = 
 
 # ---------- подписка (ТЗ 2.1, раздел 8) ----------
 
-@api.get("/shops/{shop_id}/subscription", tags=["подписка"])
+@api.get("/shops/{shop_id}/subscription", tags=["подписка"], response_model=SubscriptionOut)
 def get_subscription_state(shop_id: str, principal: Principal = Depends(get_principal),
                            db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id, guard_access=False)
@@ -489,7 +502,7 @@ def _account_key(db: DbSession, principal: Principal) -> str | None:
     return current_user(principal, db).email.strip().lower()
 
 
-@api.post("/shops/{shop_id}/subscription/trial", status_code=201, tags=["подписка"])
+@api.post("/shops/{shop_id}/subscription/trial", status_code=201, tags=["подписка"], response_model=SubscriptionOut)
 def post_start_trial(shop_id: str, principal: Principal = Depends(get_principal),
                      db: DbSession = Depends(get_session)) -> dict:
     """Пробный период. В боевом режиме выдаётся только после подтверждения магазина приложений (раздел 8.2)."""
@@ -538,7 +551,7 @@ def export_my_data(principal: Principal = Depends(get_principal), db: DbSession 
                     headers={"Content-Disposition": f'attachment; filename="satti-moi-dannye-{stamp}.zip"'})
 
 
-@api.get("/shops/{shop_id}/products/{product_id}", tags=["товары"])
+@api.get("/shops/{shop_id}/products/{product_id}", tags=["товары"], response_model=ProductDetailOut)
 def get_product(shop_id: str, product_id: str, period: str = Query("30d"),
                 principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
@@ -682,7 +695,7 @@ class CommissionIn(BaseModel):
     effective_from: date | None = None
 
 
-@api.get("/shops/{shop_id}/commissions", tags=["комиссии"])
+@api.get("/shops/{shop_id}/commissions", tags=["комиссии"], response_model=CommissionsOut)
 def commissions_list(shop_id: str, principal: Principal = Depends(get_principal),
                      db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
@@ -692,7 +705,7 @@ def commissions_list(shop_id: str, principal: Principal = Depends(get_principal)
                        "source": r.source, "verified": r.verified, "demo": r.demo} for r in rows]}
 
 
-@api.post("/shops/{shop_id}/commissions", status_code=201, tags=["комиссии"])
+@api.post("/shops/{shop_id}/commissions", status_code=201, tags=["комиссии"], response_model=CommissionCreatedOut)
 def commissions_create(shop_id: str, body: CommissionIn, principal: Principal = Depends(get_principal),
                        db: DbSession = Depends(get_session)) -> dict:
     from decimal import Decimal, InvalidOperation
@@ -726,7 +739,7 @@ def _tax_row(t) -> dict:
             "created_at": t.created_at.isoformat()}
 
 
-@api.get("/shops/{shop_id}/tax", tags=["налог"])
+@api.get("/shops/{shop_id}/tax", tags=["налог"], response_model=TaxOut)
 def tax_get(shop_id: str, principal: Principal = Depends(get_principal),
             db: DbSession = Depends(get_session)) -> dict:
     from .models import TaxRate

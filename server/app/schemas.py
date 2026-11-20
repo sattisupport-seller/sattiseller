@@ -1,0 +1,280 @@
+"""Модели ответов API (ТЗ 2.1, задача 1). Из них OpenAPI строит типы для приложения.
+
+Деньги — целые тиыны (поля *_minor), ставки и доли — базисные пункты (поля *_bp), даты — ISO-строки.
+Модели описывают то, что реально отдают функции reports.py / billing.py / api.py.
+"""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+
+
+class PeriodOut(BaseModel):
+    from_: str = Field(alias="from")
+    to: str
+
+    model_config = {"populate_by_name": True}
+
+
+# ---------- обзор ----------
+
+class KpiOut(BaseModel):
+    net_sales_minor: int
+    net_sales_delta_bp: int | None
+    profit_minor: int
+    profit_delta_bp: int | None
+    coverage_bp: int
+    orders_count: int
+    orders_delta: int
+    returns_cancels_count: int
+    returns_cancels_delta: int
+
+
+class InMinusItem(BaseModel):
+    product_id: str
+    sku: str
+    name: str
+    profit_minor: int | None
+
+
+class ManyReturnsItem(BaseModel):
+    product_id: str
+    sku: str
+    name: str
+    returned_qty: int
+
+
+class AttentionOut(BaseModel):
+    in_minus: list[InMinusItem]
+    no_cost_count: int
+    many_returns: list[ManyReturnsItem]
+
+
+class BestProductOut(BaseModel):
+    product_id: str
+    sku: str
+    name: str
+    profit_minor: int | None
+    margin_bp: int | None
+
+
+class SeriesOut(BaseModel):
+    days: list[str]
+    profit: list[int]
+    sales: list[int]
+    prev_profit: list[int]
+    prev_sales: list[int]
+
+
+class OverviewOut(BaseModel):
+    shop_id: str
+    period: PeriodOut
+    comparison_period: PeriodOut
+    data_as_of: str
+    is_today_in_period: bool
+    kpi: KpiOut
+    attention: AttentionOut
+    best_products: list[BestProductOut]
+    series: SeriesOut
+
+
+# ---------- прибыль ----------
+
+class BreakdownStepOut(BaseModel):
+    key: str
+    minor: int
+    label: str
+    rate_bp: int | None = None
+
+
+class MissingOut(BaseModel):
+    product_id: str
+    sku: str
+    name: str
+    reason: str
+
+
+class ProfitBreakdownOut(BaseModel):
+    period: PeriodOut
+    steps: list[BreakdownStepOut]
+    coverage_bp: int
+    net_sales_all_minor: int
+    missing: list[MissingOut]
+    note: str
+
+
+# ---------- заказы ----------
+
+class ReturnOut(BaseModel):
+    day: str
+    qty: int
+    refund_minor: int
+    profit_delta_minor: int | None
+
+
+class OrderItemOut(BaseModel):
+    product_id: str
+    sku: str
+    name: str
+    qty: int
+    unit_price_minor: int
+    gross_minor: int
+    commission_minor: int | None
+    commission_source: str
+    tax_minor: int | None = None
+    tax_rate_bp: int | None = None
+    landed_minor: int | None
+    cost_source: str
+    profit_minor: int | None
+    returns: list[ReturnOut]
+
+
+class OrderDetailOut(BaseModel):
+    id: str
+    number: str
+    status: str
+    created_at: str
+    completed_at: str | None
+    items: list[OrderItemOut]
+
+
+# ---------- товары ----------
+
+class ProductRowOut(BaseModel):
+    product_id: str
+    sku: str
+    name: str
+    category: str
+    sold_qty: int
+    returned_qty: int
+    net_sales_minor: int
+    profit_minor: int | None
+    margin_bp: int | None
+    badges: list[str]
+
+
+class EconomicsOut(BaseModel):
+    avg_price_minor: int
+    landed_minor: int
+    commission_bp: int
+    commission_minor: int
+    delivery_minor: int
+    tax_minor: int | None = None
+    profit_per_unit_minor: int
+
+
+class CurrentCostOut(BaseModel):
+    purchase_minor: int
+    delivery_to_warehouse_minor: int
+    packaging_minor: int
+    other_minor: int
+    effective_from: str | None
+    source: str
+
+
+class CostHistoryOut(BaseModel):
+    id: str
+    effective_from: str | None
+    landed_unit_minor: int
+    source: str
+
+
+class ProductReturnOut(BaseModel):
+    day: str
+    qty: int
+    refund_minor: int
+    known: bool
+
+
+class DailyUnitsOut(BaseModel):
+    day: str
+    qty: int
+
+
+class ProductDetailOut(BaseModel):
+    product: ProductRowOut
+    period: PeriodOut
+    daily_units: list[DailyUnitsOut]
+    economics: EconomicsOut | None
+    current_cost: CurrentCostOut | None
+    cost_history: list[CostHistoryOut]
+    returns: list[ProductReturnOut]
+    data_complete: bool
+
+
+class MissingCostProductOut(BaseModel):
+    product_id: str
+    sku: str
+    name: str
+    category: str
+
+
+# ---------- комиссии, налог, расходы ----------
+
+class CommissionOut(BaseModel):
+    id: str
+    category: str
+    rate_bp: int
+    effective_from: str | None
+    source: str
+    verified: bool
+    demo: bool
+
+
+class CommissionsOut(BaseModel):
+    items: list[CommissionOut]
+
+
+class CommissionCreatedOut(BaseModel):
+    id: str
+    rate_bp: int
+
+
+class TaxRowOut(BaseModel):
+    id: str
+    enabled: bool
+    rate_bp: int | None
+    effective_from: str | None
+    created_at: str
+
+
+class TaxOut(BaseModel):
+    current: TaxRowOut | None
+    items: list[TaxRowOut]
+
+
+# ---------- подписка, магазины, профиль ----------
+
+class SubscriptionOut(BaseModel):
+    state: str
+    access_until: str | None
+    store: str
+    price_text: str
+    trial_days: int
+    data_delete_on: str | None
+    trial_available: bool | None = None
+
+
+class ShopOut(BaseModel):
+    id: str
+    name: str
+    timezone: str
+    language: str
+    is_demo: bool
+
+
+class ShopsOut(BaseModel):
+    items: list[ShopOut]
+
+
+class MeOut(BaseModel):
+    demo: bool
+    id: str | None = None
+    email: str | None = None
+    name: str | None = None
+    locale: str = "ru"
+    age_confirmed: bool | None = None
+
+
+class AgeConfirmOut(BaseModel):
+    age_confirmed: bool
