@@ -11,6 +11,7 @@ def good_production(monkeypatch):
     monkeypatch.setenv("SATTI_ENV", "production")
     monkeypatch.setenv("SATTI_CORS_ORIGINS", "https://seller.example.invalid")
     monkeypatch.setenv("SATTI_SCHEDULER", "1")
+    monkeypatch.setattr(settings, "public_base_url", "https://satti.example.invalid")  # QA-15
     monkeypatch.setenv("SATTI_APPLE_CLIENT_ID", "kz.satti.seller")
     monkeypatch.setattr(settings, "billing_pepper", "настоящий-перец")
     monkeypatch.setattr(settings, "admin_totp_key", "настоящий-ключ")

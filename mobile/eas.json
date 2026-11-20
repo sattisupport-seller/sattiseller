@@ -19,7 +19,11 @@
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://REPLACE-WITH-PRODUCTION-SERVER/v1",
+        "EXPO_PUBLIC_EMAIL_LOGIN": "0"
+      }
     }
   }
 }

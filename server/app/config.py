@@ -18,6 +18,8 @@ def production_config_problems() -> list[str]:
     if any("localhost" in o or "127.0.0.1" in o for o in os.environ.get(
             "SATTI_CORS_ORIGINS", "http://localhost:8081,http://127.0.0.1:8081").split(",")):
         problems.append("SATTI_CORS_ORIGINS содержит localhost")
+    if not settings.public_base_url.startswith("https://"):
+        problems.append("SATTI_PUBLIC_BASE_URL должен быть https:// (адреса политики и условий для магазинов)")
     if settings.email_login_enabled:
         problems.append("SATTI_EMAIL_LOGIN=1 в продакшене: вход по коду должен быть выключен")
     # AUD-10: критичные флаги не должны молча оставаться в состоянии разработки
@@ -59,6 +61,8 @@ class Settings:
     ai_consent_version: str = "2026-11-19"
     ai_service_name: str = "Satti AI (тестовый провайдер)"
     kaspi_connection_enabled: bool = False
+    # QA-15: публичный адрес сайта (политика и условия по путям /privacy и /terms)
+    public_base_url: str = os.environ.get("SATTI_PUBLIC_BASE_URL", "").rstrip("/")
     # Подписка (ТЗ 2.1, раздел 8–9). В разработке и до подключения магазинов приложения выключено.
     billing_enforced: bool = os.environ.get("SATTI_BILLING_ENFORCED", "0") == "1"
     # AUD-10: бесплатная бета осознанно, а не по умолчанию (блокировка выключена, пока нет оплаты)
@@ -94,10 +98,16 @@ class AppConfig(BaseModel):
     min_supported_version_android: str = "1.0.0"
     maintenance_message: str | None = None
     ai_service_name: str = settings.ai_service_name
-    privacy_url: str = "https://example.invalid/privacy"
-    terms_url: str = "https://example.invalid/terms"
+    # QA-15: адреса политики и условий — из одной переменной SATTI_PUBLIC_BASE_URL (без неё — заглушка для разработки)
+    privacy_url: str = f"{settings.public_base_url}/privacy" if settings.public_base_url else "https://example.invalid/privacy"
+    terms_url: str = f"{settings.public_base_url}/terms" if settings.public_base_url else "https://example.invalid/terms"
     flags: FeatureFlags = FeatureFlags(kaspi_connection=settings.kaspi_connection_enabled)
 
 
 def get_app_config() -> AppConfig:
-    return AppConfig()
+    cfg = AppConfig()
+    # адреса берутся на момент запроса: переменная может измениться без перезапуска модуля (QA-15)
+    if settings.public_base_url:
+        cfg.privacy_url = f"{settings.public_base_url}/privacy"
+        cfg.terms_url = f"{settings.public_base_url}/terms"
+    return cfg
