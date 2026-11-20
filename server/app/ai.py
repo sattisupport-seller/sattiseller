@@ -147,8 +147,30 @@ def _plural(n: int, one: str, few: str, many: str) -> str:
     return many
 
 
+# QA-08 / пункт 1.14: названия товаров и тексты отзывов — данные, не инструкции.
+# Перед выводом и передачей модели: без управляющих символов и переводов строк, не длиннее MAX_EXTERNAL,
+# без фигурных скобок (чтобы не выглядели как плейсхолдеры), в кавычках «...» как цитата.
+MAX_EXTERNAL = 60
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def sanitize_external(text: str | None, max_len: int = MAX_EXTERNAL) -> str:
+    t = _CONTROL.sub(" ", text or "")
+    t = t.replace("{", "(").replace("}", ")")
+    t = re.sub(r"\s+", " ", t).strip()
+    if len(t) > max_len:
+        t = t[: max_len - 1].rstrip() + "…"
+    return t
+
+
+def quote_external(text: str | None) -> str:
+    return "«" + sanitize_external(text) + "»"
+
+
 def render_value(fact: Fact, lang: str = "ru") -> str:
     v = fact.value
+    if fact.kind == "external":
+        return quote_external(str(v))
     if fact.kind == "money":
         return format_tenge(int(v))
     if fact.kind == "orders":
@@ -215,7 +237,7 @@ class MockProvider:
             if not negative:
                 plan.template = f"За {days_label} товаров в минус нет."
                 return self._done(plan, facts)
-            names = ", ".join(_mk(facts, f"minus_{i}", "text", r.product.name) for i, r in enumerate(negative[:3]))
+            names = ", ".join(_mk(facts, f"minus_{i}", "external", r.product.name) for i, r in enumerate(negative[:3]))
             plan.template = (f"За {days_label} в минус продаются товары: {names}. Всего "
                              f"{_mk(facts, 'minus_count', 'products', len(negative))}.")
             plan.suggested = [{"type": "open_product", "entityId": negative[0].product.id, "label": "Открыть товар"}]
@@ -226,7 +248,7 @@ class MockProvider:
             if not missing:
                 plan.template = "Все товары с закупочной ценой."
                 return self._done(plan, facts)
-            names = ", ".join(_mk(facts, f"nocost_{i}", "text", m["name"]) for i, m in enumerate(missing[:5]))
+            names = ", ".join(_mk(facts, f"nocost_{i}", "external", m["name"]) for i, m in enumerate(missing[:5]))
             plan.template = (f"Без закупочной цены {_mk(facts, 'nocost_count', 'products', len(missing))}"
                              f": {names}. Их прибыль не считается.")
             plan.missing = [f"У {len(missing)} товаров нет закупочной цены"]
@@ -318,12 +340,12 @@ class MockProvider:
             row = next(p for p in res["products"] if p["product_id"] == top["product_id"])
             if top["main_factor"] == "volume":
                 plan.template += (
-                    f" Главная причина — {_mk(facts, 'top_name', 'text', top['name'])}: продажи упали с "
+                    f" Главная причина — {_mk(facts, 'top_name', 'external', top['name'])}: продажи упали с "
                     f"{_mk(facts, 'units_prev', 'units', row['units_a'])} до "
                     f"{_mk(facts, 'units_now', 'units', row['units_b'])}."
                 )
             else:
-                plan.template += (f" Главная причина — {_mk(facts, 'top_name', 'text', top['name'])}: "
+                plan.template += (f" Главная причина — {_mk(facts, 'top_name', 'external', top['name'])}: "
                                   f"изменилась экономика одной продажи.")
             plan.suggested = [{"type": "open_product", "entityId": top["product_id"], "label": "Открыть товар"}]
 
@@ -343,17 +365,17 @@ class MockProvider:
             return self._done(plan, facts)
         plan.coverage_inputs = [tools.profit_summary(period).coverage_bp]
         if not s.has_cost:
-            plan.template = (f"Недостаточно данных: у товара {_mk(facts, 'name', 'text', s.product.name)} нет "
+            plan.template = (f"Недостаточно данных: у товара {_mk(facts, 'name', 'external', s.product.name)} нет "
                              f"закупочной цены, поэтому прибыль не считается.")
             plan.missing = ["Нет закупочной цены"]
             plan.suggested = [{"type": "open_product", "entityId": s.product.id, "label": "Добавить закупку"}]
             return self._done(plan, facts)
         if s.profit is None:
-            plan.template = (f"По товару {_mk(facts, 'name', 'text', s.product.name)} данных для точного расчёта "
+            plan.template = (f"По товару {_mk(facts, 'name', 'external', s.product.name)} данных для точного расчёта "
                              f"пока не хватает.")
             plan.missing = ["Неполные данные по товару"]
             return self._done(plan, facts)
-        plan.template = (f"Расчётная прибыль по товару {_mk(facts, 'name', 'text', s.product.name)} за "
+        plan.template = (f"Расчётная прибыль по товару {_mk(facts, 'name', 'external', s.product.name)} за "
                          f"{_mk(facts, 'period_days', 'text', '30 дней')} — "
                          f"{_mk(facts, 'profit', 'money', s.profit)}.")
         plan.suggested = [{"type": "open_product", "entityId": s.product.id, "label": "Открыть товар"}]
@@ -450,7 +472,7 @@ def ask(db: DbSession, shop: Shop, question: str, user_id: str | None, conversat
         "comparisonPeriod": _period_json(plan.compare),
         "dataAsOf": now.astimezone(timezone.utc).isoformat(),
         "evidence": [{"factId": f.id, "label": FACT_LABELS.get(f.label, f.label), "kind": f.kind,
-                      "value": f.value if isinstance(f.value, (int, str)) else str(f.value),
+                      "value": (sanitize_external(str(f.value)) if f.kind == "external" else (f.value if isinstance(f.value, (int, str)) else str(f.value))),
                       "text": render_value(f, plan.lang),
                       "snapshotId": snapshot_id} for f in plan.facts],
         "missingData": plan.missing,
