@@ -24,7 +24,7 @@ from .models import AIConversation, AuthCode, NotificationSettings, Shop, User
 from .ratelimit import allow
 from .security import hash_code, new_code
 
-LEGAL_DIR = Path(__file__).resolve().parents[2] / "docs" / "legal"
+LEGAL_DIR = Path(__file__).resolve().parent / "legal"  # копия текстов из docs/legal, входит в пакет
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 PAGES = {
     "privacy": ("Политика конфиденциальности", "privacy-policy-draft.md"),
