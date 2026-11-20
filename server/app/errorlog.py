@@ -23,7 +23,7 @@ from .admin import require_admin
 from .db import Base, get_session
 from .models import User
 from .privacy import mask_text
-from .ratelimit import allow
+from .ratelimit import allow, client_ip
 
 log = logging.getLogger("satti.errors")
 MAX_MESSAGE = 300
@@ -84,7 +84,7 @@ class ClientErrorIn(BaseModel):
 @router.post("/telemetry/errors", status_code=202)
 def client_error(body: ClientErrorIn, request: Request, db: DbSession = Depends(get_session)) -> dict:
     """Ошибка из приложения. Анонимно, с лимитом на адрес: 60 в час."""
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     if not allow(f"errors:{ip}", 60):
         return {"status": "throttled"}
     record_error(db, kind="client", exc_type=body.exc_type, where=body.where, message=body.message,

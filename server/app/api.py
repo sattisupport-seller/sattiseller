@@ -170,7 +170,7 @@ def auth_email_start(body: EmailIn, request: Request, db: DbSession = Depends(ge
     if not settings.email_login_enabled:
         raise ApiError(404, "not_found")
     email = _norm_email(body.email)
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     if not allow(f"code:{email}", settings.code_requests_per_hour) or not allow(f"codeip:{ip}", 20):
         raise ApiError(429, "rate_limited", "Слишком много попыток, подождите 10 минут.")
     code = new_code()
