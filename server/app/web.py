@@ -1,0 +1,142 @@
+"""Публичные страницы (ТЗ 2.1, 13.2 и 24): политика конфиденциальности, условия, веб-форма удаления аккаунта.
+
+Тексты берутся из docs/legal (черновики для юриста, помечены как черновики). Страницы — без внешних скриптов.
+Удаление через веб-форму: код на почту, затем удаление — та же логика, что в приложении (раздел 9.3).
+Ответы формы одинаковы, есть ли аккаунт, — чтобы не раскрывать регистрацию.
+"""
+
+from __future__ import annotations
+
+import html
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import markdown
+from fastapi import APIRouter, Depends, Form
+from fastapi.responses import HTMLResponse
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session as DbSession
+
+from .config import settings
+from .db import get_session
+from .mailer import send_code_email
+from .models import AIConversation, AuthCode, NotificationSettings, Shop, User
+from .ratelimit import allow
+from .security import hash_code, new_code
+
+LEGAL_DIR = Path(__file__).resolve().parents[2] / "docs" / "legal"
+PAGES = {
+    "privacy": ("Политика конфиденциальности", "privacy-policy-draft.md"),
+    "terms": ("Пользовательское соглашение", "terms-draft.md"),
+}
+
+router = APIRouter(include_in_schema=False)
+
+_STYLE = """
+:root { color-scheme: light dark; --fg:#111827; --bg:#ffffff; --muted:#6b7280; --accent:#4F46E5; --warn:#B45309; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --fg:#F3F4F6; --bg:#0F172A; --muted:#9CA3AF; --accent:#8B93FF; --warn:#FBBF24; } }
+:root[data-theme="dark"] { --fg:#F3F4F6; --bg:#0F172A; --muted:#9CA3AF; --accent:#8B93FF; --warn:#FBBF24; }
+body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 -apple-system, system-ui, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 16px; }
+h1 { font-size: 26px; } h2 { font-size: 20px; margin-top: 28px; } h3 { font-size: 17px; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 15px; }
+th, td { border: 1px solid var(--muted); padding: 6px 8px; text-align: left; vertical-align: top; }
+blockquote { margin: 16px 0; padding: 10px 14px; border-left: 4px solid var(--warn); color: var(--warn); }
+a { color: var(--accent); }
+input { font: inherit; padding: 12px; width: 100%; box-sizing: border-box; border-radius: 10px; border: 1px solid var(--muted); background: transparent; color: var(--fg); }
+button { font: inherit; padding: 12px 16px; border: 0; border-radius: 12px; background: var(--accent); color: #fff; width: 100%; }
+.note { color: var(--muted); font-size: 14px; }
+"""
+
+
+def _page(title: str, body: str) -> HTMLResponse:
+    doc = f"""<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html.escape(title)} — Satti Seller</title>
+<style>{_STYLE}</style></head>
+<body><main>{body}</main></body></html>"""
+    return HTMLResponse(doc)
+
+
+def _legal(slug: str) -> HTMLResponse:
+    title, filename = PAGES[slug]
+    path = LEGAL_DIR / filename
+    if not path.exists():
+        return _page(title, "<h1>Текст готовится</h1>")
+    text = path.read_text(encoding="utf-8")
+    return _page(title, markdown.markdown(text, extensions=["tables"]))
+
+
+@router.get("/privacy", response_class=HTMLResponse)
+def privacy_page() -> HTMLResponse:
+    return _legal("privacy")
+
+
+@router.get("/terms", response_class=HTMLResponse)
+def terms_page() -> HTMLResponse:
+    return _legal("terms")
+
+
+_FORM = """<h1>Удаление аккаунта</h1>
+<p class="note">Аккаунт и данные магазина будут удалены. Действие необратимо. Подписка при этом не отменяется автоматически:
+отмените её в App Store или Google Play.</p>
+<form method="post" action="/delete-account/start">
+  <p><label>Email аккаунта<br><input name="email" type="email" required></label></p>
+  <p><button type="submit">Прислать код на почту</button></p>
+</form>"""
+
+
+def _code_form(email: str) -> str:
+    return f"""<h1>Введите код</h1>
+<p class="note">Если аккаунт с адресом {html.escape(email)} существует, мы отправили на него код на 10 минут.</p>
+<form method="post" action="/delete-account/confirm">
+  <p><label>Email<br><input name="email" type="email" value="{html.escape(email)}" required></label></p>
+  <p><label>Код из письма<br><input name="code" inputmode="numeric" maxlength="6" required></label></p>
+  <p><button type="submit">Удалить аккаунт</button></p>
+</form>"""
+
+
+@router.get("/delete-account", response_class=HTMLResponse)
+def delete_account_page() -> HTMLResponse:
+    return _page("Удаление аккаунта", _FORM)
+
+
+@router.post("/delete-account/start", response_class=HTMLResponse)
+def delete_account_start(email: str = Form(...), db: DbSession = Depends(get_session)) -> HTMLResponse:
+    address = email.strip().lower()
+    if allow(f"webdelete:{address}", 5):
+        user = db.scalar(select(User).where(User.email == address))
+        if user is not None:
+            code = new_code()
+            db.add(AuthCode(email=user.email, purpose="delete", user_id=user.id, code_hash=hash_code(user.email, code),
+                            expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.code_ttl_minutes)))
+            db.commit()
+            send_code_email(user.email, code, "delete")
+    return _page("Введите код", _code_form(address))
+
+
+def delete_user_account(db: DbSession, user: User) -> None:
+    """Удаление аккаунта и магазинов (как в приложении, раздел 10 ТЗ)."""
+    db.execute(delete(Shop).where(Shop.owner_user_id == user.id))
+    db.execute(delete(AIConversation).where(AIConversation.user_id == user.id))
+    db.execute(delete(NotificationSettings).where(NotificationSettings.user_id == user.id))
+    db.execute(delete(User).where(User.id == user.id))
+    db.commit()
+
+
+@router.post("/delete-account/confirm", response_class=HTMLResponse)
+def delete_account_confirm(email: str = Form(...), code: str = Form(...),
+                           db: DbSession = Depends(get_session)) -> HTMLResponse:
+    address = email.strip().lower()
+    user = db.scalar(select(User).where(User.email == address))
+    if user is None or not allow(f"webdelete-confirm:{address}", 10):
+        return _page("Не удалось", "<h1>Код неверный или истёк</h1><p><a href='/delete-account'>Начать сначала</a></p>")
+    row = db.scalar(select(AuthCode).where(AuthCode.user_id == user.id, AuthCode.purpose == "delete",
+                                           AuthCode.used.is_(False)).order_by(AuthCode.expires_at.desc()))
+    from .auth import aware
+
+    if row is None or aware(row.expires_at) < datetime.now(timezone.utc) or hash_code(user.email, code.strip()) != row.code_hash:
+        return _page("Не удалось", "<h1>Код неверный или истёк</h1><p><a href='/delete-account'>Начать сначала</a></p>")
+    delete_user_account(db, user)
+    return _page("Аккаунт удалён", "<h1>Аккаунт удалён</h1><p>Данные магазина удалены. Спасибо, что были с нами.</p>")

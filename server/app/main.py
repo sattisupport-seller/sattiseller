@@ -39,6 +39,10 @@ app.add_middleware(
 )
 app.include_router(api, prefix="/v1")
 
+from .web import router as web_router  # noqa: E402  (страницы политики, условий, удаление аккаунта)
+
+app.include_router(web_router)
+
 
 @app.get("/v1/health", tags=["служебное"])
 def health() -> dict[str, str]:
