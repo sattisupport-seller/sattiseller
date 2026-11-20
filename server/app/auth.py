@@ -98,6 +98,12 @@ def shop_for(db: DbSession, principal: Principal, shop_id: str, guard_access: bo
             raise ApiError(403, "forbidden")
     elif not (principal.user_id is not None and shop.owner_user_id == principal.user_id):
         raise ApiError(403, "forbidden")
+    if not shop.is_demo:
+        from .models import User  # локально: избегаем циклического импорта
+
+        owner = db.get(User, shop.owner_user_id)
+        if owner is not None and owner.blocked_at is not None:
+            raise ApiError(403, "account_blocked", "Аккаунт заблокирован. Напишите в поддержку.")
     if guard_access:
         billing_guard(db, shop)
     return shop

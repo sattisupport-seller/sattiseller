@@ -39,6 +39,8 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     locale: Mapped[str] = mapped_column(String(8), default="ru")
     age_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # 18+ (ADR-0004)
+    blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # блокировка администратором
+    support_access_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # доступ поддержки, 24 ч
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     ai_consent_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     ai_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

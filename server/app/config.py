@@ -34,6 +34,8 @@ class Settings:
     billing_test_mode: bool = os.environ.get("SATTI_BILLING_TEST_MODE", "0") == "1"
     billing_pepper: str = os.environ.get("SATTI_BILLING_PEPPER", "dev-only-change-me")
     subscription_price_text: str = "9 900 ₸ в месяц"
+    # Администратор: только владелец (spec-2.1, 14.1). Пустое значение — панель закрыта.
+    admin_email: str = os.environ.get("SATTI_ADMIN_EMAIL", "").strip().lower()
 
 
 settings = Settings()

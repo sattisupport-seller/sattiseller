@@ -91,6 +91,11 @@ from .security import hash_code, hash_device_id, new_code
 
 api = APIRouter()
 
+from . import admin as _admin  # noqa: E402  (админ-панель и поддержка, ТЗ 2.1, раздел 14)
+
+api.include_router(_admin.router)
+api.include_router(_admin.me_router)
+
 
 def _period(name: str | None, shop: Shop) -> "Period":  # noqa: F821
     try:
