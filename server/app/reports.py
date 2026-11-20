@@ -29,6 +29,7 @@ from .models import (
     Product,
     ProductCostVersion,
     Shop,
+    TaxRate,
 )
 from .money import apply_bp, round_half_up_div
 from .periods import Period
@@ -49,6 +50,7 @@ class ShopData:
     presets: dict[str, list[CommissionPreset]]
     orders: list[Order]
     expenses: list[ExpenseEntry]
+    tax_rates: list[TaxRate] = field(default_factory=list)
 
 
 def load_shop(db: DbSession, shop: Shop) -> ShopData:
@@ -71,7 +73,12 @@ def load_shop(db: DbSession, shop: Shop) -> ShopData:
         ).order_by(Order.created_at)
     ).all()
     expenses = db.scalars(select(ExpenseEntry).where(ExpenseEntry.shop_id == shop.id)).all()
-    return ShopData(shop, ZoneInfo(shop.timezone), products, dict(versions), dict(presets), orders, expenses)
+    tax_rates = sorted(
+        db.scalars(select(TaxRate).where(TaxRate.shop_id == shop.id)).all(),
+        key=lambda t: (t.effective_from or date.min, t.created_at),
+    )
+    return ShopData(shop, ZoneInfo(shop.timezone), products, dict(versions), dict(presets), orders, expenses,
+                    tax_rates)
 
 
 def local_day(dt: datetime, tz: ZoneInfo) -> date:
@@ -95,6 +102,12 @@ def active_cost(versions: list[ProductCostVersion], day: date) -> ProductCostVer
 def rate_on(presets: list[CommissionPreset], day: date) -> CommissionPreset | None:
     applicable = [p for p in presets if p.effective_from is None or p.effective_from <= day]
     return applicable[-1] if applicable else None
+
+
+def tax_rate_bp_on(rates: list[TaxRate], day: date) -> int | None:
+    """Ставка налога на дату (ТЗ 2.1, раздел 7.1). None — налог не учитывается."""
+    applicable = [t for t in rates if t.effective_from is None or t.effective_from <= day]
+    return applicable[-1].rate_bp if applicable else None
 
 
 # ---------- факты по строкам ----------
@@ -132,6 +145,8 @@ class ItemFact:
     commission: int | None
     delivery: int | None
     returns: list[ReturnFact] = field(default_factory=list)
+    tax_rate_bp: int | None = None  # ставка налога на дату заказа; None — налог не учитывается
+    tax: int = 0  # налог с продажи строки
 
     @property
     def is_sale(self) -> bool:
@@ -140,6 +155,14 @@ class ItemFact:
     @property
     def complete(self) -> bool:
         return self.is_sale and self.sale_profit is not None and all(r.known for r in self.returns)
+
+
+def _tax_on_return(refund: int | None, rates: list[TaxRate], day: date) -> int:
+    """Налог, возвращённый с суммы возврата; округляется отдельно (ТЗ 2.1, раздел 7.1)."""
+    rate = tax_rate_bp_on(rates, day)
+    if rate is None or refund is None:
+        return 0
+    return apply_bp(refund, rate)
 
 
 def build_facts(data: ShopData) -> list[ItemFact]:
@@ -155,6 +178,7 @@ def build_facts(data: ShopData) -> list[ItemFact]:
             unit_cost = unit_cost_on(data.versions.get(product.id, []), basis_day)
             cost_version = active_cost(data.versions.get(product.id, []), basis_day)
             preset = rate_on(data.presets.get(product.category, []), basis_day)
+            tax_rate = tax_rate_bp_on(data.tax_rates, basis_day)
             rate = item.commission_rate_bp if item.commission_rate_bp is not None else (
                 preset.rate_bp if preset else None
             )
@@ -169,6 +193,7 @@ def build_facts(data: ShopData) -> list[ItemFact]:
                 buyer_delivery_minor=item.buyer_delivery_minor,
                 commission_rate_bp=rate,
                 returns=[],
+                tax_rate_bp=tax_rate,
             )
             sale = sale_result(line)
             returns: list[ReturnFact] = []
@@ -180,6 +205,8 @@ def build_facts(data: ShopData) -> list[ItemFact]:
                     delivery_returned_minor=ev.delivery_returned_minor,
                     reverse_delivery_minor=ev.reverse_delivery_minor,
                     goods_sellable=ev.goods_sellable,
+                    tax_returned_minor=_tax_on_return(ev.refund_minor, data.tax_rates,
+                                                      local_day(ev.confirmed_at, data.tz)),
                 )
                 known = return_is_known(raw)
                 delta = return_profit_delta(line, raw) if item.returns else None
@@ -200,7 +227,7 @@ def build_facts(data: ShopData) -> list[ItemFact]:
                 cost_source=cost_version.source if cost_version else None,
                 sale_profit=sale.profit_minor, landed=sale.landed_minor,
                 commission=sale.commission_minor, delivery=sale.delivery_minor,
-                returns=returns,
+                returns=returns, tax_rate_bp=tax_rate, tax=sale.tax_minor,
             ))
     return facts
 
@@ -230,6 +257,9 @@ class Metrics:
     recovered_c: int = 0
     comm_returned_c: int = 0
     extra_delivery_c: int = 0
+    tax_c: int = 0  # налог с продаж полного набора
+    tax_returned_c: int = 0  # налог, возвращённый с возвратов полного набора
+    tax_rates_seen: set[int] = field(default_factory=set)  # ставки, применённые в периоде
     day_net: dict[date, int] = field(default_factory=lambda: defaultdict(int))
     day_profit: dict[date, int] = field(default_factory=lambda: defaultdict(int))
     day_units: dict[date, int] = field(default_factory=lambda: defaultdict(int))
@@ -265,6 +295,9 @@ def metrics_for(facts: list[ItemFact], orders: list[Order], tz: ZoneInfo, period
                 m.landed_c += f.landed or 0
                 m.commission_c += f.commission or 0
                 m.delivery_c += f.delivery or 0
+                m.tax_c += f.tax
+                if f.tax_rate_bp is not None:
+                    m.tax_rates_seen.add(f.tax_rate_bp)
                 m.profit += f.sale_profit or 0
                 m.day_profit[f.sale_day] += f.sale_profit or 0
         for r in f.returns:
@@ -281,6 +314,7 @@ def metrics_for(facts: list[ItemFact], orders: list[Order], tz: ZoneInfo, period
                     m.recovered_c += f.unit_cost * raw.returned_qty
                 m.comm_returned_c += raw.commission_returned_minor or 0
                 m.extra_delivery_c += (raw.reverse_delivery_minor or 0) - (raw.delivery_returned_minor or 0)
+                m.tax_returned_c += raw.tax_returned_minor
                 m.profit += r.delta or 0
                 m.day_profit[r.day] += r.delta or 0
 
@@ -439,6 +473,8 @@ def profit_breakdown(data: ShopData, facts: list[ItemFact], period: Period) -> d
     landed_net = m.landed_c - m.recovered_c
     comm_net = m.commission_c - m.comm_returned_c
     del_net = m.delivery_c + m.extra_delivery_c
+    tax_net = m.tax_c - m.tax_returned_c
+    tax_applied = bool(m.tax_rates_seen) or m.tax_returned_c != 0
     store_profit = m.profit - exp["ads"] - exp["other"]
     missing = [
         {"product_id": s.product.id, "sku": s.product.sku, "name": s.product.name,
@@ -446,23 +482,42 @@ def profit_breakdown(data: ShopData, facts: list[ItemFact], period: Period) -> d
         for s in product_stats(data, facts, period).values()
         if s.sold_qty and not s.complete
     ]
+    steps = [
+        {"key": "net_sales", "minor": m.net_complete, "label": "Чистые продажи (полный набор)"},
+        {"key": "cost", "minor": -landed_net, "label": "Себестоимость"},
+        {"key": "commission", "minor": -comm_net, "label": "Комиссия"},
+        {"key": "delivery", "minor": -del_net, "label": "Доставка покупателю"},
+    ]
+    if tax_applied:
+        # Строка налога — только если ставка задана (ТЗ 2.1, раздел 7.2).
+        rates = sorted(m.tax_rates_seen)
+        label = f"Налог ({_pct_label(rates[0])}%)" if len(rates) == 1 else "Налог"
+        steps.append({"key": "tax", "minor": -tax_net, "label": label, "rate_bp": rates[0] if len(rates) == 1 else None})
+    steps += [
+        {"key": "product_profit", "minor": m.profit, "label": "Прибыль по товарам"},
+        {"key": "ads", "minor": -exp["ads"], "label": "Реклама"},
+        {"key": "other_expenses", "minor": -exp["other"], "label": "Прочие расходы магазина"},
+        {"key": "store_profit", "minor": store_profit, "label": "Прибыль магазина"},
+    ]
     return {
         "period": {"from": period.start.isoformat(), "to": period.end.isoformat()},
-        "steps": [
-            {"key": "net_sales", "minor": m.net_complete, "label": "Чистые продажи (полный набор)"},
-            {"key": "cost", "minor": -landed_net, "label": "Себестоимость"},
-            {"key": "commission", "minor": -comm_net, "label": "Комиссия"},
-            {"key": "delivery", "minor": -del_net, "label": "Доставка покупателю"},
-            {"key": "product_profit", "minor": m.profit, "label": "Прибыль по товарам"},
-            {"key": "ads", "minor": -exp["ads"], "label": "Реклама"},
-            {"key": "other_expenses", "minor": -exp["other"], "label": "Прочие расходы магазина"},
-            {"key": "store_profit", "minor": store_profit, "label": "Прибыль магазина"},
-        ],
+        "steps": steps,
         "coverage_bp": m.coverage_bp,
         "net_sales_all_minor": m.net_sales,
         "missing": missing,
-        "note": "Расчётная прибыль до налогов. Не является бухгалтерской отчётностью.",
+        "note": (
+            "Расчётная прибыль после налога по вашей ставке. Не является бухгалтерской отчётностью."
+            if tax_applied else "Расчётная прибыль до налогов. Не является бухгалтерской отчётностью."
+        ),
     }
+
+
+def _pct_label(bp: int) -> str:
+    """Ставка в базисных пунктах → проценты для подписи: 400 → «4», 150 → «1,5»."""
+    from decimal import Decimal
+
+    text = format((Decimal(bp) / Decimal(100)).normalize(), "f")
+    return text.replace(".", ",")
 
 
 def orders_list(data: ShopData, period: Period, status: str | None, query: str | None,
@@ -525,6 +580,9 @@ def order_detail(data: ShopData, facts: list[ItemFact], order: Order) -> dict:
             "gross_minor": f.gross,
             "commission_minor": f.commission,
             "commission_source": _rate_label(f.rate_source),
+            # налог показываем только если ставка задана на дату заказа (ТЗ 2.1, раздел 7.2)
+            "tax_minor": f.tax if f.tax_rate_bp is not None else None,
+            "tax_rate_bp": f.tax_rate_bp,
             "landed_minor": f.landed,
             "cost_source": _cost_label(f.cost_source),
             "profit_minor": f.sale_profit,
@@ -618,6 +676,8 @@ def product_detail(data: ShopData, facts: list[ItemFact], product: Product, peri
                                                sum(f.gross for f in done)),
             "commission_minor": round_half_up_div(sum(f.commission or 0 for f in done), units),
             "delivery_minor": round_half_up_div(sum(f.delivery or 0 for f in done), units),
+            "tax_minor": (round_half_up_div(sum(f.tax for f in done), units)
+                          if any(f.tax_rate_bp is not None for f in done) else None),
             "profit_per_unit_minor": round_half_up_div(sum(f.sale_profit or 0 for f in done), units),
         }
     returns_hist = [

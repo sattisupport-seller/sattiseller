@@ -256,6 +256,30 @@ class MockProvider:
                                  f"{_mk(facts, 'orders', 'orders', n)}.")
             return self._done(plan, facts)
 
+        # Налог (ТЗ 2.1, раздел 7.5, вопрос 13): ставка задана — сумма; не задана — честно и действие.
+        if re.search(r"налог", q):
+            period = tools.period("previous_month")
+            plan.period = period
+            res = tools.profit_summary(period)
+            if res.tax_c or res.tax_rates_seen or res.tax_returned_c:
+                plan.coverage_inputs = [res.coverage_bp]
+                plan.template = (f"За {_mk(facts, 'period', 'text', _fmt_period(period))} налог — "
+                                 f"{_mk(facts, 'tax', 'money', res.tax_c - res.tax_returned_c)}.")
+            else:
+                plan.template = "Ставка налога не задана. Её можно указать в настройках налога."
+                plan.suggested = [{"type": "open_tax_settings", "label": "Задать ставку налога"}]
+            return self._done(plan, facts)
+
+        # Вопрос 14: «прошлая неделя» — понедельник–воскресенье
+        if re.search(r"прошл\w* недел", q) and re.search(r"заработ|прибыл", q):
+            period = tools.period("previous_week")
+            plan.period = period
+            res = tools.profit_summary(period)
+            plan.coverage_inputs = [res.coverage_bp]
+            plan.template = (f"За {_mk(facts, 'period', 'text', _fmt_period(period))} прибыль по полным данным — "
+                             f"{_mk(facts, 'profit', 'money', res.profit)}.")
+            return self._done(plan, facts)
+
         if re.search(r"прошл\w* месяц", q) and re.search(r"заработ|прибыл", q):
             period = tools.period("previous_month")
             plan.period = period

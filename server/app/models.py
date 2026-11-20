@@ -141,6 +141,17 @@ class CommissionPreset(Base):
     demo: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class TaxRate(Base):
+    """Версия ставки налога магазина (ТЗ 2.1, раздел 7). rate_bp = None — налог выключен с этой даты."""
+
+    __tablename__ = "tax_rates"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id", ondelete="CASCADE"), index=True)
+    rate_bp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    effective_from: Mapped[date | None] = mapped_column(Date, nullable=True)  # None — ко всей истории
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class Order(Base):
     __tablename__ = "orders"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)

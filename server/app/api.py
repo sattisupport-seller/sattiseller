@@ -627,6 +627,55 @@ def commissions_create(shop_id: str, body: CommissionIn, principal: Principal = 
     return {"id": preset.id, "rate_bp": preset.rate_bp}
 
 
+# ---------- налог (ТЗ 2.1, раздел 7) ----------
+
+class TaxIn(BaseModel):
+    enabled: bool
+    rate_percent: str | None = None  # "4", "1,5"; от 0 до 30 с одним знаком после запятой
+    effective_from: date | None = None  # None — ко всей истории
+
+
+def _tax_row(t) -> dict:
+    return {"id": t.id, "enabled": t.rate_bp is not None,
+            "rate_bp": t.rate_bp,
+            "effective_from": t.effective_from.isoformat() if t.effective_from else None,
+            "created_at": t.created_at.isoformat()}
+
+
+@api.get("/shops/{shop_id}/tax", tags=["налог"])
+def tax_get(shop_id: str, principal: Principal = Depends(get_principal),
+            db: DbSession = Depends(get_session)) -> dict:
+    from .models import TaxRate
+
+    shop = shop_for(db, principal, shop_id)
+    rows = db.scalars(select(TaxRate).where(TaxRate.shop_id == shop.id)).all()
+    rows = sorted(rows, key=lambda t: (t.effective_from or date.min, t.created_at), reverse=True)
+    return {"current": _tax_row(rows[0]) if rows else None, "items": [_tax_row(t) for t in rows]}
+
+
+@api.post("/shops/{shop_id}/tax", status_code=201, tags=["налог"])
+def tax_set(shop_id: str, body: TaxIn, principal: Principal = Depends(get_principal),
+            db: DbSession = Depends(get_session)) -> dict:
+    from decimal import Decimal, InvalidOperation
+
+    from .models import TaxRate
+
+    shop = shop_for(db, principal, shop_id)
+    rate_bp: int | None = None
+    if body.enabled:
+        try:
+            pct = Decimal((body.rate_percent or "").replace(",", ".").strip())
+        except InvalidOperation as exc:
+            raise ApiError(422, "validation", "Укажите ставку в процентах.") from exc
+        if pct < 0 or pct > 30 or (pct * 10) != (pct * 10).to_integral_value():
+            raise ApiError(422, "validation", "Ставка от 0 до 30% с одним знаком после запятой.")
+        rate_bp = int(pct * 100)
+    row = TaxRate(shop_id=shop.id, rate_bp=rate_bp, effective_from=body.effective_from)
+    db.add(row)
+    db.commit()
+    return _tax_row(row)
+
+
 class ExpenseIn(BaseModel):
     kind: Literal["ads", "other"]
     amount: str

@@ -72,4 +72,8 @@ def resolve(name: str, tz_name: str, now: datetime | None = None) -> Period:
         first_this = today.replace(day=1)
         last_prev = first_this - timedelta(days=1)
         return Period(last_prev.replace(day=1), last_prev)
+    if name == "previous_week":
+        # понедельник–воскресенье прошлой недели по часовому поясу магазина (ТЗ 2.1, раздел 3)
+        this_monday = today - timedelta(days=today.weekday())
+        return Period(this_monday - timedelta(days=7), this_monday - timedelta(days=1))
     raise PeriodError(f"неизвестный период: {name}")

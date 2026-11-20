@@ -5,13 +5,17 @@
   landed_i     = себестоимость единицы × количество
   commission_i = round_half_up(gross_i × rate_bp / 10000)
   delivery_i   = доставка покупателю (за счёт продавца), на строку
-  sale_profit  = gross − landed − commission − delivery
+  tax_i        = round_half_up(gross_i × tax_bp / 10000), ставка на дату заказа (ТЗ 2.1, раздел 7);
+                 если ставка не задана — налога нет (0)
+  sale_profit  = gross − landed − commission − delivery − tax
 
 Возврат (относится к дате подтверждения возврата):
   refund        — возврат покупателю (уменьшает чистые продажи)
+  tax_returned  = round_half_up(refund × tax_bp / 10000) на дату возврата (ТЗ 2.1, раздел 7.1)
   profit_delta  = −refund
                   + landed возвращённого товара (если товар годен)
                   + возвращённая комиссия
+                  + возвращённый налог
                   − (обратная доставка − возвращённая доставка)
 
 Если какой-либо компонент неизвестен, прибыль = None (unknown): строка
@@ -36,6 +40,7 @@ class Return:
     delivery_returned_minor: Optional[int]
     reverse_delivery_minor: Optional[int]
     goods_sellable: Optional[bool]
+    tax_returned_minor: int = 0  # налог, возвращённый с суммы возврата (0, если налога нет)
 
 
 @dataclass(frozen=True)
@@ -47,6 +52,7 @@ class SaleLine:
     buyer_delivery_minor: Optional[int]  # доставка покупателю за строку; None — неизвестна
     commission_rate_bp: Optional[int]  # None — ставка неизвестна
     returns: list[Return] = field(default_factory=list)
+    tax_rate_bp: Optional[int] = None  # None — налог не учитывается
 
 
 @dataclass(frozen=True)
@@ -56,6 +62,7 @@ class SaleResult:
     commission_minor: Optional[int]
     delivery_minor: Optional[int]
     profit_minor: Optional[int]
+    tax_minor: int = 0
 
     @property
     def is_complete(self) -> bool:
@@ -98,10 +105,11 @@ def sale_result(line: SaleLine) -> SaleResult:
     landed = None if line.unit_cost_minor is None else line.unit_cost_minor * line.qty
     commission = None if line.commission_rate_bp is None else apply_bp(gross, line.commission_rate_bp)
     delivery = line.buyer_delivery_minor
+    tax = 0 if line.tax_rate_bp is None else apply_bp(gross, line.tax_rate_bp)
     profit = None
     if None not in (landed, commission, delivery):
-        profit = gross - landed - commission - delivery
-    return SaleResult(gross, landed, commission, delivery, profit)
+        profit = gross - landed - commission - delivery - tax
+    return SaleResult(gross, landed, commission, delivery, profit, tax)
 
 
 def return_profit_delta(line: SaleLine, ret: Return) -> Optional[int]:
@@ -114,7 +122,8 @@ def return_profit_delta(line: SaleLine, ret: Return) -> Optional[int]:
             return None
         recovered = line.unit_cost_minor * ret.returned_qty
     extra_delivery = ret.reverse_delivery_minor - ret.delivery_returned_minor
-    return -ret.refund_minor + recovered + ret.commission_returned_minor - extra_delivery
+    return (-ret.refund_minor + recovered + ret.commission_returned_minor
+            + ret.tax_returned_minor - extra_delivery)
 
 
 def calc_line(line: SaleLine) -> LineResult:
