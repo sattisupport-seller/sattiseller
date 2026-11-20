@@ -32,6 +32,7 @@ type SessionValue = {
   startDemo: () => Promise<void>;
   requestCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string) => Promise<void>;
+  signInWithIdToken: (provider: 'apple' | 'google', idToken: string, nonce?: string) => Promise<void>;
   createShop: (name: string, timezone: string, language: Locale) => Promise<void>;
   selectShop: (id: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -133,6 +134,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await resolveShops();
   }, [resolveShops]);
 
+  // Вход через Apple или Google: токен провайдера проверяет сервер (ТЗ 2.1, раздел 5).
+  const signInWithIdToken = useCallback(async (provider: 'apple' | 'google', idToken: string, nonce?: string) => {
+    const res = await request<{ access_token: string; refresh_token: string; user: { email: string } }>(
+      `/auth/${provider}`,
+      { method: 'POST', auth: false, body: { id_token: idToken, nonce: nonce ?? null } },
+    );
+    await saveTokens(res.access_token, res.refresh_token);
+    setEmail(res.user.email);
+    setIsDemo(false);
+    await resolveShops();
+  }, [resolveShops]);
+
   const createShop = useCallback(async (name: string, timezone: string, language: Locale) => {
     const shop = await request<ShopSummary>('/shops', { method: 'POST', body: { name, timezone, language } });
     await setStoredShopId(shop.id);
@@ -176,8 +189,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<SessionValue>(() => ({
     status, shopId, isDemo, email, locale, themeMode,
-    startDemo, requestCode, verifyCode, createShop, selectShop, logout, setLocale, setThemeMode, refresh,
-  }), [status, shopId, isDemo, email, locale, themeMode, startDemo, requestCode, verifyCode, createShop,
+    startDemo, requestCode, verifyCode, signInWithIdToken, createShop, selectShop, logout, setLocale, setThemeMode, refresh,
+  }), [status, shopId, isDemo, email, locale, themeMode, startDemo, requestCode, verifyCode, signInWithIdToken, createShop,
     selectShop, logout, setLocale, setThemeMode, refresh]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

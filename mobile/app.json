@@ -9,6 +9,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "kz.satti.seller",
+      "usesAppleSignIn": true,
       "icon": {
         "light": "./assets/icon.png",
         "dark": "./assets/icon-dark.png",
@@ -51,7 +52,8 @@
             "backgroundColor": "#6366F1"
           }
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "scheme": "satti",
     "experiments": {

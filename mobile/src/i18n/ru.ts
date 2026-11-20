@@ -40,6 +40,11 @@ export const ru = {
   },
   login: {
     title: 'Вход',
+    withApple: 'Войти с Apple',
+    withGoogle: 'Войти с Google',
+    providerNotSet: 'Вход через Google будет доступен после настройки приложения.',
+    socialFailed: 'Не удалось войти. Попробуйте ещё раз.',
+    orEmail: 'Или по коду на почту (для разработки)',
     emailLabel: 'Email',
     emailPlaceholder: 'you@example.com',
     getCode: 'Получить код',

@@ -43,6 +43,11 @@ export const kk: Dict = {
   },
   login: {
     title: 'Кіру',
+    withApple: 'Apple арқылы кіру',
+    withGoogle: 'Google арқылы кіру',
+    providerNotSet: 'Google арқылы кіру қолданба баптанғаннан кейін қолжетімді болады.',
+    socialFailed: 'Кіру сәтсіз аяқталды. Қайтадан көріңіз.',
+    orEmail: 'Немесе почтаға код арқылы (әзірлеу үшін)',
     emailLabel: 'Email',
     emailPlaceholder: 'you@example.com',
     getCode: 'Код алу',
