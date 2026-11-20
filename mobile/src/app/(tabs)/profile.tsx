@@ -14,6 +14,7 @@ import { useSession, type Locale, type ThemeMode } from '@/session/SessionProvid
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
 import { SUPPORT_EMAIL } from '@/config';
+import { downloadAndShare } from '@/lib/download';
 
 // Профиль (docs/design.md, 12.16): аккаунт или демо, магазин, данные, настройки, помощь, выход.
 export default function ProfileScreen() {
@@ -77,7 +78,15 @@ export default function ProfileScreen() {
           <ListRow title={t('profile.importCosts')} onPress={() => router.push('/import')} />
           <ListRow title={t('profile.commissions')} onPress={() => router.push('/settings/commissions')} />
           <ListRow title={t('profile.tax')} onPress={() => router.push('/settings/tax')} />
-          <ListRow title={t('profile.expenses')} onPress={() => router.push('/settings/expenses')} last />
+          <ListRow title={t('profile.expenses')} onPress={() => router.push('/settings/expenses')} />
+          <ListRow
+            title={t('profile.exportData')}
+            onPress={() => {
+              downloadAndShare('/me/export', 'satti-moi-dannye.zip', 'application/zip')
+                .catch(() => toast.show(t('common.unknownError')));
+            }}
+            last
+          />
         </GroupCard>
       </Section>
 

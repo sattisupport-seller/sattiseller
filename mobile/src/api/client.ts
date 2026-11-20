@@ -170,3 +170,27 @@ export async function requestBinary(path: string): Promise<ArrayBuffer> {
   if (!res.ok) throw new ApiError(res.status, 'http', `HTTP ${res.status}`);
   return res.arrayBuffer();
 }
+
+/** Выгрузки с авторизацией (Excel, «Мои данные»): то же обновление токена, что и в request. */
+export async function requestFile(path: string): Promise<ArrayBuffer> {
+  let res = await rawRequest(path, {});
+  if (res.status === 401) {
+    const refreshed = await refreshTokens().catch(() => false);
+    if (!refreshed) {
+      await clearSession();
+      onSessionLost?.();
+      throw new ApiError(401, 'unauthorized', 'Сессия истекла. Войдите снова.');
+    }
+    res = await rawRequest(path, {});
+  }
+  if (!res.ok) {
+    let body: ApiErrorBody | null = null;
+    try {
+      body = (await res.json()) as ApiErrorBody;
+    } catch {
+      body = null;
+    }
+    throw new ApiError(res.status, body?.error.code ?? 'http', body?.error.message ?? `HTTP ${res.status}`);
+  }
+  return res.arrayBuffer();
+}

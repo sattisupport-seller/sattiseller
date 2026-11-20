@@ -109,6 +109,7 @@ export const ru = {
   },
   profit: {
     title: 'Как получилась прибыль',
+    exportExcel: 'Выгрузить в Excel',
     steps: {
       net_sales: 'Чистые продажи',
       cost: 'Себестоимость',
@@ -369,6 +370,7 @@ export const ru = {
     importCosts: 'Импорт затрат',
     commissions: 'Комиссии по категориям',
     tax: 'Налог',
+    exportData: 'Скачать мои данные',
     expenses: 'Расходы на рекламу',
     settings: 'Настройки',
     language: 'Язык',

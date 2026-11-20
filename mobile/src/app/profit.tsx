@@ -1,9 +1,12 @@
 import { useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
 import { useProducts, useProfitBreakdown } from '@/api/hooks';
+import { Button } from '@/components/ui/Button';
 import { CoverageBar, Card, GroupCard, ListRow, Section } from '@/components/ui/Surfaces';
-import { EmptyState, ErrorState, Skeleton } from '@/components/ui/Overlays';
+import { EmptyState, ErrorState, Skeleton, useToast } from '@/components/ui/Overlays';
+import { downloadAndShare } from '@/lib/download';
 import { Txt } from '@/components/ui/Text';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
@@ -20,6 +23,8 @@ export default function ProfitScreen() {
   const { shopId } = useSession();
   const { data, isLoading, isError, refetch } = useProfitBreakdown(shopId, String(period));
   const products = useProducts(shopId, String(period), null, 'profit_desc', '');
+  const toast = useToast();
+  const [exporting, setExporting] = useState(false);
 
   if (isLoading) {
     return (
@@ -43,6 +48,27 @@ export default function ProfitScreen() {
         <CoverageBar bp={data.coverage_bp} />
         <Txt variant="footnote" tone="tertiary">{formatPercentBp(data.coverage_bp)}</Txt>
       </Card>
+
+      <Button
+        title={t('profit.exportExcel')}
+        variant="secondary"
+        fullWidth
+        loading={exporting}
+        onPress={async () => {
+          setExporting(true);
+          try {
+            await downloadAndShare(
+              `/shops/${shopId}/exports/profit.xlsx?period=${encodeURIComponent(String(period))}`,
+              `satti-pribyl-${data.period.from}_${data.period.to}.xlsx`,
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            );
+          } catch {
+            toast.show(t('common.unknownError'));
+          } finally {
+            setExporting(false);
+          }
+        }}
+      />
 
       <Section title={t('overview.kpiProfit')}>
         <GroupCard>

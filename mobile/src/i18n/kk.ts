@@ -112,6 +112,7 @@ export const kk: Dict = {
   },
   profit: {
     title: 'Пайда қалай шықты',
+    exportExcel: 'Excel-ге шығару',
     steps: {
       net_sales: 'Таза сатылым',
       cost: 'Өзіндік құн',
@@ -372,6 +373,7 @@ export const kk: Dict = {
     importCosts: 'Шығындарды импорттау',
     commissions: 'Санаттар бойынша комиссия',
     tax: 'Салық',
+    exportData: 'Менің деректерімді жүктеу',
     expenses: 'Жарнама шығындары',
     settings: 'Баптаулар',
     language: 'Тіл',

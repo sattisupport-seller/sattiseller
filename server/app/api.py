@@ -60,6 +60,7 @@ from .models import (
 )
 from .money import round_half_up_div
 from .periods import PeriodError, resolve, today_in
+from .exports import profit_filename, profit_workbook, user_export_zip
 from .ratelimit import allow
 from .reports import (
     build_facts,
@@ -452,6 +453,35 @@ def get_products(shop_id: str, period: str = Query("30d"), filter: str | None = 
     data = load_shop(db, shop)
     return products_list(data, build_facts(data), _period(period, shop), filter, sort, q,
                          _cursor(cursor), _limit(limit))
+
+
+XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@api.get("/shops/{shop_id}/exports/profit.xlsx", tags=["выгрузки"])
+def export_profit_xlsx(shop_id: str, period: str = Query("30d"), principal: Principal = Depends(get_principal),
+                       db: DbSession = Depends(get_session)) -> Response:
+    """Отчёт о прибыли в Excel (ТЗ 2.1, 9.5). Итоги совпадают с экраном: те же функции расчёта."""
+    shop = shop_for(db, principal, shop_id)
+    data = load_shop(db, shop)
+    p = _period(period, shop)
+    content = profit_workbook(data, build_facts(data), p, _now())
+    return Response(content=content, media_type=XLSX_MEDIA,
+                    headers={"Content-Disposition": f'attachment; filename="{profit_filename(p)}"'})
+
+
+@api.get("/me/export", tags=["пользователь"])
+def export_my_data(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> Response:
+    """«Скачать мои данные» (ТЗ 2.1, 9.4). Файл строится сразу и не хранится на сервере. До 3 выгрузок в сутки."""
+    if principal.user_id is None:
+        raise ApiError(403, "account_required", "Выгрузка доступна после входа по почте или через Apple/Google.")
+    user = current_user(principal, db)
+    if not allow(f"export:{user.id}", 3, 86_400):
+        raise ApiError(429, "rate_limited", "Выгрузок слишком много. Попробуйте завтра.")
+    content = user_export_zip(db, user)
+    stamp = _now().strftime("%Y%m%d")
+    return Response(content=content, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="satti-moi-dannye-{stamp}.zip"'})
 
 
 @api.get("/shops/{shop_id}/products/{product_id}", tags=["товары"])
