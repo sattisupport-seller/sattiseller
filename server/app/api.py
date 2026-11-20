@@ -16,6 +16,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as DbSession
 
 from . import ai as ai_service
+from .accounts import delete_user_account
 from .auth import (
     Principal,
     ai_consent_state,
@@ -388,11 +389,7 @@ def deletion_confirm(body: ConfirmIn, principal: Principal = Depends(get_princip
                                            AuthCode.used.is_(False)).order_by(AuthCode.expires_at.desc()))
     if row is None or aware(row.expires_at) < utcnow() or hash_code(user.email, body.code) != row.code_hash:
         raise ApiError(400, "code_invalid")
-    db.execute(delete(Shop).where(Shop.owner_user_id == user.id))
-    db.execute(delete(AIConversation).where(AIConversation.user_id == user.id))
-    db.execute(delete(NotificationSettings).where(NotificationSettings.user_id == user.id))
-    db.execute(delete(User).where(User.id == user.id))
-    db.commit()
+    delete_user_account(db, user)  # AUD-08: все записи аккаунта, одна реализация для приложения и веба
     return {"status": "deleted"}
 
 

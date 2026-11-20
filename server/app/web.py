@@ -20,7 +20,8 @@ from sqlalchemy.orm import Session as DbSession
 from .config import settings
 from .db import get_session
 from .mailer import send_code_email
-from .models import AIConversation, AuthCode, NotificationSettings, Shop, User
+from .accounts import delete_user_account
+from .models import AuthCode, User
 from .ratelimit import allow
 from .security import hash_code, new_code
 
@@ -121,15 +122,6 @@ def delete_account_start(email: str = Form(...), db: DbSession = Depends(get_ses
             db.commit()
             send_code_email(user.email, code, "delete")
     return _page("Введите код", _code_form(address))
-
-
-def delete_user_account(db: DbSession, user: User) -> None:
-    """Удаление аккаунта и магазинов (как в приложении, раздел 10 ТЗ)."""
-    db.execute(delete(Shop).where(Shop.owner_user_id == user.id))
-    db.execute(delete(AIConversation).where(AIConversation.user_id == user.id))
-    db.execute(delete(NotificationSettings).where(NotificationSettings.user_id == user.id))
-    db.execute(delete(User).where(User.id == user.id))
-    db.commit()
 
 
 @router.post("/delete-account/confirm", response_class=HTMLResponse)
