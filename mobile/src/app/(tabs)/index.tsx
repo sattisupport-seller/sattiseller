@@ -3,7 +3,7 @@ import { CalendarDays, CircleHelp, Sparkles } from 'lucide-react-native';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { useOverview } from '@/api/hooks';
+import { useOverview, useShops } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import { LineChart } from '@/components/ui/Charts';
 import { IconButton } from '@/components/ui/IconButton';
@@ -40,6 +40,8 @@ export default function OverviewScreen() {
   const period = custom ?? preset;
   const query = useOverview(shopId, period);
   const { data, isLoading, isError, error, refetch, isRefetching } = query;
+  const shopsQuery = useShops(!!shopId);
+  const shopName = shopsQuery.data?.items.find((s) => s.id === shopId)?.name ?? null;
 
   const days = data?.series.days ?? [];
   const today = todayAlmaty();
@@ -82,7 +84,7 @@ export default function OverviewScreen() {
           subtitle={
             <>
               <Txt variant="subhead" tone="secondary">
-                {isDemo ? t('overview.store', { name: t('overview.demo') }) : t('overview.store', { name: locale === 'kk' ? 'Менің дүкенім' : 'Мой магазин' })}
+                {shopName ? t('overview.store', { name: shopName }) : null}
               </Txt>
               {isDemo ? <Badge label={t('overview.demo')} tone="primary" /> : null}
             </>

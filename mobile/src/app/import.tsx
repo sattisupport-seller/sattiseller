@@ -1,4 +1,5 @@
-import * as Clipboard from 'expo-clipboard';
+import { File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import { FileSpreadsheet, FileDown, CircleCheck } from 'lucide-react-native';
@@ -124,12 +125,20 @@ export default function ImportScreen() {
     }
   };
 
+  // Файл ошибок импорта (CSV) во временной папке и меню «Поделиться» (spec-2.1, задача 17).
   const copyErrors = async () => {
     if (!file) return;
     try {
       const csv = await request<string>(`/shops/${shopId}/imports/${file.id}/errors`, { text: true });
-      await Clipboard.setStringAsync(csv);
-      toast.show(t('common.copied'));
+      const target = new File(Paths.cache, `import-errors-${file.id}.csv`);
+      if (target.exists) target.delete();
+      target.create();
+      await target.write(csv);
+      if (!(await Sharing.isAvailableAsync())) {
+        setError(t('common.unknownError'));
+        return;
+      }
+      await Sharing.shareAsync(target.uri, { mimeType: 'text/csv', UTI: 'public.comma-separated-values-text' });
     } catch {
       setError(t('common.unknownError'));
     }

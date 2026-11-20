@@ -1,5 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
 import { Image, Pressable, ScrollView, View } from 'react-native';
 
@@ -35,6 +36,20 @@ export default function ProductDraftScreen() {
     if (res.canceled) return;
     const next = res.assets.map((a) => ({ uri: a.uri, name: a.name, type: a.mimeType ?? 'image/jpeg' }));
     setPhotos((p) => [...p, ...next].slice(0, 5));
+  };
+
+  // Съёмка камерой: разрешение запрашивается в момент нажатия (spec-2.1, задача 17).
+  const takePhoto = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      setError(t('assistant.cameraDenied'));
+      return;
+    }
+    const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
+    if (res.canceled) return;
+    const a = res.assets[0];
+    const name = a.fileName ?? `photo-${Date.now()}.jpg`;
+    setPhotos((p) => [...p, { uri: a.uri, name, type: a.mimeType ?? 'image/jpeg' }].slice(0, 5));
   };
 
   const make = async () => {
@@ -85,10 +100,16 @@ export default function ProductDraftScreen() {
           </Pressable>
         ))}
         {photos.length < 5 ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={t('assistant.photos')} onPress={addPhoto}
-            style={{ width: 72, height: 72, borderRadius: radii.md, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center' }}>
-            <Txt variant="title2" tone="tertiary">+</Txt>
-          </Pressable>
+          <>
+            <Pressable accessibilityRole="button" accessibilityLabel={t('assistant.takePhoto')} onPress={takePhoto}
+              style={{ width: 72, height: 72, borderRadius: radii.md, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center' }}>
+              <Txt variant="footnote" tone="tertiary">{t('assistant.takePhoto')}</Txt>
+            </Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={t('assistant.pickPhoto')} onPress={addPhoto}
+              style={{ width: 72, height: 72, borderRadius: radii.md, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center' }}>
+              <Txt variant="footnote" tone="tertiary">{t('assistant.pickPhoto')}</Txt>
+            </Pressable>
+          </>
         ) : null}
       </View>
 

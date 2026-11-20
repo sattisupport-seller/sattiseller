@@ -26,7 +26,15 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Satti Seller использует камеру, чтобы снять фото товара для описания. / Satti Seller тауар суретін описание үшін түсіру үшін камераны пайдаланады.",
+          "photosPermission": false
+        }
+      ],
+      "expo-sharing"
     ],
     "scheme": "satti",
     "experiments": {
