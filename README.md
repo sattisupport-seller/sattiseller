@@ -9,6 +9,24 @@ mobile/   приложение на Expo SDK 58 (Expo Router, TypeScript)
 docs/     ТЗ, ADR, макеты, черновик текстов для магазинов
 ```
 
+## Версия 2.1 (ТЗ)
+- План и решения: `docs/spec-2.1.md` (раздел 18 — задачи 16–35), `docs/adr/0003-spec-2.1-decisions.md`.
+- Прогресс по задачам: `docs/progress-2.1.md`.
+- Зависимости ставятся без `--legacy-peer-deps`.
+
+## Запуск на Windows (PowerShell)
+```powershell
+cd server
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pytest
+cd ..\mobile
+npm install
+npm test
+npm run typecheck
+```
+Секреты и ключи — только в `.env` и `secrets/` (в .gitignore). Их значения не вставляются в чат и не попадают в коммиты.
+
 ## Сервер
 ```bash
 cd server
