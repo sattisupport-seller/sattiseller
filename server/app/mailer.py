@@ -17,3 +17,11 @@ def send_code_email(to_email: str, code: str, purpose: str = "login") -> None:
     body = f"To: {to_email}\nSubject: {subject}\n\nВаш код: {code}\nКод действует 10 минут.\n"
     name = f"{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{uuid.uuid4().hex[:8]}.eml"
     (settings.outbox_dir / name).write_text(body, encoding="utf-8")
+
+
+def send_notice_email(to_email: str, subject: str, text: str) -> None:
+    """Служебное письмо о подписке и хранении данных (ТЗ 2.1, 9.3). Тот же почтовый канал, что и коды."""
+    settings.outbox_dir.mkdir(parents=True, exist_ok=True)
+    body = f"To: {to_email}\nSubject: {subject}\n\n{text}\n"
+    name = f"{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{uuid.uuid4().hex[:8]}.eml"
+    (settings.outbox_dir / name).write_text(body, encoding="utf-8")

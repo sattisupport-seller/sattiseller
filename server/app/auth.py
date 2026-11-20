@@ -13,6 +13,7 @@ from fastapi import Depends, Header
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
+from .billing import guard as billing_guard
 from .config import settings
 from .db import get_session
 from .errors import ApiError
@@ -87,17 +88,19 @@ def current_user(principal: Principal, db: DbSession) -> User:
     return user
 
 
-def shop_for(db: DbSession, principal: Principal, shop_id: str) -> Shop:
+def shop_for(db: DbSession, principal: Principal, shop_id: str, guard_access: bool = True) -> Shop:
+    """Магазин, доступный принципалу. guard_access=False — только для экранов подписки (ТЗ 2.1, 9.1)."""
     shop = db.get(Shop, shop_id)
     if shop is None:
         raise ApiError(404, "not_found")
     if shop.is_demo:
-        if principal.demo_shop_id == shop.id:
-            return shop
+        if principal.demo_shop_id != shop.id:
+            raise ApiError(403, "forbidden")
+    elif not (principal.user_id is not None and shop.owner_user_id == principal.user_id):
         raise ApiError(403, "forbidden")
-    if principal.user_id is not None and shop.owner_user_id == principal.user_id:
-        return shop
-    raise ApiError(403, "forbidden")
+    if guard_access:
+        billing_guard(db, shop)
+    return shop
 
 
 def ai_consent_state(db: DbSession, principal: Principal) -> tuple[str | None, bool]:

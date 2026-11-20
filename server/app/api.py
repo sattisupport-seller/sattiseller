@@ -60,6 +60,7 @@ from .models import (
 )
 from .money import round_half_up_div
 from .periods import PeriodError, resolve, today_in
+from .billing import get_subscription, start_trial, subscription_view, trial_eligible
 from .exports import profit_filename, profit_workbook, user_export_zip
 from .ratelimit import allow
 from .reports import (
@@ -453,6 +454,41 @@ def get_products(shop_id: str, period: str = Query("30d"), filter: str | None = 
     data = load_shop(db, shop)
     return products_list(data, build_facts(data), _period(period, shop), filter, sort, q,
                          _cursor(cursor), _limit(limit))
+
+
+# ---------- подписка (ТЗ 2.1, раздел 8) ----------
+
+@api.get("/shops/{shop_id}/subscription", tags=["подписка"])
+def get_subscription_state(shop_id: str, principal: Principal = Depends(get_principal),
+                           x_device_id: str | None = Header(default=None),
+                           db: DbSession = Depends(get_session)) -> dict:
+    shop = shop_for(db, principal, shop_id, guard_access=False)
+    body = subscription_view(db, shop)
+    # Пробный период доступен, если подписки у магазина не было и все отметки защиты отсутствуют (раздел 8.2).
+    body["trial_available"] = (get_subscription(db, shop.id) is None
+                               and trial_eligible(db, principal.user_id, x_device_id, None))
+    return body
+
+
+@api.post("/shops/{shop_id}/subscription/trial", status_code=201, tags=["подписка"])
+def post_start_trial(shop_id: str, principal: Principal = Depends(get_principal),
+                     x_device_id: str | None = Header(default=None),
+                     db: DbSession = Depends(get_session)) -> dict:
+    """Пробный период. В боевом режиме выдаётся только после подтверждения магазина приложений (раздел 8.2)."""
+    shop = shop_for(db, principal, shop_id, guard_access=False)
+    if not settings.billing_test_mode:
+        raise ApiError(501, "store_not_configured", "Оформление через App Store и Google Play ещё не подключено.")
+    start_trial(db, shop, principal.user_id, x_device_id, None)
+    return subscription_view(db, shop)
+
+
+@api.post("/shops/{shop_id}/subscription/verify", tags=["подписка"])
+def post_verify_purchase(shop_id: str, principal: Principal = Depends(get_principal),
+                         db: DbSession = Depends(get_session)) -> dict:
+    """Проверка покупки через App Store Server API и Google Play Developer API (раздел 8.5).
+    Не подключено: нужны аккаунты владельца (spec-2.1, 19.3 и 19.10)."""
+    shop_for(db, principal, shop_id, guard_access=False)
+    raise ApiError(501, "store_not_configured", "Проверка покупок ещё не подключена.")
 
 
 XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
