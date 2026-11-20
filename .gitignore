@@ -19,3 +19,8 @@ server/data/
 
 # Секреты (ТЗ 2.1)
 secrets/
+
+# Отчёты покрытия (QA)
+mobile/coverage/
+server/.coverage
+server/htmlcov/
