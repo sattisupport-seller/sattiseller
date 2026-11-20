@@ -57,7 +57,9 @@ class Settings:
     import_max_bytes: int = 5 * 1024 * 1024
     import_max_rows: int = 5000
     import_max_unzipped_bytes: int = 50 * 1024 * 1024
-    demo_idle_days: int = 30
+    demo_idle_days: int = 30  # устарело: демо живёт 24 часа (ADR-0005), см. demo_lifetime_hours
+    demo_lifetime_hours: int = 24  # ADR-0005: демо-песочница живёт 24 часа от создания
+    demo_per_device_per_day: int = 3  # ADR-0005: не больше 3 новых демо в сутки с одного устройства (и сбросов)
     ai_consent_version: str = "2026-11-19"
     ai_service_name: str = "Satti AI (тестовый провайдер)"
     kaspi_connection_enabled: bool = False

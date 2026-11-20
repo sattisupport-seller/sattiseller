@@ -67,3 +67,22 @@ def test_prune_removes_copies_older_than_retention(sqlite_db, tmp_path):
     os.utime(old, (thirty_days_ago, thirty_days_ago))
     assert backup.prune(out) == 1
     assert not old.exists() and new.exists()
+
+
+def test_alembic_downgrade_needs_explicit_flag(tmp_path):
+    """QA-12: откат без SATTI_ALLOW_DOWNGRADE=1 отказывает; с флагом выполняется."""
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parent.parent
+    env = {**os.environ, "DATABASE_URL": f"sqlite:///{(tmp_path / 'mig.db').as_posix()}",
+           "SATTI_DATA_DIR": str(tmp_path / "data")}
+    env.pop("SATTI_ALLOW_DOWNGRADE", None)
+    up = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=root, env=env, capture_output=True)
+    assert up.returncode == 0, up.stderr[-400:]
+    down = subprocess.run([sys.executable, "-m", "alembic", "downgrade", "base"], cwd=root, env=env, capture_output=True)
+    assert down.returncode != 0
+    assert b"SATTI_ALLOW_DOWNGRADE" in (down.stdout + down.stderr)
+    env["SATTI_ALLOW_DOWNGRADE"] = "1"
+    down2 = subprocess.run([sys.executable, "-m", "alembic", "downgrade", "base"], cwd=root, env=env, capture_output=True)
+    assert down2.returncode == 0, down2.stderr[-400:]

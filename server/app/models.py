@@ -76,6 +76,7 @@ class DemoInstallation(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # хеш id установки
     shop_id: Mapped[str] = mapped_column(String(32))
     last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=_now)  # ADR-0005: демо живёт 24 часа от создания
     ai_consent_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     ai_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ai_consent_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

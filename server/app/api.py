@@ -11,7 +11,7 @@ from fastapi.responses import PlainTextResponse
 from openpyxl import Workbook
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from . import ai as ai_service
@@ -257,14 +257,17 @@ def demo_session(request: Request, x_device_id: str = Header(..., alias="X-Devic
         total = db.scalar(select(func.count()).select_from(DemoInstallation)) or 0
         if total >= settings.demo_max_installations:
             raise ApiError(503, "demo_full", "Демо-режим временно недоступен. Попробуйте позже.")
+        _check_device_demo_limit(install_id)
         shop = generate_demo(db, today_in(settings.default_timezone))
-        inst = DemoInstallation(id=install_id, shop_id=shop.id)
+        inst = DemoInstallation(id=install_id, shop_id=shop.id, created_at=utcnow())
         db.add(inst)
     else:
         inst.last_active_at = utcnow()
         if db.get(Shop, inst.shop_id) is None:
+            _check_device_demo_limit(install_id)
             shop = generate_demo(db, today_in(settings.default_timezone))
             inst.shop_id = shop.id
+            inst.created_at = utcnow()
     db.flush()
     tokens = issue_tokens(db, demo_shop_id=inst.shop_id)
     db.commit()
@@ -275,6 +278,8 @@ def demo_session(request: Request, x_device_id: str = Header(..., alias="X-Devic
 def demo_reset(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     if not principal.demo_shop_id:
         raise ApiError(403, "forbidden")
+    if principal.demo_install_id:
+        _check_device_demo_limit(principal.demo_install_id)  # сброс тоже считается в лимит 3 в сутки
     shop = db.get(Shop, principal.demo_shop_id)
     _wipe_shop_data(db, shop.id)
     generate_demo(db, today_in(settings.default_timezone), shop=shop)
@@ -309,9 +314,19 @@ def costs_template() -> Response:
                     "spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=costs-template.xlsx"})
 
 
+def _check_device_demo_limit(install_id: str) -> None:
+    """ADR-0005: не больше demo_per_device_per_day новых демо и сбросов в сутки с одного устройства.
+    Счётчик в памяти процесса; при нескольких процессах его заменит общее хранилище лимитов (этап 1.15)."""
+    if not allow(f"demo-dev:{install_id}", settings.demo_per_device_per_day, window=86400):
+        raise ApiError(429, "rate_limited", "За сутки с этого устройства создано максимум демо-магазинов. Попробуйте завтра.")
+
+
 def _purge_idle_demos(db: DbSession) -> None:
-    cutoff = utcnow() - timedelta(days=settings.demo_idle_days)
-    for inst in db.scalars(select(DemoInstallation).where(DemoInstallation.last_active_at < cutoff)).all():
+    # ADR-0005: демо живёт demo_lifetime_hours от создания (для записей без created_at — от последней активности)
+    cutoff = utcnow() - timedelta(hours=settings.demo_lifetime_hours)
+    expired = or_(DemoInstallation.created_at < cutoff,
+                  and_(DemoInstallation.created_at.is_(None), DemoInstallation.last_active_at < cutoff))
+    for inst in db.scalars(select(DemoInstallation).where(expired)).all():
         shop = db.get(Shop, inst.shop_id)
         if shop is not None:
             db.delete(shop)

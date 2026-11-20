@@ -37,7 +37,7 @@ jobs:
         run: |
           python -m alembic upgrade head
           python -m alembic check
-          python -m alembic downgrade base
+          SATTI_ALLOW_DOWNGRADE=1 python -m alembic downgrade base  # тестовая база CI; в продакшене откат без флага запрещён (QA-12)
       - name: Статический анализ безопасности (bandit, medium и выше), блокирующий
         run: python -m bandit -r app -ll
       - name: Аудит зависимостей сервера
