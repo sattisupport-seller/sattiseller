@@ -23,7 +23,7 @@ from .errors import ApiError
 from .models import AIConversation, AIFeedback, AITurn, AIUsageEvent, Shop
 from .money import format_tenge, round_half_up_div
 from .periods import Period, resolve
-from .privacy import contains_pii, mask_text
+from .privacy import buyer_values_for_shop, contains_pii, mask_known, mask_text
 from .reports import (
     ItemFact,
     ShopData,
@@ -416,7 +416,8 @@ def ask(db: DbSession, shop: Shop, question: str, user_id: str | None, conversat
         raise ApiError(422, "validation", "Напишите вопрос.")
     if len(text) > settings.ai_max_question_length:
         raise ApiError(422, "validation", "Вопрос длиннее 500 символов.")
-    text = mask_text(text)  # ADR-0004: ни модель, ни журнал диалогов не получают телефоны, email и адреса
+    # ADR-0004: ни модель, ни журнал не получают личные данные покупателей — ни по шаблону, ни по точным значениям заказов
+    text = mask_text(mask_known(text, buyer_values_for_shop(db, shop.id)))
 
     conv = None
     if conversation_id:

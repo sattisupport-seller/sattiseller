@@ -72,3 +72,50 @@ def mask_value(key: str | None, value: Any) -> Any:
 def mask_obj(obj: dict) -> dict:
     """Рекурсивная маскировка словаря перед отправкой в ИИ или записью в журнал."""
     return {k: mask_value(k, v) for k, v in obj.items()}
+
+
+# ---------- точные совпадения из данных заказов (ADR-0004, задача 3) ----------
+
+MASK_BUYER = "[покупатель]"
+BUYER_ATTRS = ("buyer_name", "buyer_address", "buyer_phone", "buyer_email")
+
+
+def _phone_variants(value: str) -> set[str]:
+    """Варианты записи телефона: только цифры, последние 10 цифр, с 8 и с +7."""
+    digits = re.sub(r"\D", "", value)
+    if len(digits) < 10:
+        return set()
+    last10 = digits[-10:]
+    return {last10, "8" + last10, "7" + last10, "+7" + last10}
+
+
+def buyer_values(orders) -> list[str]:
+    """Имена, адреса, телефоны и email покупателей из заказов. Поля появятся с подключением Kaspi."""
+    values: set[str] = set()
+    for order in orders:
+        for attr in BUYER_ATTRS:
+            raw = getattr(order, attr, None)
+            if not raw or not str(raw).strip():
+                continue
+            raw = str(raw).strip()
+            if attr == "buyer_phone":
+                values |= _phone_variants(raw)
+            else:
+                values.add(raw)
+    return sorted(values, key=len, reverse=True)
+
+
+def mask_known(text: str, values) -> str:
+    """Заменяет точные совпадения со значениями заказов (без учёта регистра), длинные — первыми."""
+    out = text
+    for value in sorted({v for v in values if v and len(v) >= 3}, key=len, reverse=True):
+        out = re.sub(re.escape(value), MASK_BUYER, out, flags=re.IGNORECASE)
+    return out
+
+
+def buyer_values_for_shop(db, shop_id: str) -> list[str]:
+    from sqlalchemy import select
+
+    from .models import Order
+
+    return buyer_values(db.scalars(select(Order).where(Order.shop_id == shop_id)).all())
