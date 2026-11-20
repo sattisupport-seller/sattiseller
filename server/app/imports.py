@@ -66,30 +66,50 @@ def parse_file(filename: str, content: bytes) -> ParsedFile:
     raise ApiError(400, "import_bad_file", "Выберите файл XLSX или CSV.")
 
 
-def _parse_xlsx(content: bytes) -> ParsedFile:
+_READ_CHUNK = 64 * 1024
+
+
+def _check_unzipped(content: bytes) -> None:
+    """AUD-06: считаем байты, которые реально распаковались, а не размеры из заголовков архива (их можно подделать)."""
+    limit = settings.import_max_unzipped_bytes
+    total = 0
     try:
         with zipfile.ZipFile(io.BytesIO(content)) as zf:
-            total = sum(i.file_size for i in zf.infolist())
-            if total > settings.import_max_unzipped_bytes:
-                raise ApiError(413, "import_too_large", "Таблица слишком большая после распаковки.")
-        values_wb = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
-        formulas_wb = load_workbook(io.BytesIO(content), data_only=False, read_only=True)
+            for info in zf.infolist():
+                with zf.open(info) as member:
+                    while True:
+                        chunk = member.read(_READ_CHUNK)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if total > limit:
+                            raise ApiError(413, "import_too_large", "Таблица слишком большая после распаковки.")
     except ApiError:
         raise
+    except (zipfile.BadZipFile, OSError, RuntimeError, ValueError) as exc:
+        raise ApiError(400, "import_bad_file") from exc
+
+
+def _parse_xlsx(content: bytes) -> ParsedFile:
+    _check_unzipped(content)
+    try:
+        values_wb = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
+        formulas_wb = load_workbook(io.BytesIO(content), data_only=False, read_only=True)
     except Exception as exc:  # noqa: BLE001
         raise ApiError(400, "import_bad_file") from exc
-    ws_v = values_wb.worksheets[0]
-    ws_f = formulas_wb.worksheets[0]
-    rows_v = list(ws_v.iter_rows(values_only=True))
-    rows_f = list(ws_f.iter_rows(values_only=True))
-    if not rows_v:
+    # строки читаются потоком; лимит проверяется по мере чтения, а не после загрузки всей таблицы (AUD-06)
+    it_v = values_wb.worksheets[0].iter_rows(values_only=True)
+    it_f = formulas_wb.worksheets[0].iter_rows(values_only=True)
+    header = next(it_v, None)
+    next(it_f, None)
+    if header is None:
         raise ApiError(400, "import_bad_file", "Файл пустой.")
-    columns = [str(c).strip() if c is not None else "" for c in rows_v[0]]
+    columns = [str(c).strip() if c is not None else "" for c in header]
     out: list[RawRow] = []
-    for idx, row in enumerate(rows_v[1:], start=2):
+    for idx, row in enumerate(it_v, start=2):
+        frow = next(it_f, ())
         if row is None or all(c in (None, "") for c in row):
             continue
-        frow = rows_f[idx - 1] if idx - 1 < len(rows_f) else ()
         empties = []
         for ci, val in enumerate(row):
             f = frow[ci] if ci < len(frow) else None
@@ -113,12 +133,13 @@ def _parse_csv(content: bytes) -> ParsedFile:
         raise ApiError(400, "import_bad_file", "Не удалось определить кодировку файла.")
     sample = text[:2048]
     delimiter = ";" if sample.count(";") > sample.count(",") else ","
-    reader = list(csv.reader(io.StringIO(text), delimiter=delimiter))
-    if not reader:
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+    header = next(reader, None)
+    if header is None:
         raise ApiError(400, "import_bad_file", "Файл пустой.")
-    columns = [c.strip() for c in reader[0]]
+    columns = [c.strip() for c in header]
     out = []
-    for idx, row in enumerate(reader[1:], start=2):
+    for idx, row in enumerate(reader, start=2):
         if not any(c.strip() for c in row):
             continue
         out.append(RawRow(number=idx, cells=row, formula_empty=[False] * len(row)))

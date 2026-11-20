@@ -10,6 +10,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, Response, UploadFile
 from fastapi.responses import PlainTextResponse
 from openpyxl import Workbook
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session as DbSession
@@ -856,7 +857,8 @@ async def import_upload(shop_id: str, file: UploadFile = File(...),
     if not allow(key, settings.import_requests_per_hour):
         raise ApiError(429, "rate_limited")
     content = await file.read(settings.import_max_bytes + 1)
-    parsed = parse_file(file.filename or "file", content)
+    # AUD-06: разбор файла — в пуле потоков, чтобы не занимать цикл событий сервера
+    parsed = await run_in_threadpool(parse_file, file.filename or "file", content)
     mapping = auto_mapping(parsed.columns)
     batch = ImportBatch(shop_id=shop.id, filename=(file.filename or "file")[:255], status="uploaded",
                         rows_total=len(parsed.rows), payload=dump_payload(parsed))
