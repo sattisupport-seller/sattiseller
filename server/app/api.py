@@ -65,6 +65,7 @@ from .periods import PeriodError, resolve, today_in
 from .billing import get_subscription, start_trial, subscription_view, trial_eligible
 from .exports import profit_filename, profit_workbook, user_export_zip
 from . import reportcache
+from .quotalock import quota_guard
 from .ratelimit import allow, client_ip
 from .schemas import (
     AIQuotaOut,
@@ -1086,9 +1087,11 @@ def ai_ask(shop_id: str, body: AskIn, principal: Principal = Depends(get_princip
     _, active = ai_consent_state(db, principal)
     if not active:
         raise ApiError(403, "ai_consent_required")
-    ai_service.check_quota(db, principal.user_id, shop.id, _now())
-    result = ai_service.ask(db, shop, body.question, principal.user_id, body.conversation_id)
-    db.commit()
+    # AUD-17: проверка квоты и запись вопроса — под одной блокировкой на субъекта квоты
+    with quota_guard(principal.user_id or shop.id):
+        ai_service.check_quota(db, principal.user_id, shop.id, _now())
+        result = ai_service.ask(db, shop, body.question, principal.user_id, body.conversation_id)
+        db.commit()
     return result
 
 
