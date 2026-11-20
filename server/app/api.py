@@ -64,6 +64,7 @@ from .money import round_half_up_div
 from .periods import PeriodError, resolve, today_in
 from .billing import get_subscription, start_trial, subscription_view, trial_eligible
 from .exports import profit_filename, profit_workbook, user_export_zip
+from . import reportcache
 from .ratelimit import allow, client_ip
 from .schemas import (
     AIQuotaOut,
@@ -128,6 +129,11 @@ def _cursor(cursor: str | None) -> int:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _minute() -> str:
+    """Ключ времени для кэша отчётов: минута (AUD-12)."""
+    return _now().strftime("%Y-%m-%dT%H:%M")
 
 
 # ---------- служебное ----------
@@ -270,6 +276,7 @@ def demo_reset(principal: Principal = Depends(get_principal), db: DbSession = De
     _wipe_shop_data(db, shop.id)
     generate_demo(db, today_in(settings.default_timezone), shop=shop)
     db.commit()
+    reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return {"shop_id": shop.id, "status": "reset"}
 
 
@@ -440,6 +447,7 @@ def shops_patch(shop_id: str, body: ShopPatch, principal: Principal = Depends(ge
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(shop, k, v)
     db.commit()
+    reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return _shop_json(shop)
 
 
@@ -454,16 +462,24 @@ def _shop_json(shop: Shop) -> dict:
 def get_overview(shop_id: str, period: str = Query("7d"), principal: Principal = Depends(get_principal),
                  db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
-    data = load_shop(db, shop)
-    return overview(data, build_facts(data), _period(period, shop), _now())
+
+    def compute() -> dict:
+        data = load_shop(db, shop)
+        return overview(data, build_facts(data), _period(period, shop), _now())
+
+    return reportcache.memo(shop.id, f"overview|{period}|{_minute()}", compute)
 
 
 @api.get("/shops/{shop_id}/profit-breakdown", tags=["обзор"], response_model=ProfitBreakdownOut)
 def get_profit_breakdown(shop_id: str, period: str = Query("7d"), principal: Principal = Depends(get_principal),
                          db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
-    data = load_shop(db, shop)
-    return profit_breakdown(data, build_facts(data), _period(period, shop))
+
+    def compute() -> dict:
+        data = load_shop(db, shop)
+        return profit_breakdown(data, build_facts(data), _period(period, shop))
+
+    return reportcache.memo(shop.id, f"profit|{period}|{_minute()}", compute)
 
 
 @api.get("/shops/{shop_id}/orders", tags=["заказы"], response_model=OrdersPageOut)
@@ -471,8 +487,13 @@ def get_orders(shop_id: str, period: str = Query("7d"), status: str | None = Non
                cursor: str | None = None, limit: int = 50, principal: Principal = Depends(get_principal),
                db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
-    data = load_shop(db, shop)
-    return orders_list(data, _period(period, shop), status, q, _cursor(cursor), _limit(limit))
+
+    def compute() -> dict:
+        data = load_shop(db, shop)
+        return orders_list(data, _period(period, shop), status, q, _cursor(cursor), _limit(limit))
+
+    key = f"orders|{period}|{status}|{q}|{cursor}|{limit}|{_minute()}"
+    return reportcache.memo(shop.id, key, compute)
 
 
 @api.get("/shops/{shop_id}/orders/{order_id}", tags=["заказы"], response_model=OrderDetailOut)
@@ -490,7 +511,8 @@ def get_order(shop_id: str, order_id: str, principal: Principal = Depends(get_pr
 def get_missing_costs(shop_id: str, principal: Principal = Depends(get_principal),
                       db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
-    return {"items": missing_costs_list(load_shop(db, shop))}
+    return reportcache.memo(shop.id, f"missing|{_minute()}",
+                            lambda: {"items": missing_costs_list(load_shop(db, shop))})
 
 
 @api.get("/shops/{shop_id}/products", tags=["товары"], response_model=ProductsPageOut)
@@ -498,9 +520,14 @@ def get_products(shop_id: str, period: str = Query("30d"), filter: str | None = 
                  sort: str = "profit_desc", q: str | None = None, cursor: str | None = None, limit: int = 50,
                  principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
-    data = load_shop(db, shop)
-    return products_list(data, build_facts(data), _period(period, shop), filter, sort, q,
-                         _cursor(cursor), _limit(limit))
+
+    def compute() -> dict:
+        data = load_shop(db, shop)
+        return products_list(data, build_facts(data), _period(period, shop), filter, sort, q,
+                             _cursor(cursor), _limit(limit))
+
+    key = f"products|{period}|{filter}|{sort}|{q}|{cursor}|{limit}|{_minute()}"
+    return reportcache.memo(shop.id, key, compute)
 
 
 # ---------- подписка (ТЗ 2.1, раздел 8) ----------
@@ -650,6 +677,7 @@ def cost_version_create(shop_id: str, product_id: str, body: CostIn,
         raise ApiError(404, "not_found")
     v = _add_cost(db, shop, product, body, "manual")
     db.commit()
+    reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return _version_json(v)
 
 
@@ -663,6 +691,7 @@ def cost_version_cancel(shop_id: str, version_id: str, principal: Principal = De
         raise ApiError(404, "not_found")
     v.cancelled = True
     db.commit()
+    reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return {"id": v.id, "cancelled": True}
 
 
@@ -692,6 +721,7 @@ def cost_bulk(shop_id: str, body: BulkCostIn, principal: Principal = Depends(get
                                             apply_to_history=body.apply_to_history), "manual")
         created += 1
     db.commit()
+    reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return {"saved": created}
 
 
@@ -743,6 +773,7 @@ def commissions_create(shop_id: str, body: CommissionIn, principal: Principal = 
                               effective_from=body.effective_from, source="manual", verified=False, demo=False)
     db.add(preset)
     db.commit()
+    reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return {"id": preset.id, "rate_bp": preset.rate_bp}
 
 
@@ -792,6 +823,7 @@ def tax_set(shop_id: str, body: TaxIn, principal: Principal = Depends(get_princi
     row = TaxRate(shop_id=shop.id, rate_bp=rate_bp, effective_from=body.effective_from)
     db.add(row)
     db.commit()
+    reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return _tax_row(row)
 
 
@@ -822,6 +854,7 @@ def expenses_create(shop_id: str, body: ExpenseIn, principal: Principal = Depend
                      period_start=body.period_start, period_end=body.period_end, source="manual")
     db.add(e)
     db.commit()
+    reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return {"id": e.id}
 
 
@@ -834,6 +867,7 @@ def expenses_delete(shop_id: str, expense_id: str, principal: Principal = Depend
         raise ApiError(404, "not_found")
     db.delete(e)
     db.commit()
+    reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return Response(status_code=204)
 
 
@@ -893,6 +927,7 @@ def import_mapping(shop_id: str, import_id: str, body: MappingIn, principal: Pri
                                 "duplicates": body.duplicates}, ensure_ascii=False)
     batch.status = "previewed"
     db.commit()
+    reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return {"status": "ok"}
 
 
@@ -980,6 +1015,7 @@ def import_apply(shop_id: str, import_id: str, body: ApplyIn, principal: Princip
     batch.status = "applied"
     batch.applied_at = utcnow()
     db.commit()
+    reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return {"status": "applied", "applied_rows": len(data["valid"]), "errors_count": data["errors_count"]}
 
 
@@ -999,6 +1035,7 @@ def import_undo(shop_id: str, import_id: str, principal: Principal = Depends(get
     batch.status = "undone"
     batch.undone_at = utcnow()
     db.commit()
+    reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return {"status": "undone"}
 
 

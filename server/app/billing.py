@@ -17,6 +17,7 @@ from sqlalchemy.orm import Mapped, Session as DbSession, mapped_column
 from .config import settings
 from .db import Base
 from .errors import ApiError
+from . import reportcache
 from .mailer import send_notice_email
 from .models import (
     AIConversation,
@@ -204,6 +205,7 @@ def delete_shop_data(db: DbSession, shop_id: str) -> None:
     if sub is not None:
         sub.deleted_at = _now()
     db.commit()
+    reportcache.invalidate(shop_id)  # AUD-12: отчёты удалённого магазина больше не отдаём из кэша
 
 
 def _letter_text(kind: str, lapsed_at: datetime) -> tuple[str, str]:
