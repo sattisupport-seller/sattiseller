@@ -130,7 +130,6 @@ def generate_demo(db: DbSession, anchor_date: date, seed: int = 42, shop: Shop |
     price_by_sku = {c[0]: c for c in catalog}
     skus = [c[0] for c in catalog]
     weights = [0.6 if s in _no_sales_skus() else 1.0 for s in skus]
-    recent_start = anchor_date - timedelta(days=13)
     order_seq = 584_100_000 + rng.randint(1000, 9000)
 
     plan = list(_STATUS_PLAN)

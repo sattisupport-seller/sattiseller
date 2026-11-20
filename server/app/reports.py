@@ -759,7 +759,6 @@ def comparable_facts(data: ShopData, facts: list[ItemFact], period: Period) -> d
     out: dict[str, ProductPeriodFacts] = {}
     for pid, a in acc.items():
         units = a["units"]
-        q = Fraction(units) if units else Fraction(0)
         out[pid] = ProductPeriodFacts(
             product=a["product"], sale_units=units,
             profit=(a["S"] - a["R"]) if a["ok"] else None,

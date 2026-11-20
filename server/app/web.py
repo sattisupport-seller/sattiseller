@@ -14,7 +14,7 @@ from pathlib import Path
 import markdown
 from fastapi import APIRouter, Depends, Form
 from fastapi.responses import FileResponse, HTMLResponse
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from .config import settings

@@ -11,7 +11,7 @@ import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import DateTime, Integer, String, UniqueConstraint, delete, select
+from sqlalchemy import DateTime, String, UniqueConstraint, delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Session as DbSession, mapped_column
 
@@ -193,8 +193,9 @@ def mark_lapsed(db: DbSession, now: datetime | None = None) -> int:
     return count
 
 
-def delete_shop_data(db: DbSession, shop_id: str) -> None:
-    """Удаление данных магазина на 90-й день (ТЗ 2.1, 9.3). Аккаунт и подписка остаются."""
+def wipe_shop_content(db: DbSession, shop_id: str) -> None:
+    """Удаляет все данные магазина (заказы, товары, затраты, налог, импорт, ИИ). Сам магазин и подписка не трогаются.
+    Общая реализация: удаление на 90-й день (ТЗ 2.1, 9.3) и сброс демо-магазина (AUD-26)."""
     db.execute(delete(ReturnEvent).where(ReturnEvent.shop_id == shop_id))
     db.execute(delete(OrderItem).where(OrderItem.shop_id == shop_id))
     db.execute(delete(Order).where(Order.shop_id == shop_id))
@@ -208,6 +209,11 @@ def delete_shop_data(db: DbSession, shop_id: str) -> None:
     db.execute(delete(AIConversation).where(AIConversation.shop_id == shop_id))
     db.execute(delete(AIFeedback).where(AIFeedback.shop_id == shop_id))
     db.execute(delete(ProductDraft).where(ProductDraft.shop_id == shop_id))
+
+
+def delete_shop_data(db: DbSession, shop_id: str) -> None:
+    """Удаление данных магазина на 90-й день (ТЗ 2.1, 9.3). Аккаунт и подписка остаются."""
+    wipe_shop_content(db, shop_id)
     sub = get_subscription(db, shop_id)
     if sub is not None:
         sub.deleted_at = _now()

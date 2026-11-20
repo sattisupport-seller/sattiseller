@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import random
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
@@ -12,7 +11,7 @@ from fastapi.responses import PlainTextResponse
 from openpyxl import Workbook
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
 from . import ai as ai_service
@@ -31,7 +30,6 @@ from .config import AppConfig, get_app_config, settings
 from .db import get_session
 from .demo import generate_demo
 from .errors import ApiError
-from .finance import Return  # noqa: F401  (экспорт для тестов)
 from .imports import (
     FIELDS,
     auto_mapping,
@@ -45,7 +43,6 @@ from .imports import (
 from .mailer import send_code_email
 from .models import (
     AIConversation,
-    AIFeedback,
     AITurn,
     AuthCode,
     CommissionPreset,
@@ -60,9 +57,8 @@ from .models import (
     Shop,
     User,
 )
-from .money import round_half_up_div
-from .periods import PeriodError, resolve, today_in
-from .billing import get_subscription, start_trial, subscription_view, trial_eligible
+from .periods import Period, PeriodError, resolve, today_in
+from .billing import get_subscription, start_trial, subscription_view, trial_eligible, wipe_shop_content
 from .exports import profit_filename, profit_workbook, user_export_zip
 from . import reportcache
 from .quotalock import quota_guard
@@ -110,7 +106,7 @@ api.include_router(_admin.router)
 api.include_router(_admin.me_router)
 
 
-def _period(name: str | None, shop: Shop) -> "Period":  # noqa: F821
+def _period(name: str | None, shop: Shop) -> Period:
     try:
         return resolve(name or "7d", shop.timezone)
     except PeriodError as exc:
@@ -318,21 +314,7 @@ def _purge_idle_demos(db: DbSession) -> None:
 
 
 def _wipe_shop_data(db: DbSession, shop_id: str) -> None:
-    from .models import (
-        ExpenseEntry as E,
-        ImportBatch as IB,
-        Product as P,
-        ProductCostVersion as PCV,
-    )
-    from .models import CommissionPreset as CP
-
-    db.execute(delete(Order).where(Order.shop_id == shop_id))
-    db.execute(delete(P).where(P.shop_id == shop_id))
-    db.execute(delete(PCV).where(PCV.shop_id == shop_id))
-    db.execute(delete(CP).where(CP.shop_id == shop_id))
-    db.execute(delete(E).where(E.shop_id == shop_id))
-    db.execute(delete(IB).where(IB.shop_id == shop_id))
-    db.execute(delete(AIConversation).where(AIConversation.shop_id == shop_id))
+    wipe_shop_content(db, shop_id)  # AUD-26: одна реализация с удалением по хранению
     db.flush()
 
 
@@ -1152,7 +1134,7 @@ async def ai_product_draft(shop_id: str = Form(...), facts: str = Form(...), lan
                            photos: list[UploadFile] = File(default=[]),
                            principal: Principal = Depends(get_principal),
                            db: DbSession = Depends(get_session)) -> dict:
-    shop = shop_for(db, principal, shop_id)
+    shop_for(db, principal, shop_id)  # проверка доступа к магазину
     _, active = ai_consent_state(db, principal)
     if not active:
         raise ApiError(403, "ai_consent_required")
@@ -1233,10 +1215,3 @@ def kaspi_status(shop_id: str, principal: Principal = Depends(get_principal)) ->
 @api.delete("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"])
 def kaspi_disconnect(shop_id: str, principal: Principal = Depends(get_principal)) -> dict:
     raise _kaspi_disabled()
-
-
-__all__ = ["api", "random", "round_half_up_div", "FIELDS", "Session", "AIFeedback", "authorization_header"]
-
-
-def authorization_header() -> str:  # pragma: no cover - служебный экспорт
-    return "Bearer"
