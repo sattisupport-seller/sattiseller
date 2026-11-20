@@ -52,5 +52,13 @@
     "lint": "expo lint",
     "gen:api": "npx -y openapi-typescript@7.13.0 src/api/openapi.json -o src/api/schema.ts"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "expo": {
+      "@expo/fingerprint": {
+        "minimatch": "^11.0.9",
+        "glob": "^14.0.6"
+      }
+    }
+  }
 }
