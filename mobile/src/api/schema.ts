@@ -4,6 +4,151 @@
  */
 
 export interface paths {
+    "/v1/admin/2fa/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Two Factor Enable */
+        post: operations["two_factor_enable_v1_admin_2fa_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/2fa/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Two Factor Setup
+         * @description Создаёт секрет и возвращает его один раз: введите в приложение-аутентификатор и подтвердите кодом.
+         */
+        post: operations["two_factor_setup_v1_admin_2fa_setup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/flags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Flags Get */
+        get: operations["flags_get_v1_admin_flags_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/flags/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Flags Set */
+        put: operations["flags_set_v1_admin_flags__key__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stats
+         * @description Счётчики без персональных данных (раздел 14.1).
+         */
+        get: operations["stats_v1_admin_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Users List */
+        get: operations["users_list_v1_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/users/{user_id}/block": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** User Block */
+        post: operations["user_block_v1_admin_users__user_id__block_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/users/{user_id}/shops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * User Shops
+         * @description Магазины пользователя — только при его разрешении на поддержку (раздел 14.3).
+         */
+        get: operations["user_shops_v1_admin_users__user_id__shops_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ai/consent": {
         parameters: {
             query?: never;
@@ -381,6 +526,27 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/support-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grant Support Access
+         * @description Пользователь разрешает поддержке посмотреть его магазины на 24 часа.
+         */
+        post: operations["grant_support_access_v1_me_support_access_post"];
+        /** Revoke Support Access */
+        delete: operations["revoke_support_access_v1_me_support_access_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -920,6 +1086,17 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AIQuotaOut */
+        AIQuotaOut: {
+            /** Consent Active */
+            consent_active: boolean;
+            /** Consent Version */
+            consent_version: string | null;
+            /** Limit */
+            limit: number;
+            /** Remaining */
+            remaining: number;
+        };
         /** AgeConfirmOut */
         AgeConfirmOut: {
             /** Age Confirmed */
@@ -999,6 +1176,11 @@ export interface components {
             /** Sku */
             sku: string;
         };
+        /** BlockIn */
+        BlockIn: {
+            /** Blocked */
+            blocked: boolean;
+        };
         /** Body_ai_product_draft_v1_ai_product_drafts_post */
         Body_ai_product_draft_v1_ai_product_drafts_post: {
             /** Facts */
@@ -1066,6 +1248,11 @@ export interface components {
             product_id: string;
             /** Purchase */
             purchase: string;
+        };
+        /** CodeIn */
+        CodeIn: {
+            /** Code */
+            code: string;
         };
         /** CommissionCreatedOut */
         CommissionCreatedOut: {
@@ -1150,6 +1337,39 @@ export interface components {
             /** Purchase */
             purchase: string;
         };
+        /** CostVersionOut */
+        CostVersionOut: {
+            /** Cancelled */
+            cancelled: boolean;
+            /** Delivery To Warehouse Minor */
+            delivery_to_warehouse_minor: number;
+            /** Effective From */
+            effective_from: string | null;
+            /** Id */
+            id: string;
+            /** Landed Unit Minor */
+            landed_unit_minor: number;
+            /** Other Minor */
+            other_minor: number;
+            /** Packaging Minor */
+            packaging_minor: number;
+            /** Purchase Minor */
+            purchase_minor: number;
+            /** Source */
+            source: string;
+        };
+        /** CostVersionsOut */
+        CostVersionsOut: {
+            /** Items */
+            items: components["schemas"]["CostVersionOut"][];
+        };
+        /** CoverageOut */
+        CoverageOut: {
+            /** Complete */
+            complete: number;
+            /** Total */
+            total: number;
+        };
         /** CurrentCostOut */
         CurrentCostOut: {
             /** Delivery To Warehouse Minor */
@@ -1214,6 +1434,24 @@ export interface components {
              */
             period_start: string;
         };
+        /** ExpenseOut */
+        ExpenseOut: {
+            /** Amount Minor */
+            amount_minor: number;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Period End */
+            period_end: string;
+            /** Period Start */
+            period_start: string;
+        };
+        /** ExpensesOut */
+        ExpensesOut: {
+            /** Items */
+            items: components["schemas"]["ExpenseOut"][];
+        };
         /** FeatureFlags */
         FeatureFlags: {
             /**
@@ -1247,6 +1485,11 @@ export interface components {
             shop_id: string;
             /** Turn Id */
             turn_id?: string | null;
+        };
+        /** FlagIn */
+        FlagIn: {
+            /** Enabled */
+            enabled: boolean;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1334,6 +1577,22 @@ export interface components {
             /** Name */
             name?: string | null;
         };
+        /** MissingCostProductOut */
+        MissingCostProductOut: {
+            /** Category */
+            category: string;
+            /** Name */
+            name: string;
+            /** Product Id */
+            product_id: string;
+            /** Sku */
+            sku: string;
+        };
+        /** MissingCostsOut */
+        MissingCostsOut: {
+            /** Items */
+            items: components["schemas"]["MissingCostProductOut"][];
+        };
         /** MissingOut */
         MissingOut: {
             /** Name */
@@ -1399,6 +1658,32 @@ export interface components {
             tax_rate_bp?: number | null;
             /** Unit Price Minor */
             unit_price_minor: number;
+        };
+        /** OrderSummaryOut */
+        OrderSummaryOut: {
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Items Count */
+            items_count: number;
+            /** Number */
+            number: string;
+            /** Status */
+            status: string;
+            /** Summary */
+            summary: string;
+            /** Total Minor */
+            total_minor: number;
+        };
+        /** OrdersPageOut */
+        OrdersPageOut: {
+            /** Items */
+            items: components["schemas"]["OrderSummaryOut"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            /** Total */
+            total: number;
         };
         /** OverviewOut */
         OverviewOut: {
@@ -1471,6 +1756,16 @@ export interface components {
             sku: string;
             /** Sold Qty */
             sold_qty: number;
+        };
+        /** ProductsPageOut */
+        ProductsPageOut: {
+            coverage: components["schemas"]["CoverageOut"];
+            /** Items */
+            items: components["schemas"]["ProductRowOut"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            /** Total */
+            total: number;
         };
         /** ProfitBreakdownOut */
         ProfitBreakdownOut: {
@@ -1649,6 +1944,278 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    two_factor_enable_v1_admin_2fa_enable_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    two_factor_setup_v1_admin_2fa_setup_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    flags_get_v1_admin_flags_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Code"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    flags_set_v1_admin_flags__key__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Code"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlagIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stats_v1_admin_stats_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Code"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    users_list_v1_admin_users_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Code"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    user_block_v1_admin_users__user_id__block_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Code"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlockIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    user_shops_v1_admin_users__user_id__shops_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Code"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     ai_consent_set_v1_ai_consent_post: {
         parameters: {
             query?: never;
@@ -1870,7 +2437,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AIQuotaOut"];
                 };
             };
             /** @description Validation Error */
@@ -2400,6 +2967,68 @@ export interface operations {
             };
         };
     };
+    grant_support_access_v1_me_support_access_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_support_access_v1_me_support_access_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     notification_settings_v1_notification_settings_patch: {
         parameters: {
             query?: never;
@@ -2735,7 +3364,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ExpensesOut"];
                 };
             };
             /** @description Validation Error */
@@ -3192,7 +3821,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["OrdersPageOut"];
                 };
             };
             /** @description Validation Error */
@@ -3301,7 +3930,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ProductsPageOut"];
                 };
             };
             /** @description Validation Error */
@@ -3334,7 +3963,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MissingCostsOut"];
                 };
             };
             /** @description Validation Error */
@@ -3404,7 +4033,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["CostVersionsOut"];
                 };
             };
             /** @description Validation Error */

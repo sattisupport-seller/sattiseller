@@ -34,7 +34,7 @@ export type OrderRow = {
   total_minor: number;
 };
 
-export type OrdersPage = { items: OrderRow[]; total: number; next_cursor: string | null };
+export type OrdersPage = Omit<S<'OrdersPageOut'>, 'items'> & { items: OrderRow[] };
 
 export type OrderDetail = Omit<S<'OrderDetailOut'>, 'status'> & { status: OrderStatus };
 
@@ -53,26 +53,11 @@ export type ProductRow = {
   badges: ProductBadge[];
 };
 
-export type ProductsPage = {
-  items: ProductRow[];
-  total: number;
-  coverage: { complete: number; total: number };
-  next_cursor: string | null;
-};
+export type ProductsPage = Omit<S<'ProductsPageOut'>, 'items'> & { items: ProductRow[] };
 
 export type ProductDetail = Omit<S<'ProductDetailOut'>, 'product'> & { product: ProductRow };
 
-export type CostVersion = {
-  id: string;
-  purchase_minor: number;
-  delivery_to_warehouse_minor: number;
-  packaging_minor: number;
-  other_minor: number;
-  landed_unit_minor: number;
-  effective_from: string | null;
-  source: string;
-  cancelled: boolean;
-};
+export type CostVersion = S<'CostVersionOut'>;
 
 export type ImportPreview = {
   total_rows: number;
@@ -110,7 +95,7 @@ export type AskAnswer = {
   lang: 'ru' | 'kk';
 };
 
-export type AIQuota = { limit: number; remaining: number; consent_active: boolean; consent_version: string | null };
+export type AIQuota = S<'AIQuotaOut'>;
 
 export type Conversation = { id: string; title: string; created_at: string };
 

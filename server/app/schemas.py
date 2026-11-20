@@ -278,3 +278,72 @@ class MeOut(BaseModel):
 
 class AgeConfirmOut(BaseModel):
     age_confirmed: bool
+
+
+# ---------- списки ----------
+
+class OrderSummaryOut(BaseModel):
+    id: str
+    number: str
+    status: str
+    created_at: str
+    items_count: int
+    summary: str
+    total_minor: int
+
+
+class OrdersPageOut(BaseModel):
+    items: list[OrderSummaryOut]
+    total: int
+    next_cursor: str | None
+
+
+class CoverageOut(BaseModel):
+    complete: int
+    total: int
+
+
+class ProductsPageOut(BaseModel):
+    items: list[ProductRowOut]
+    total: int
+    coverage: CoverageOut
+    next_cursor: str | None
+
+
+class MissingCostsOut(BaseModel):
+    items: list[MissingCostProductOut]
+
+
+class ExpenseOut(BaseModel):
+    id: str
+    kind: str
+    amount_minor: int
+    period_start: str
+    period_end: str
+
+
+class ExpensesOut(BaseModel):
+    items: list[ExpenseOut]
+
+
+class CostVersionOut(BaseModel):
+    id: str
+    purchase_minor: int
+    delivery_to_warehouse_minor: int
+    packaging_minor: int
+    other_minor: int
+    landed_unit_minor: int
+    effective_from: str | None
+    source: str
+    cancelled: bool
+
+
+class CostVersionsOut(BaseModel):
+    items: list[CostVersionOut]
+
+
+class AIQuotaOut(BaseModel):
+    limit: int
+    remaining: int
+    consent_active: bool
+    consent_version: str | None

@@ -1,6 +1,41 @@
 {
   "components": {
     "schemas": {
+      "AIQuotaOut": {
+        "properties": {
+          "consent_active": {
+            "title": "Consent Active",
+            "type": "boolean"
+          },
+          "consent_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consent Version"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "limit",
+          "remaining",
+          "consent_active",
+          "consent_version"
+        ],
+        "title": "AIQuotaOut",
+        "type": "object"
+      },
       "AgeConfirmOut": {
         "properties": {
           "age_confirmed": {
@@ -195,6 +230,19 @@
         "title": "BestProductOut",
         "type": "object"
       },
+      "BlockIn": {
+        "properties": {
+          "blocked": {
+            "title": "Blocked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "blocked"
+        ],
+        "title": "BlockIn",
+        "type": "object"
+      },
       "Body_ai_product_draft_v1_ai_product_drafts_post": {
         "properties": {
           "facts": {
@@ -329,6 +377,19 @@
           "purchase"
         ],
         "title": "BulkCostItem",
+        "type": "object"
+      },
+      "CodeIn": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "CodeIn",
         "type": "object"
       },
       "CommissionCreatedOut": {
@@ -561,6 +622,100 @@
         "title": "CostIn",
         "type": "object"
       },
+      "CostVersionOut": {
+        "properties": {
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "boolean"
+          },
+          "delivery_to_warehouse_minor": {
+            "title": "Delivery To Warehouse Minor",
+            "type": "integer"
+          },
+          "effective_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective From"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "landed_unit_minor": {
+            "title": "Landed Unit Minor",
+            "type": "integer"
+          },
+          "other_minor": {
+            "title": "Other Minor",
+            "type": "integer"
+          },
+          "packaging_minor": {
+            "title": "Packaging Minor",
+            "type": "integer"
+          },
+          "purchase_minor": {
+            "title": "Purchase Minor",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "purchase_minor",
+          "delivery_to_warehouse_minor",
+          "packaging_minor",
+          "other_minor",
+          "landed_unit_minor",
+          "effective_from",
+          "source",
+          "cancelled"
+        ],
+        "title": "CostVersionOut",
+        "type": "object"
+      },
+      "CostVersionsOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CostVersionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "CostVersionsOut",
+        "type": "object"
+      },
+      "CoverageOut": {
+        "properties": {
+          "complete": {
+            "title": "Complete",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "complete",
+          "total"
+        ],
+        "title": "CoverageOut",
+        "type": "object"
+      },
       "CurrentCostOut": {
         "properties": {
           "delivery_to_warehouse_minor": {
@@ -722,6 +877,55 @@
         "title": "ExpenseIn",
         "type": "object"
       },
+      "ExpenseOut": {
+        "properties": {
+          "amount_minor": {
+            "title": "Amount Minor",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "period_end": {
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "title": "Period Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "amount_minor",
+          "period_start",
+          "period_end"
+        ],
+        "title": "ExpenseOut",
+        "type": "object"
+      },
+      "ExpensesOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExpenseOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ExpensesOut",
+        "type": "object"
+      },
       "FeatureFlags": {
         "properties": {
           "ai_assistant": {
@@ -799,6 +1003,19 @@
           "kind"
         ],
         "title": "FeedbackIn",
+        "type": "object"
+      },
+      "FlagIn": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "FlagIn",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1071,6 +1288,50 @@
         "title": "MeOut",
         "type": "object"
       },
+      "MissingCostProductOut": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "product_id": {
+            "title": "Product Id",
+            "type": "string"
+          },
+          "sku": {
+            "title": "Sku",
+            "type": "string"
+          }
+        },
+        "required": [
+          "product_id",
+          "sku",
+          "name",
+          "category"
+        ],
+        "title": "MissingCostProductOut",
+        "type": "object"
+      },
+      "MissingCostsOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MissingCostProductOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MissingCostsOut",
+        "type": "object"
+      },
       "MissingOut": {
         "properties": {
           "name": {
@@ -1298,6 +1559,82 @@
           "returns"
         ],
         "title": "OrderItemOut",
+        "type": "object"
+      },
+      "OrderSummaryOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "items_count": {
+            "title": "Items Count",
+            "type": "integer"
+          },
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "total_minor": {
+            "title": "Total Minor",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "status",
+          "created_at",
+          "items_count",
+          "summary",
+          "total_minor"
+        ],
+        "title": "OrderSummaryOut",
+        "type": "object"
+      },
+      "OrdersPageOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrderSummaryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "next_cursor"
+        ],
+        "title": "OrdersPageOut",
         "type": "object"
       },
       "OverviewOut": {
@@ -1537,6 +1874,43 @@
           "badges"
         ],
         "title": "ProductRowOut",
+        "type": "object"
+      },
+      "ProductsPageOut": {
+        "properties": {
+          "coverage": {
+            "$ref": "#/components/schemas/CoverageOut"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProductRowOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "coverage",
+          "next_cursor"
+        ],
+        "title": "ProductsPageOut",
         "type": "object"
       },
       "ProfitBreakdownOut": {
@@ -2086,6 +2460,562 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/admin/2fa/enable": {
+      "post": {
+        "operationId": "two_factor_enable_v1_admin_2fa_enable_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Two Factor Enable V1 Admin 2Fa Enable Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Two Factor Enable",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/2fa/setup": {
+      "post": {
+        "description": "Создаёт секрет и возвращает его один раз: введите в приложение-аутентификатор и подтвердите кодом.",
+        "operationId": "two_factor_setup_v1_admin_2fa_setup_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Two Factor Setup V1 Admin 2Fa Setup Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Two Factor Setup",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/flags": {
+      "get": {
+        "operationId": "flags_get_v1_admin_flags_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Admin-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Flags Get V1 Admin Flags Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Flags Get",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/flags/{key}": {
+      "put": {
+        "operationId": "flags_set_v1_admin_flags__key__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FlagIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Flags Set V1 Admin Flags  Key  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Flags Set",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/stats": {
+      "get": {
+        "description": "Счётчики без персональных данных (раздел 14.1).",
+        "operationId": "stats_v1_admin_stats_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Admin-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Stats V1 Admin Stats Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stats",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/users": {
+      "get": {
+        "operationId": "users_list_v1_admin_users_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Admin-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Users List V1 Admin Users Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Users List",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/users/{user_id}/block": {
+      "post": {
+        "operationId": "user_block_v1_admin_users__user_id__block_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response User Block V1 Admin Users  User Id  Block Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "User Block",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/users/{user_id}/shops": {
+      "get": {
+        "description": "Магазины пользователя — только при его разрешении на поддержку (раздел 14.3).",
+        "operationId": "user_shops_v1_admin_users__user_id__shops_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Code"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response User Shops V1 Admin Users  User Id  Shops Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "User Shops",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
     "/v1/ai/consent": {
       "post": {
         "operationId": "ai_consent_set_v1_ai_consent_post",
@@ -2468,8 +3398,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Ai Quota V1 Ai Quota Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AIQuotaOut"
                 }
               }
             },
@@ -3254,6 +4183,105 @@
         ]
       }
     },
+    "/v1/me/support-access": {
+      "delete": {
+        "operationId": "revoke_support_access_v1_me_support_access_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Revoke Support Access V1 Me Support Access Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke Support Access",
+        "tags": [
+          "пользователь"
+        ]
+      },
+      "post": {
+        "description": "Пользователь разрешает поддержке посмотреть его магазины на 24 часа.",
+        "operationId": "grant_support_access_v1_me_support_access_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Grant Support Access V1 Me Support Access Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Grant Support Access",
+        "tags": [
+          "пользователь"
+        ]
+      }
+    },
     "/v1/notification-settings": {
       "patch": {
         "operationId": "notification_settings_v1_notification_settings_patch",
@@ -3856,8 +4884,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Expenses List V1 Shops  Shop Id  Expenses Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ExpensesOut"
                 }
               }
             },
@@ -4776,8 +5803,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Get Orders V1 Shops  Shop Id  Orders Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/OrdersPageOut"
                 }
               }
             },
@@ -5048,8 +6074,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Get Products V1 Shops  Shop Id  Products Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ProductsPageOut"
                 }
               }
             },
@@ -5107,8 +6132,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Get Missing Costs V1 Shops  Shop Id  Products Missing Costs Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/MissingCostsOut"
                 }
               }
             },
@@ -5252,8 +6276,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Cost Versions V1 Shops  Shop Id  Products  Product Id  Cost Versions Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/CostVersionsOut"
                 }
               }
             },

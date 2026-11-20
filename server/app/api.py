@@ -64,6 +64,12 @@ from .billing import get_subscription, start_trial, subscription_view, trial_eli
 from .exports import profit_filename, profit_workbook, user_export_zip
 from .ratelimit import allow
 from .schemas import (
+    AIQuotaOut,
+    CostVersionsOut,
+    ExpensesOut,
+    MissingCostsOut,
+    OrdersPageOut,
+    ProductsPageOut,
     AgeConfirmOut,
     CommissionCreatedOut,
     CommissionsOut,
@@ -449,7 +455,7 @@ def get_profit_breakdown(shop_id: str, period: str = Query("7d"), principal: Pri
     return profit_breakdown(data, build_facts(data), _period(period, shop))
 
 
-@api.get("/shops/{shop_id}/orders", tags=["заказы"])
+@api.get("/shops/{shop_id}/orders", tags=["заказы"], response_model=OrdersPageOut)
 def get_orders(shop_id: str, period: str = Query("7d"), status: str | None = None, q: str | None = None,
                cursor: str | None = None, limit: int = 50, principal: Principal = Depends(get_principal),
                db: DbSession = Depends(get_session)) -> dict:
@@ -469,14 +475,14 @@ def get_order(shop_id: str, order_id: str, principal: Principal = Depends(get_pr
     return order_detail(data, build_facts(data), order)
 
 
-@api.get("/shops/{shop_id}/products/missing-costs", tags=["товары"])
+@api.get("/shops/{shop_id}/products/missing-costs", tags=["товары"], response_model=MissingCostsOut)
 def get_missing_costs(shop_id: str, principal: Principal = Depends(get_principal),
                       db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
     return {"items": missing_costs_list(load_shop(db, shop))}
 
 
-@api.get("/shops/{shop_id}/products", tags=["товары"])
+@api.get("/shops/{shop_id}/products", tags=["товары"], response_model=ProductsPageOut)
 def get_products(shop_id: str, period: str = Query("30d"), filter: str | None = Query(None, alias="filter"),
                  sort: str = "profit_desc", q: str | None = None, cursor: str | None = None, limit: int = 50,
                  principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
@@ -614,7 +620,7 @@ def _add_cost(db: DbSession, shop: Shop, product: Product, body: CostIn, source:
     return v
 
 
-@api.get("/shops/{shop_id}/products/{product_id}/cost-versions", tags=["затраты"])
+@api.get("/shops/{shop_id}/products/{product_id}/cost-versions", tags=["затраты"], response_model=CostVersionsOut)
 def cost_versions(shop_id: str, product_id: str, principal: Principal = Depends(get_principal),
                   db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
@@ -785,7 +791,7 @@ class ExpenseIn(BaseModel):
     period_end: date
 
 
-@api.get("/shops/{shop_id}/expenses", tags=["расходы"])
+@api.get("/shops/{shop_id}/expenses", tags=["расходы"], response_model=ExpensesOut)
 def expenses_list(shop_id: str, principal: Principal = Depends(get_principal),
                   db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
@@ -1000,7 +1006,7 @@ class ConsentIn(BaseModel):
     granted: bool
 
 
-@api.get("/ai/quota", tags=["ИИ"])
+@api.get("/ai/quota", tags=["ИИ"], response_model=AIQuotaOut)
 def ai_quota(shop_id: str, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
     remaining = ai_service.check_quota(db, principal.user_id, shop.id, _now())
