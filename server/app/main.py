@@ -14,7 +14,11 @@ from .errors import ApiError, api_error_handler
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    from .scheduler import start_builtin_scheduler, stop_builtin_scheduler
+
+    start_builtin_scheduler()
     yield
+    stop_builtin_scheduler()
 
 
 app = FastAPI(
