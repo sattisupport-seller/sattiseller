@@ -1,0 +1,271 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Отчёт QA Satti Seller</title>
+<style>
+body{font:12px/1.45 "Segoe UI",Arial,sans-serif;color:#111;margin:24px}
+h1{font-size:22px} h2{font-size:16px;border-bottom:1px solid #ccc;padding-bottom:3px;margin-top:20px}
+table{border-collapse:collapse;width:100%;margin:8px 0;font-size:11px} th,td{border:1px solid #bbb;padding:4px;vertical-align:top}
+th{background:#eef} code{font-size:11px}
+figure{display:inline-block;width:45%;margin:6px;vertical-align:top;page-break-inside:avoid} figure img{width:100%;border:1px solid #ccc}
+figcaption{font-size:10px;color:#555} .pb{page-break-before:always}
+</style></head><body><h1>Отчёт QA: Satti Seller</h1>
+<p>Дата: 21.11.2026. Ветка: <code>feature/bootstrap</code>. Объект: сервер FastAPI, веб-версия приложения (Expo web), админ-панель, публичные страницы.</p>
+<p><strong>Главный вывод.</strong> Демо-режим в веб-версии работает: вход в демо, обзор, вкладки, поиск и фильтрация, экран входа. Перед тестом найден и исправлен критичный дефект: экран входа падал целиком. Сервер прошёл 170 автоматических тестов, включая 26 тестов безопасности. Нагрузка на 20 одновременных пользователей прошла без ошибок, но задержка заметно растёт. <strong>Оценка: готово к показу демо на тестовом сервере; не готово к публичному запуску</strong> (см. раздел 8).</p>
+<h2>1. Что тестировалось</h2>
+<table>
+<thead>
+<tr>
+<th>Область</th>
+<th>Как проверено</th>
+<th>Результат</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Сервер: все маршруты с магазином, права доступа, ввод, лимиты</td>
+<td>pytest, 170 тестов (<code>server/tests</code>)</td>
+<td>170 из 170</td>
+</tr>
+<tr>
+<td>Безопасность: чужие данные (13 маршрутов на чужом магазине), SQL-подобный ввод, XSS-строки, токены, заголовки, ошибки, лимиты</td>
+<td><code>tests/test_qa_security.py</code>, 26 тестов</td>
+<td>26 из 26 после исправлений</td>
+</tr>
+<tr>
+<td>Расчёты: золотой набор, налог, лесенка прибыли</td>
+<td><code>tests/test_golden.py</code>, <code>test_tax.py</code>, <code>test_units.py</code></td>
+<td>прошли</td>
+</tr>
+<tr>
+<td>Сверка UI и API: KPI обзора и лесенка прибыли демо-магазина</td>
+<td>демо-сессия на тестовом сервере, сравнение по тиынам</td>
+<td>совпало до тиына</td>
+</tr>
+<tr>
+<td>Админ-панель в браузере (Edge, playwright-core)</td>
+<td><code>docs/qa/e2e/qa_web_admin.js</code></td>
+<td>18 из 18</td>
+</tr>
+<tr>
+<td>Публичные страницы в браузере: <code>/privacy</code>, <code>/terms</code>, форма удаления</td>
+<td>там же</td>
+<td>прошли</td>
+</tr>
+<tr>
+<td>Веб-версия приложения на телефонной ширине 390×844</td>
+<td><code>docs/qa/e2e/qa_app_web.js</code></td>
+<td>10 из 10</td>
+</tr>
+<tr>
+<td>Приложение (юнит-тесты, typecheck)</td>
+<td>jest 19, <code>tsc</code></td>
+<td>прошли</td>
+</tr>
+<tr>
+<td>Нагрузка API: 1, 10, 20 одновременных пользователей</td>
+<td><code>server/scripts/load_check.py</code></td>
+<td>см. раздел 5</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Что не проверялось в браузере</strong> (проверено только на уровне API или не проверено): регистрация через код в интерфейсе (код уходит в журнал писем, в UI не проходили), импорт XLSX через интерфейс, скачивание выгрузок через интерфейс, экраны подписки и оплаты, удаление аккаунта в приложении, ответы помощника в интерфейсе, обновление страницы во время импорта. Нативные сборки на телефоне не тестировались.</p>
+<h2>2. Ошибки, найденные и исправленные</h2>
+<table>
+<thead>
+<tr>
+<th>№</th>
+<th>Критичность</th>
+<th>Ошибка</th>
+<th>Причина</th>
+<th>Исправление</th>
+<th>Проверка после исправления</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B1</td>
+<td><strong>Критичная</strong></td>
+<td>Экран входа падает целиком: на приветствии «Войти по email» — пустая страница</td>
+<td>Хук Google вызывается безусловно и без идентификатора клиента выбрасывает исключение</td>
+<td>Хук вынесен в компонент, который рендерится только при заданных идентификаторах</td>
+<td><code>qa_app_web.js</code> 10/10, ошибок консоли 0. Доказательство до исправления: <code>evidence/B1-login-crash.txt</code>, <code>screenshots/evidence-B1-login-crash-before-fix.png</code></td>
+</tr>
+<tr>
+<td>B2</td>
+<td>Средняя</td>
+<td>Нет заголовков защиты (<code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>, CSP, <code>Referrer-Policy</code>, <code>Permissions-Policy</code>)</td>
+<td>Не настроено</td>
+<td>Middleware заголовков для всех ответов</td>
+<td><code>test_qa_security.py</code>, 4 теста</td>
+</tr>
+<tr>
+<td>B3</td>
+<td>Средняя</td>
+<td>Сервер запускается в продакшене с небезопасными значениями по умолчанию: пароль-заглушка для хешей подписки, CORS на localhost, вход по коду включён</td>
+<td>Нет проверки конфигурации</td>
+<td>При <code>SATTI_ENV=production</code> запуск отменяется с перечнем проблем</td>
+<td>тест <code>test_no_default_secrets_in_production_mode</code></td>
+</tr>
+<tr>
+<td>B4</td>
+<td>Низкая</td>
+<td><code>/favicon.ico</code> отдаёт 404 на всех веб-страницах</td>
+<td>Иконка не подключена</td>
+<td>Иконка из пакета сервера</td>
+<td><code>test_favicon_is_served</code></td>
+</tr>
+</tbody>
+</table>
+<h2>3. Открытые находки</h2>
+<table>
+<thead>
+<tr>
+<th>№</th>
+<th>Критичность</th>
+<th>Находка</th>
+<th>Статус и рекомендация</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>O1</td>
+<td><strong>Высокая для масштаба</strong></td>
+<td>Производительность: пропускная способность около 17–20 запросов в секунду, задержка растёт с числом пользователей (раздел 5). Причина: каждый запрос заново собирает все заказы магазина</td>
+<td>Не исправлено: нужен кэш расчётов с инвалидацией при записи или агрегаты в базе. Срок — до первых реальных магазинов</td>
+</tr>
+<tr>
+<td>O2</td>
+<td>Средняя</td>
+<td>Секрет TOTP администратора хранится открытым текстом в базе; код 2FA можно повторить в течение 90 секунд</td>
+<td>Не исправлено. Рекомендация: шифровать секрет ключом из окружения и запоминать последний использованный шаг</td>
+</tr>
+<tr>
+<td>O3</td>
+<td>Средняя</td>
+<td>Письма с кодами и о хранении пишутся только в журнал (outbox), наружу не отправляются. Вход по коду вне разработки не работает</td>
+<td>Ожидаемо: почтовый сервис — задача 23. Вход по коду выключен в продакшене</td>
+</tr>
+<tr>
+<td>O4</td>
+<td>Средняя</td>
+<td>Лимиты запросов хранятся в памяти процесса: сбрасываются при перезапуске и не общие для нескольких процессов</td>
+<td>Не исправлено. Для одного процесса достаточно; при масштабировании — общее хранилище</td>
+</tr>
+<tr>
+<td>O5</td>
+<td>Низкая</td>
+<td>В консоли браузера видны ответы 403 на <code>/admin</code> до настройки 2FA</td>
+<td>Ожидаемый ответ API, не ошибка. Косметика</td>
+</tr>
+<tr>
+<td>O6</td>
+<td>Информация</td>
+<td>Проверка входа через Apple и Google выполнена тестовыми ключами, не реальными</td>
+<td>Нужны аккаунты владельца (задача 21)</td>
+</tr>
+</tbody>
+</table>
+<h2>4. Результаты проверки безопасности</h2>
+<ul>
+<li><strong>Права доступа:</strong> тесты на 13 маршрутах с чужим магазином — все возвращают 403 или 404, данные чужого магазина не попадают в ответ. Запись в чужой магазин (комиссии, налог, расходы) отклоняется. Демо-магазин недоступен аккаунту. Админ-панель для обычного пользователя отвечает 404.</li>
+<li><strong>Ввод:</strong> SQL-подобные строки и нулевой байт в параметрах (<code>period</code>, <code>status</code>, <code>q</code>, <code>cursor</code>, <code>sort</code>, <code>filter</code>) не вызывают 500 и не меняют базу. Запросы строятся через ORM, сырого SQL с пользовательским вводом в коде нет.</li>
+<li><strong>XSS:</strong> строки с тегами сохраняются и отдаются как JSON-текст. В админ-панели все значения проходят экранирование (проверено кодом и браузерными проверками).</li>
+<li><strong>Токены:</strong> пустой, неверный и чужой формат заголовка отклоняется с 401. После выхода токен перестаёт работать.</li>
+<li><strong>Ошибки:</strong> на неверный JSON — 422 без трассировки; внутренние ошибки отдают общий ответ 500 с кодом и записываются в журнал групп ошибок без данных.</li>
+<li><strong>Лимиты:</strong> код входа — не больше 5 запросов в час, после 5 неверных попыток — блокировка.</li>
+<li><strong>Заголовки и конфигурация:</strong> см. B2 и B3.</li>
+<li><strong>Не проверялось:</strong> внешние сервисы не трогались (как требовалось). Реальные ключи Apple и Google, почта, сервер в Казахстане — вне текущего теста.</li>
+</ul>
+<h2>5. Нагрузка</h2>
+<p>Инструмент: <code>server/scripts/load_check.py</code>, запуск на локальном тестовом сервере с временной базой. Каждый пользователь — отдельная демо-сессия (300 заказов за 90 дней), по 15 запросов к обзору, прибыли, товарам и заказам.</p>
+<table>
+<thead>
+<tr>
+<th>Одновременных пользователей</th>
+<th>Запросов</th>
+<th>Пропускная способность, запр/с</th>
+<th>p50, мс</th>
+<th>p95, мс</th>
+<th>max, мс</th>
+<th>Ошибки</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>15</td>
+<td>29.1</td>
+<td>22.4</td>
+<td>86.2</td>
+<td>101.3</td>
+<td>0</td>
+</tr>
+<tr>
+<td>10</td>
+<td>150</td>
+<td>16.9</td>
+<td>594.1</td>
+<td>735.5</td>
+<td>785.5</td>
+<td>0</td>
+</tr>
+<tr>
+<td>20</td>
+<td>300</td>
+<td>19.9</td>
+<td>999.2</td>
+<td>1224.4</td>
+<td>1387.7</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Вывод.</strong> Отказов нет. Пропускная способность не растёт с числом пользователей: один процесс обрабатывает запросы последовательно, а каждый запрос пересчитывает весь магазин (O1). Большой объём данных (тысячи заказов) не проверялся: тестовые данные демо фиксированы, а генерировать их на сервере без необходимости не стали. Цифры получены на локальной машине, не на сервере в Казахстане.</p>
+<h2>6. Соответствие функций ТЗ, проверенное в этом прогоне</h2>
+<ul>
+<li><strong>Расчёты:</strong> золотой набор G001–G010 и R001–R004 проходит. Лесенка прибыли сходится: чистые продажи − себестоимость − комиссия − доставка − налог = прибыль по товарам. Совпадение KPI обзора с API по тиынам.</li>
+<li><strong>Фильтры и поиск:</strong> поиск по несуществующему товару и по строке 600 символов не ломает экран. Фильтры и сортировка проверены в API-тестах.</li>
+<li><strong>Вкладки и навигация:</strong> все пять вкладок открываются без ошибки загрузки на 390×844.</li>
+<li><strong>Обновление данных:</strong> данные лежат на сервере, после перезагрузки страницы не теряются (проверено в API-тестах сохранения; в браузере не проверено отдельно).</li>
+</ul>
+<h2>7. Тестовые дефекты, исправленные в ходе работы</h2>
+<p>Эти ошибки были в тестах, не в приложении. Ожидания тестов не менялись; менялось то, как тест обращается к системе:</p>
+<ul>
+<li>сырой нулевой байт в URL заменён на закодированный, как делает браузер;</li>
+<li>проверка «токен не в HTML» искала слово <code>Bearer</code>, которое есть в скрипте страницы; теперь проверяется значение токена;</li>
+<li>ожидание загрузки разделов админ-панели добавлено явно (гонка);</li>
+<li>сценарий входа использовал страницу старого контекста и неверную подсказку поля;</li>
+<li>прямой переход на <code>/login</code> в свежей сессии не рендерит приложение; вход проверяется с приветствия.</li>
+</ul>
+<h2>8. Готовность</h2>
+<table>
+<thead>
+<tr>
+<th>Назначение</th>
+<th>Оценка</th>
+<th>Основание</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Демо потенциальным клиентам на тестовом сервере</td>
+<td><strong>Готово с оговорками</strong></td>
+<td>Демо-вход, обзор, вкладки, поиск работают в веб-версии на телефонной ширине. Экран входа исправлен. Нужно перезапустить серверы с последним кодом и проверить на телефоне (задача 31)</td>
+</tr>
+<tr>
+<td>Публичный запуск</td>
+<td><strong>Не готово</strong></td>
+<td>Открыты O1 (производительность), O3 (почта для кодов), O2 (секрет 2FA), плюс всё, что требует аккаунтов владельца: Apple и Google с реальными ключами, сервер в Казахстане, проверка покупок, сборки и чек-листы на телефонах, публикация</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Что сделать до демонстрации клиентам:</strong> перезапустить API и веб-версию с последним кодом; пройти на телефоне путь «приветствие → демо → обзор → товары → помощник»; не показывать вход по почте и экран оплаты как рабочие.</p>
+<p><strong>Что сделать до запуска:</strong> O1 (кэш или агрегаты), O2 (шифрование секрета 2FA), O3 (почтовый сервис), O4 (общие лимиты), проверка покупок, сборки на телефонах, юридический просмотр текстов.</p>
+<h2>9. Доказательства</h2>
+<ul>
+<li>Скриншоты: <code>docs/qa/screenshots/</code> — страницы <code>/privacy</code>, <code>/terms</code>, форма удаления, админ-панель после 2FA, админ-панель на 390 px, приветствие, обзор, вкладки, поиск, экран входа с ошибкой адреса, экран до исправления B1.</li>
+<li>Журналы: <code>docs/qa/screenshots/results-admin.json</code>, <code>results-app.json</code> (результаты и ошибки консоли), <code>docs/qa/evidence/B1-login-crash.txt</code> (шаги и текст ошибки).</li>
+<li>Сценарии: <code>docs/qa/e2e/</code> (запуск: <code>node qa_web_admin.js</code> и <code>node qa_app_web.js</code> с переменными <code>QA_OUT</code>, <code>QA_OUTBOX</code>; нужен <code>playwright-core</code>).</li>
+<li>План и аудит: <code>docs/qa/audit-and-plan.md</code>.</li>
+<li>Тесты безопасности и ввода: <code>server/tests/test_qa_security.py</code>.</li>
+<li>Нагрузка: <code>server/scripts/load_check.py</code>.</li>
+</ul>
+<h2 class="pb">Приложение: скриншоты</h2><figure><img src="screenshots/admin-after-2fa.png"><figcaption>admin-after-2fa.png</figcaption></figure><figure><img src="screenshots/admin-mobile-390.png"><figcaption>admin-mobile-390.png</figcaption></figure><figure><img src="screenshots/app-01-welcome.png"><figcaption>app-01-welcome.png</figcaption></figure><figure><img src="screenshots/app-02-overview.png"><figcaption>app-02-overview.png</figcaption></figure><figure><img src="screenshots/app-login-invalid-email.png"><figcaption>app-login-invalid-email.png</figcaption></figure><figure><img src="screenshots/app-products-search.png"><figcaption>app-products-search.png</figcaption></figure><figure><img src="screenshots/app-tab-Заказы.png"><figcaption>app-tab-Заказы.png</figcaption></figure><figure><img src="screenshots/app-tab-Помощник.png"><figcaption>app-tab-Помощник.png</figcaption></figure><figure><img src="screenshots/app-tab-Профиль.png"><figcaption>app-tab-Профиль.png</figcaption></figure><figure><img src="screenshots/app-tab-Товары.png"><figcaption>app-tab-Товары.png</figcaption></figure><figure><img src="screenshots/evidence-B1-login-crash-before-fix.png"><figcaption>evidence-B1-login-crash-before-fix.png</figcaption></figure><figure><img src="screenshots/page-delete-account-unknown.png"><figcaption>page-delete-account-unknown.png</figcaption></figure><figure><img src="screenshots/page-privacy.png"><figcaption>page-privacy.png</figcaption></figure><figure><img src="screenshots/page-terms.png"><figcaption>page-terms.png</figcaption></figure></body></html>
