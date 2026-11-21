@@ -16,6 +16,7 @@ import struct
 import time
 
 from datetime import datetime, timedelta, timezone
+from .timeutil import utc_now
 
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, Header
@@ -34,7 +35,7 @@ FLAG_DEFAULTS = {"kaspi_connection": False, "ai_assistant": False, "subscription
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 def _aware(dt: datetime | None) -> datetime | None:

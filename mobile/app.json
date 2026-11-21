@@ -15,7 +15,8 @@
         "dark": "./assets/icon-dark.png",
         "tinted": "./assets/icon-tinted.png"
       },
-      "infoPlist": {}
+      "infoPlist": {},
+      "usesNonExemptEncryption": false
     },
     "android": {
       "adaptiveIcon": {

@@ -6,7 +6,8 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime
+from .timeutil import utc_now
 
 from sqlalchemy import (
     BigInteger,
@@ -29,7 +30,7 @@ def _uid() -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 class User(Base):

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from .timeutil import utc_now
 
 from fastapi import Depends, Header
 from sqlalchemy import select
@@ -22,7 +23,7 @@ from .security import hash_token, new_token
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 def aware(dt: datetime | None) -> datetime | None:

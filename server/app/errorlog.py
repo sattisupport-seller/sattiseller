@@ -11,7 +11,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
+from .timeutil import utc_now
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -31,7 +32,7 @@ MAX_MESSAGE = 300
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 class AppError(Base):

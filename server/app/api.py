@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 from datetime import date, datetime, timedelta, timezone
+from .timeutil import utc_now
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, Response, UploadFile
@@ -129,7 +130,7 @@ def _cursor(cursor: str | None) -> int:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 def _minute() -> str:
