@@ -10,7 +10,7 @@
 
 ## 2. GitHub
 - **Зачем:** удалённый репозиторий, CI, копии кода.
-- **Шаги:** github.com → Sign up с почтой из пункта 1 → Settings → Password and authentication → двухфакторная защита. Затем New repository: имя `satti-seller`, Private, без README и .gitignore. Пришлите адрес `https://github.com/<логин>/satti-seller` в чат.
+- **Шаги:** github.com → Sign up с почтой из пункта 1 → Settings → Password and authentication → двухфакторная защита. Затем New repository: имя `sattiseller`, Private, без README и .gitignore (фактически создан с этим именем). Пришлите адрес `https://github.com/<логин>/satti-seller` в чат.
 - **Стоимость:** бесплатно (приватный репозиторий).
 - **Разблокирует:** push после каждого этапа, CI, слияние в `feature/bootstrap` (6.7).
 
