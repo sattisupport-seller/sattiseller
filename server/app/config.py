@@ -145,7 +145,7 @@ settings = Settings()
 
 class FeatureFlags(BaseModel):
     kaspi_connection: bool = False
-    ai_assistant: bool = True
+    ai_assistant: bool = False  # выключен на запуске; включается в админ-панели (флаг ai_assistant)
     subscription: bool = False
     analytics: bool = False  # 3.9: отправка событий из приложения (ANALYTICS_ENABLED и флаг в админке)
 

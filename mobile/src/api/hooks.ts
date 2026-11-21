@@ -32,6 +32,12 @@ export function useAppConfig() {
   return useQuery({ queryKey: ['app-config'], queryFn: () => request<AppConfig>('/app/config', { auth: false }), staleTime: 10 * 60_000 });
 }
 
+// Помощник показывается только при включённом на сервере флаге (по умолчанию выключен на запуске).
+// Пока конфиг не загружен — помощник скрыт: без заглушек «скоро появится».
+export function useAssistantEnabled(): boolean {
+  return useAppConfig().data?.flags.ai_assistant === true;
+}
+
 export function useShops(enabled = true) {
   return useQuery({
     queryKey: ['shops'],

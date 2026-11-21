@@ -36,6 +36,7 @@ export default function ProfileScreen() {
   const themeLabel = themeMode === 'system' ? t('settings.system') : themeMode === 'light' ? t('settings.light') : t('settings.dark');
   const langLabel = locale === 'kk' ? t('settings.kk') : t('settings.ru');
   const aiOn = quota.data?.consent_active ?? false;
+  const assistantOn = config.data?.flags.ai_assistant === true;
 
   return (
     <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 120, paddingTop: spacing.sm }} style={{ backgroundColor: colors.bg }} showsVerticalScrollIndicator={false}>
@@ -95,15 +96,17 @@ export default function ProfileScreen() {
           <ListRow title={t('profile.language')} right={<Txt variant="subhead" tone="tertiary">{langLabel}</Txt>} onPress={() => setLangOpen(true)} />
           <ListRow title={t('profile.theme')} right={<Txt variant="subhead" tone="tertiary">{themeLabel}</Txt>} onPress={() => setThemeOpen(true)} />
           <ListRow title={t('profile.notifications')} onPress={() => router.push('/settings/notifications')} />
-          <ListRow
-            title={t('profile.aiAccess')}
-            right={<Txt variant="subhead" tone={aiOn ? 'tertiary' : 'danger'}>{aiOn ? t('profile.valueOn') : t('profile.valueOff')}</Txt>}
-            onPress={() => {
-              if (aiOn) consent.mutate(false);
-              else consent.mutate(true);
-            }}
-            last
-          />
+          {assistantOn ? (
+            <ListRow
+              title={t('profile.aiAccess')}
+              right={<Txt variant="subhead" tone={aiOn ? 'tertiary' : 'danger'}>{aiOn ? t('profile.valueOn') : t('profile.valueOff')}</Txt>}
+              onPress={() => {
+                if (aiOn) consent.mutate(false);
+                else consent.mutate(true);
+              }}
+              last
+            />
+          ) : null}
         </GroupCard>
       </Section>
 

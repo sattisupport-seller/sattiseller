@@ -3,7 +3,7 @@ import { CalendarDays, CircleHelp, Sparkles } from 'lucide-react-native';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 
-import { useOverview, useShops } from '@/api/hooks';
+import { useAssistantEnabled, useOverview, useShops } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import { LineChart } from '@/components/ui/Charts';
 import { IconButton } from '@/components/ui/IconButton';
@@ -25,6 +25,7 @@ type Preset = '7d' | '30d' | '90d' | 'today';
 // Обзор (docs/design.md, 12.4): период, KPI 2×2, график, «требует внимания», лучшие товары, помощник.
 export default function OverviewScreen() {
   const { t, locale } = useI18n();
+  const assistantOn = useAssistantEnabled();
   const { colors, spacing, radii } = useTheme();
   const router = useRouter();
   const { shopId, isDemo } = useSession();
@@ -259,7 +260,7 @@ export default function OverviewScreen() {
                   </GroupCard>
                 </Section>
 
-                <View
+                {assistantOn ? <View
                   style={{ marginTop: spacing['2xl'], backgroundColor: colors.surface, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, gap: spacing.md }}
                 >
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
@@ -279,7 +280,7 @@ export default function OverviewScreen() {
                     <Chip label={t('overview.assistantChip1')} selected={false} onPress={() => router.push('/(tabs)/assistant')} />
                     <Chip label={t('overview.assistantChip2')} selected={false} onPress={() => router.push('/(tabs)/assistant')} />
                   </View>
-                </View>
+                </View> : null}
 
                 <Txt variant="footnote" tone="tertiary" align="center" style={{ marginTop: spacing.xl }}>
                   {t('overview.dataAt', { time: formatTimeAlmaty(data.data_as_of) })}

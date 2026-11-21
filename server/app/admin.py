@@ -30,7 +30,7 @@ from .errors import ApiError
 from .models import AIConversation, AITurn, Order, Shop, User
 
 SUPPORT_ACCESS_HOURS = 24
-FLAG_DEFAULTS = {"kaspi_connection": False, "ai_assistant": True, "subscription": False, "analytics": False}
+FLAG_DEFAULTS = {"kaspi_connection": False, "ai_assistant": False, "subscription": False, "analytics": False}
 
 
 def _now() -> datetime:

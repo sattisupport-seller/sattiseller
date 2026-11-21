@@ -3,7 +3,7 @@ import { Sparkles } from 'lucide-react-native';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
-import { useProduct } from '@/api/hooks';
+import { useAssistantEnabled, useProduct } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import { BarChart } from '@/components/ui/Charts';
 import { Segmented } from '@/components/ui/Inputs';
@@ -20,6 +20,7 @@ type Period = '7d' | '30d' | '90d';
 // Карточка товара (docs/design.md, 12.9): KPI, график продаж, экономика одной продажи, затраты, возвраты.
 export default function ProductScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const assistantOn = useAssistantEnabled();
   const { t, locale } = useI18n();
   const { colors, spacing } = useTheme();
   const router = useRouter();
@@ -136,13 +137,15 @@ export default function ProductScreen() {
         </Card>
       </Section>
 
-      <Button
-        title={t('productDetail.askAssistant')}
-        onPress={() => router.push('/(tabs)/assistant')}
-        icon={<Sparkles size={20} color={colors.onPrimary} />}
-        fullWidth
-        style={{ marginTop: spacing.lg }}
-      />
+      {assistantOn ? (
+        <Button
+          title={t('productDetail.askAssistant')}
+          onPress={() => router.push('/(tabs)/assistant')}
+          icon={<Sparkles size={20} color={colors.onPrimary} />}
+          fullWidth
+          style={{ marginTop: spacing.lg }}
+        />
+      ) : null}
       {hasCost ? null : <GroupCard><ListRow title={t('productDetail.addCost')} onPress={() => router.push(`/product/cost/${p.product_id}`)} last /></GroupCard>}
     </ScrollView>
   );

@@ -16,12 +16,18 @@ from fastapi.testclient import TestClient  # noqa: E402
 from app import ratelimit  # noqa: E402
 from app.db import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
+from app.admin import FeatureFlag  # noqa: E402
+from sqlalchemy.orm import Session as DbSession  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def _fresh_db():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
+    # Помощник выключен по умолчанию (запуск); тесты помощника включают его явно, тесты выключателя — выключают
+    with DbSession(engine) as s:
+        s.add(FeatureFlag(key="ai_assistant", enabled=True))
+        s.commit()
     ratelimit.reset()
     yield
 
