@@ -29,3 +29,4 @@ server/htmlcov/
 server/tests/ai_eval_report.json
 server/tests/ai_eval_report*.json
 server/tests/ai_eval_live*.json
+server/tests/ai_eval_live_runs/

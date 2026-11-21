@@ -116,3 +116,27 @@ def test_compare_periods_has_difference_and_percent(demo):
     assert "profit_change" in out
     if "profit_change_pct" in out:
         assert facts[-1].kind in {"money", "percent"}
+
+
+def test_product_found_by_word_stem(demo):
+    """«Термокружки» (родительный падеж) находит «Термокружка 450 мл, нержавейка» по основе слова."""
+    tools = _tools(demo["shop_id"])
+    facts: list = []
+    out = ai_service.execute_tool("get_product_cost", {"name": "Термокружки нержавейка"}, tools, facts)
+    assert out["status"] in {"known", "missing"}
+    assert facts and "Термокружк" in facts[0].value
+
+
+def test_top_products_by_quantity_uses_units(demo):
+    tools = _tools(demo["shop_id"])
+    facts: list = []
+    out = ai_service.execute_tool("get_top_products", {"period": "30d", "metric": "qty", "limit": 2}, tools, facts)
+    assert set(out) >= {"period", "count"}
+    assert all(f.kind in {"units", "external", "text"} for f in facts)
+
+
+def test_product_margin_and_profit_for_period(demo):
+    tools = _tools(demo["shop_id"])
+    facts: list = []
+    out = ai_service.execute_tool("get_product_cost", {"sku": "D007", "period": "30d"}, tools, facts)
+    assert out["status"] in {"known", "missing"}

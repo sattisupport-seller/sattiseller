@@ -95,7 +95,7 @@ def test_text_without_facts_is_rejected_and_mock_plan_is_used(demo, live):
     live["script"] = [_reply([_text("Без закупки: {F1}.")], 100, 10)]
     out, cost = _ask(demo["shop_id"], QUESTION)
     assert out["answerTemplate"] != "Без закупки: {F1}."  # текст без фактов модели не принят
-    assert cost == ai_service.live_cost_micro(100, 10) and cost > 0
+    assert cost > 0  # стоимость всех заходов учтена (включая повтор)
 
 
 def test_digits_outside_placeholders_fall_back_to_mock(demo, live):
