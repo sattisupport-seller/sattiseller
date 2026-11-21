@@ -23,12 +23,25 @@ THRESHOLD = 0.9
 PII = re.compile(r"\+?\d[\d\s()-]{8,}\d|@[\w.]+|ул\.|улица", re.IGNORECASE)
 
 
+# Синонимы одного понятия. Добавлены после круга 1 по итогам разбора: ожидаемый корень «закупк» не совпадает
+# с правильным словом «закупочной», а «не храню» — с правильным «не хранятся». Таблица одна для всех выборок.
+SYNONYMS = {
+    "закупк": ["закупоч"],
+    "не храню": ["не хранятся"],
+}
+
+
+def _term_found(term: str, answer: str) -> bool:
+    forms = [term.lower(), *SYNONYMS.get(term.lower(), [])]
+    return any(form in answer for form in forms)
+
+
 def _check(item: dict, answer: str) -> tuple[bool, str]:
     if "\n" in answer:
         return False, "перенос строки в ответе"
     if PII.search(answer):
         return False, "похоже на контакт или адрес"
-    if not any(term.lower() in answer.lower() for term in item["any"]):
+    if not any(_term_found(term, answer.lower()) for term in item["any"]):
         return False, "нет ожидаемой фразы"
     return True, ""
 
