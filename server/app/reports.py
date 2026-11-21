@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import logging
+import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -958,3 +960,44 @@ def _round_fraction(x: Fraction) -> int:
     n, d = x.numerator, x.denominator
     sign = -1 if n < 0 else 1
     return sign * ((abs(n) * 2 + d) // (2 * d))
+
+
+# ---------- прогрев кэша (1.17) ----------
+
+def warm_shop(shop_id: str) -> None:
+    """Загружает исходные данные магазина в кэш (в фоне). Ошибки не выходят за пределы потока."""
+    from .db import SessionLocal
+    from .models import Shop as _Shop
+
+    try:
+        with SessionLocal() as db:
+            shop = db.get(_Shop, shop_id)
+            if shop is not None:
+                base_for(db, shop)
+    except Exception:  # noqa: BLE001 — прогрев не должен валить сервер
+        logging.getLogger("satti.reports").exception("warm failed for shop")
+
+
+def warm_recent(limit: int | None = None) -> None:
+    """Прогрев при запуске: демо-магазины с недавней активностью, не больше размера кэша."""
+    from .db import SessionLocal
+    from .models import DemoInstallation
+
+    limit = limit or reportcache.MAX_SNAPSHOTS
+
+    try:
+        with SessionLocal() as db:
+            ids = [row.shop_id for row in db.scalars(
+                select(DemoInstallation).order_by(DemoInstallation.last_active_at.desc()).limit(limit)).all()]
+    except Exception:  # noqa: BLE001
+        logging.getLogger("satti.reports").exception("warm list failed")
+        return
+    for shop_id in ids:
+        warm_shop(shop_id)
+
+
+def schedule_warm_after_write(shop_id: str, delay_seconds: float = 2.0) -> None:
+    """После записи — прогрев через паузу: запись в обработчике может зафиксироваться чуть позже сброса кэша."""
+    t = threading.Timer(delay_seconds, warm_shop, args=(shop_id,))
+    t.daemon = True
+    t.start()

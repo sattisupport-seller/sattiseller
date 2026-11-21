@@ -45,3 +45,53 @@ def test_cost_change_shows_up_in_reports_after_the_write(client, demo):
     assert r.status_code == 201, r.text
     after = client.get(f"/v1/shops/{demo['shop_id']}/products?period=30d", headers=demo["headers"]).json()
     assert after != before
+
+
+def test_concurrent_cold_requests_compute_once():
+    """1.17, single-flight: при одновременных запросах без кэша расчёт выполняет один поток."""
+    import threading
+    import time
+
+    reportcache.clear()
+    calls = []
+    started = threading.Barrier(8)
+
+    def slow():
+        calls.append(1)
+        time.sleep(0.3)
+        return "data"
+
+    results = []
+
+    def worker():
+        started.wait()
+        results.append(reportcache.snapshot("shop-sf", slow))
+
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(calls) == 1
+    assert results == ["data"] * 8
+
+
+def test_write_triggers_the_warm_hook_once_per_invalidate():
+    reportcache.clear()
+    seen = []
+    reportcache.set_warm_hook(seen.append)
+    try:
+        reportcache.invalidate("shop-w")
+        reportcache.invalidate("shop-w")
+    finally:
+        reportcache.set_warm_hook(None)
+    assert seen == ["shop-w", "shop-w"]
+
+
+def test_warm_shop_fills_the_cache_from_the_database(demo):
+    from app import reports
+    from app.db import SessionLocal
+
+    reportcache.clear()
+    reports.warm_shop(demo["shop_id"])
+    assert demo["shop_id"] in reportcache._snapshots

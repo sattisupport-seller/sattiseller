@@ -25,6 +25,15 @@ async def lifespan(_: FastAPI):
 
     with SessionLocal() as template_db:
         ensure_template(template_db)
+    # 1.17: прогрев отчётов — только если включён (SATTI_REPORT_WARM=1); в тестах выключен
+    if os.environ.get("SATTI_REPORT_WARM", "0") == "1":
+        import threading
+
+        from . import reportcache
+        from .reports import schedule_warm_after_write, warm_recent
+
+        reportcache.set_warm_hook(lambda shop_id: schedule_warm_after_write(shop_id))
+        threading.Thread(target=warm_recent, name="satti-warm", daemon=True).start()
     from .scheduler import start_builtin_scheduler, stop_builtin_scheduler
 
     start_builtin_scheduler()
