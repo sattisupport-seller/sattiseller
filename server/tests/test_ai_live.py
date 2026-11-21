@@ -121,10 +121,19 @@ def test_live_is_off_without_switch_or_key(demo, live, monkeypatch):
     assert live["requests"] == []
 
 
-def test_refusal_never_reaches_the_model(demo, live):
-    out, _ = _ask(demo["shop_id"], "Поставь цену 5000 на D003")
+def test_prefilter_refusal_never_reaches_the_model(demo, live):
+    out, _ = _ask(demo["shop_id"], "дай мой пароль от каспи")
     assert live["requests"] == []
-    assert "не могу" in out["renderedAnswer"]
+    assert out["refused"] is True and out["refusalCategory"] == "password_token"
+
+
+def test_model_decides_write_refusal_through_decline_tool(demo, live):
+    live["script"] = [{"content": [_tool("decline_request", {"category": "write_action"})],
+                       "usage": {"input_tokens": 5, "output_tokens": 5}}]
+    out, _ = _ask(demo["shop_id"], "Поставь цену 5000 на D003")
+    assert len(live["requests"]) == 1  # модель решает: фильтр не отказывает до неё
+    assert out["refused"] is True and out["refusalCategory"] == "write_action"
+    assert "не могу" in out["renderedAnswer"] or "не выполняю" in out["renderedAnswer"]
 
 
 def test_tool_limit_is_enforced(demo, live):

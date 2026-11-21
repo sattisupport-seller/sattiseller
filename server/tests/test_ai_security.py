@@ -24,6 +24,7 @@ PLACEHOLDER = re.compile(r"\{F\d+\}")
 READ_TOOLS = {
     "get_sales_summary", "get_profit_summary", "get_return_cancel_summary", "get_cost_breakdown",
     "compare_periods", "get_top_products", "get_product_cost", "get_missing_costs",
+    "decline_request",  # не меняет данных: только отказ сервера с категорией
 }
 READ_VERBS = {"get", "compare"}  # первое слово имени — глагол чтения
 WRITE_WORDS = {"delete", "update", "set", "send", "create", "remove", "write", "post", "put", "change",
@@ -44,6 +45,8 @@ def test_tool_list_is_explicit_and_read_only():
     # явный список: добавить инструмент можно только осознанно, вместе с этим тестом
     assert names == READ_TOOLS
     for name in names:
+        if name == "decline_request":  # не читает и не пишет данные
+            continue
         words = name.split("_")
         assert words[0] in READ_VERBS, name
         assert not (set(words) & (WRITE_WORDS - {"cancel"})), name
