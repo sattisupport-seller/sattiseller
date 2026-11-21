@@ -17,6 +17,7 @@ from app.db import engine
 from app.models import Shop
 
 SET = json.loads((Path(__file__).parent / "ai_eval_set.json").read_text(encoding="utf-8"))
+SET_B = json.loads((Path(__file__).parent / "ai_eval_set_b.json").read_text(encoding="utf-8"))
 REPORT = Path(__file__).parent / "ai_eval_report.json"
 THRESHOLD = 0.9
 PII = re.compile(r"\+?\d[\d\s()-]{8,}\d|@[\w.]+|ул\.|улица", re.IGNORECASE)
@@ -32,12 +33,12 @@ def _check(item: dict, answer: str) -> tuple[bool, str]:
     return True, ""
 
 
-def run_eval(shop_id: str) -> dict:
+def run_eval(shop_id: str, items=None) -> dict:
     results = []
     with DbSession(engine) as db:
         shop = db.get(Shop, shop_id)
         now = datetime.now(timezone.utc)
-        for item in SET:
+        for item in (items or SET):
             answer = ai_service.ask(db, shop, item["question"], None, None, now=now)["renderedAnswer"]
             ok, why = _check(item, answer)
             results.append({"id": item["id"], "ok": ok, "why": why, "answer": answer})
@@ -51,3 +52,10 @@ def test_assistant_quality_meets_threshold(demo):
     REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     failed = [r for r in report["results"] if not r["ok"]]
     assert report["ratio"] >= THRESHOLD, f"{report['passed']} из {report['total']}: {failed}"
+
+
+def test_second_set_is_reported_without_tuning(demo):
+    """Независимая выборка (ai_eval_set_b.json): результат фиксируется в отчёте, мок под неё не подгоняется."""
+    report = run_eval(demo["shop_id"], SET_B)
+    (Path(__file__).parent / "ai_eval_report_b.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    assert report["total"] >= 30

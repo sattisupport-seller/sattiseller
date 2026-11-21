@@ -6,6 +6,24 @@ from pathlib import Path
 from pydantic import BaseModel
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _load_env_file(path: Path) -> None:
+    """Читает server/.env (если файл есть) до чтения настроек. Уже заданные в окружении значения не перезаписываются.
+    Пустые значения пропускаются: пустой секрет в шаблоне не должен затирать значение по умолчанию."""
+    if not path.exists():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key, value = key.strip(), value.split(" #", 1)[0].strip()  # комментарий в конце строки отбрасывается
+        if key and value and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_env_file(BASE_DIR / ".env")
 def production_config_problems() -> list[str]:
     """Что нельзя оставлять по умолчанию при SATTI_ENV=production (QA, риск R5). Пустой список — всё в порядке."""
     if os.environ.get("SATTI_ENV", "").lower() != "production":
@@ -59,6 +77,13 @@ class Settings:
     # дневной лимит ИИ (ТЗ 2.1, 11.2): по умолчанию — 1/20 месячного; в тестах можно задать явно
     ai_budget_daily_usd: float | None = (float(os.environ["SATTI_AI_BUDGET_DAILY_USD"])
                                          if os.environ.get("SATTI_AI_BUDGET_DAILY_USD") else None)
+    # 3.5: живая модель. Включается только при SATTI_AI_LIVE=1 и заданном ANTHROPIC_API_KEY; иначе — мок.
+    ai_live: bool = os.environ.get("SATTI_AI_LIVE", "0") == "1"
+    anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
+    ai_model: str = os.environ.get("SATTI_AI_MODEL", "claude-haiku-5-5")
+    # цены за миллион токенов для учёта бюджета (проверить по актуальному прайсу провайдера)
+    ai_price_in_per_mtok: float = float(os.environ.get("SATTI_AI_PRICE_IN_PER_MTOK", "1.0"))
+    ai_price_out_per_mtok: float = float(os.environ.get("SATTI_AI_PRICE_OUT_PER_MTOK", "5.0"))
     ai_cost_per_call_micro_usd: int = int(float(os.environ.get("SATTI_AI_COST_PER_CALL_USD", "0")) * 1_000_000)
     ai_max_question_length: int = 500
     import_max_bytes: int = 5 * 1024 * 1024

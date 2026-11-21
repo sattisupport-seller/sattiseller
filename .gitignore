@@ -27,3 +27,5 @@ server/htmlcov/
 
 # Отчёт оценки помощника (3.8), создаётся тестами
 server/tests/ai_eval_report.json
+server/tests/ai_eval_report*.json
+server/tests/ai_eval_live*.json
