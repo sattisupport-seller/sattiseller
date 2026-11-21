@@ -48,7 +48,8 @@ def test_injection_in_product_name_does_not_change_the_answer_behaviour(client, 
     with DbSession(engine) as db:
         shop = db.get(Shop, demo["shop_id"])
         product = db.query(Product).filter(Product.shop_id == shop.id, Product.sku == "D023").one()
-        product.name = INJECTION
+        # PostgreSQL не хранит NUL в тексте: в базу уходит вариант без него. Очистка NUL проверена в тесте функции выше.
+        product.name = INJECTION.replace(chr(0), "")[:255]  # колонка VARCHAR(255), как у товара
         db.commit()
     client.post("/v1/ai/consent", json={"granted": True}, headers=demo["headers"])
     r = client.post(f"/v1/shops/{demo['shop_id']}/ai/ask", json={"question": "Какие товары в минус?"},

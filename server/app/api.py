@@ -28,7 +28,7 @@ from .auth import (
 )
 from .config import AppConfig, get_app_config, settings
 from .db import get_session
-from .demo import generate_demo
+from .demo_template import copy_template, create_demo_from_template, ensure_template
 from .flags import is_enabled, require_ai
 from .errors import ApiError
 from .imports import (
@@ -251,25 +251,32 @@ def demo_session(request: Request, x_device_id: str = Header(..., alias="X-Devic
                  db: DbSession = Depends(get_session)) -> dict:
     if not (8 <= len(x_device_id) <= 128):
         raise ApiError(422, "validation")
+    ensure_template(db)  # 1.16: шаблон создаётся до других записей запроса (он коммитит транзакцию)
     _purge_idle_demos(db)
     install_id = hash_device_id(x_device_id)
     inst = db.get(DemoInstallation, install_id)
+    # Лимиты (allow) открывают своё соединение. Если запрос держит своё, при наплыве пул исчерпывается
+    # и запросы ждут друг друга до таймаута (нагрузка 1.16: 41 из 50 отказов). Поэтому перед каждым лимитом — commit.
+    db.commit()
     if inst is None:
         # AUD-05: новая демо-установка создаёт магазин с данными — ограничиваем такие создания
         if not allow(f"demo:{client_ip(request)}", settings.demo_new_per_ip_per_hour):
             raise ApiError(429, "rate_limited", "Слишком много новых демо-сессий с этого адреса. Попробуйте позже.")
         total = db.scalar(select(func.count()).select_from(DemoInstallation)) or 0
+        db.commit()
         if total >= settings.demo_max_installations:
             raise ApiError(503, "demo_full", "Демо-режим временно недоступен. Попробуйте позже.")
         _check_device_demo_limit(install_id)
-        shop = generate_demo(db, today_in(settings.default_timezone))
+        shop = create_demo_from_template(db, today_in(settings.default_timezone))
         inst = DemoInstallation(id=install_id, shop_id=shop.id, created_at=utcnow())
         db.add(inst)
     else:
         inst.last_active_at = utcnow()
-        if db.get(Shop, inst.shop_id) is None:
+        shop_missing = db.get(Shop, inst.shop_id) is None
+        db.commit()
+        if shop_missing:
             _check_device_demo_limit(install_id)
-            shop = generate_demo(db, today_in(settings.default_timezone))
+            shop = create_demo_from_template(db, today_in(settings.default_timezone))
             inst.shop_id = shop.id
             inst.created_at = utcnow()
     db.flush()
@@ -282,11 +289,13 @@ def demo_session(request: Request, x_device_id: str = Header(..., alias="X-Devic
 def demo_reset(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     if not principal.demo_shop_id:
         raise ApiError(403, "forbidden")
+    ensure_template(db)
+    db.commit()  # соединение — лимиту (см. demo_session)
     if principal.demo_install_id:
         _check_device_demo_limit(principal.demo_install_id)  # сброс тоже считается в лимит 3 в сутки
     shop = db.get(Shop, principal.demo_shop_id)
     _wipe_shop_data(db, shop.id)
-    generate_demo(db, today_in(settings.default_timezone), shop=shop)
+    copy_template(db, shop.id, today_in(settings.default_timezone))
     db.commit()
     reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return {"shop_id": shop.id, "status": "reset"}

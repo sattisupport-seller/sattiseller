@@ -19,6 +19,12 @@ async def lifespan(_: FastAPI):
     if problems:
         raise RuntimeError("Запуск отменён, конфигурация небезопасна: " + "; ".join(problems))
     init_db()
+    # 1.16: шаблон демо создаётся при запуске, а не при первом наплыве запросов (иначе все они генерируют его сразу)
+    from .db import SessionLocal
+    from .demo_template import ensure_template
+
+    with SessionLocal() as template_db:
+        ensure_template(template_db)
     from .scheduler import start_builtin_scheduler, stop_builtin_scheduler
 
     start_builtin_scheduler()
