@@ -1,6 +1,7 @@
-"""3.5: живая модель переписывает формулировку; числа — только сервер. Тесты на подставном транспорте (без сети)."""
+"""3.5: живая модель выбирает инструменты (tool use); числа — только сервер. Тесты на подставном транспорте (без сети)."""
 
 import json
+import re
 from datetime import datetime, timezone
 
 import httpx
@@ -12,33 +13,46 @@ from app.config import settings
 from app.db import engine
 from app.models import AIUsageEvent, Shop
 
+PLACEHOLDER = re.compile(r"\{F\d+\}")
+
+
+def _tool(name: str, args: dict | None = None, uid: str = "t1") -> dict:
+    return {"type": "tool_use", "id": uid, "name": name, "input": args or {}}
+
+
+def _text(text: str) -> dict:
+    return {"type": "text", "text": text}
+
+
+def _reply(blocks: list[dict], tin: int = 200, tout: int = 40) -> dict:
+    return {"content": blocks, "usage": {"input_tokens": tin, "output_tokens": tout}}
+
 
 @pytest.fixture
 def live(monkeypatch):
     monkeypatch.setattr(settings, "ai_live", True)
     monkeypatch.setattr(settings, "anthropic_api_key", "test-key-not-real")
     monkeypatch.setattr(settings, "ai_model", "claude-haiku-5-5")
-    state = {"response": None, "status": 200, "calls": 0}
+    state: dict = {"script": [], "status": 200, "requests": []}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        state["calls"] += 1
         assert request.headers["x-api-key"] == "test-key-not-real"
         assert request.headers["anthropic-version"] == "2023-06-01"
         body = json.loads(request.content)
         assert body["model"] == "claude-haiku-5-5"
-        if state["response"] is None:  # эхо: та же формулировка с плейсхолдерами из запроса
-            payload = json.loads(body["messages"][0]["content"])
-            text = "Коротко. " + payload["template"]
-            state["response"] = {"content": [{"type": "text", "text": text}],
-                                 "usage": {"input_tokens": 200, "output_tokens": 40}}
-        return httpx.Response(state["status"], json=state["response"])
+        state["requests"].append(body)
+        if state["status"] != 200:
+            return httpx.Response(state["status"], json={"error": "down"})
+        if state["script"]:
+            return httpx.Response(200, json=state["script"].pop(0))
+        return httpx.Response(200, json=_reply([_text("Коротко.")]))
 
-    original = ai_service.LiveRewriter
+    original = ai_service.LiveToolPlanner
 
     def factory(api_key, model, transport=None):
         return original(api_key, model, transport=httpx.MockTransport(handler))
 
-    monkeypatch.setattr(ai_service, "LiveRewriter", factory)
+    monkeypatch.setattr(ai_service, "LiveToolPlanner", factory)
     return state
 
 
@@ -51,40 +65,68 @@ def _ask(demo_shop_id: str, question: str):
         return out, usage.cost_micro_usd
 
 
-def test_live_rewrite_keeps_placeholders_and_records_real_cost(demo, live):
-    out, cost = _ask(demo["shop_id"], "Какие товары в минус?")
-    assert live["calls"] == 1
-    assert out["answerTemplate"].startswith("Коротко. ")
-    assert cost == ai_service.live_cost_micro(200, 40) and cost > 0
+QUESTION = "Какие товары без закупочной цены?"
 
 
-def test_empty_or_placeholder_losing_rewrite_is_rejected(demo, live):
-    live["response"] = {"content": [{"type": "text", "text": "   "}], "usage": {"input_tokens": 1, "output_tokens": 1}}
-    out, cost = _ask(demo["shop_id"], "Какие товары в минус?")
-    assert out["renderedAnswer"].strip() and cost == 0
+def test_live_model_selects_tool_and_writes_template_with_placeholders(demo, live):
+    live["script"] = [_reply([_tool("get_missing_costs")], 300, 30),
+                      _reply([_text("Без закупки: {F1}.")], 500, 50)]
+    out, cost = _ask(demo["shop_id"], QUESTION)
+    assert len(live["requests"]) == 2
+    assert "tools" in live["requests"][0]
+    result = live["requests"][1]["messages"][-1]["content"][0]
+    assert result["type"] == "tool_result" and "{F1}" in result["content"]
+    assert out["answerTemplate"] == "Без закупки: {F1}."
+    assert cost == ai_service.live_cost_micro(800, 80) and cost > 0
 
 
-def test_digits_outside_placeholders_fall_back_to_mock_template(demo, live):
-    live["response"] = {"content": [{"type": "text", "text": "Продано 123 шт: {F1}"}],
-                        "usage": {"input_tokens": 10, "output_tokens": 10}}
-    out, cost = _ask(demo["shop_id"], "Какие товары в минус?")
+def test_tool_result_carries_placeholders_not_numbers(demo, live):
+    live["script"] = [_reply([_tool("get_missing_costs")]), _reply([_text("Без закупки: {F1}.")])]
+    _ask(demo["shop_id"], QUESTION)
+    payload = json.loads(live["requests"][1]["messages"][-1]["content"][0]["content"])
+    for value in payload.values():  # ключи (name_1) не считаются; значения — только плейсхолдеры или текст
+        assert isinstance(value, str) and not re.search(r"\d", PLACEHOLDER.sub("", value))
+
+
+def test_text_without_facts_is_rejected_and_mock_plan_is_used(demo, live):
+    live["script"] = [_reply([_text("Без закупки: {F1}.")], 100, 10)]
+    out, cost = _ask(demo["shop_id"], QUESTION)
+    assert out["answerTemplate"] != "Без закупки: {F1}."  # текст без фактов модели не принят
+    assert cost == ai_service.live_cost_micro(100, 10) and cost > 0
+
+
+def test_digits_outside_placeholders_fall_back_to_mock(demo, live):
+    live["script"] = [_reply([_tool("get_missing_costs")]), _reply([_text("Продано 123 шт: {F1}")])]
+    out, _ = _ask(demo["shop_id"], QUESTION)
     assert "123" not in out["answerTemplate"]
-    assert cost == 0
 
 
 def test_provider_error_does_not_break_the_answer(demo, live):
     live["status"] = 500
-    live["response"] = {"error": "down"}
-    out, _ = _ask(demo["shop_id"], "Какие товары в минус?")
+    out, cost = _ask(demo["shop_id"], QUESTION)
     assert out["renderedAnswer"]
+    assert cost == 0
 
 
 def test_live_is_off_without_switch_or_key(demo, live, monkeypatch):
     monkeypatch.setattr(settings, "ai_live", False)
-    _ask(demo["shop_id"], "Какие товары в минус?")
-    assert live["calls"] == 0
+    _ask(demo["shop_id"], QUESTION)
+    assert live["requests"] == []
     monkeypatch.setattr(settings, "ai_live", True)
     monkeypatch.setattr(settings, "anthropic_api_key", "")
-    _ask(demo["shop_id"], "Какие товары в минус?")
-    assert live["calls"] == 0
+    _ask(demo["shop_id"], QUESTION)
+    assert live["requests"] == []
 
+
+def test_refusal_never_reaches_the_model(demo, live):
+    out, _ = _ask(demo["shop_id"], "Поставь цену 5000 на D003")
+    assert live["requests"] == []
+    assert "не могу" in out["renderedAnswer"]
+
+
+def test_tool_limit_is_enforced(demo, live):
+    live["script"] = [_reply([_tool("get_missing_costs", uid=f"t{i}")]) for i in range(6)]
+    out, _ = _ask(demo["shop_id"], QUESTION)
+    # 1 вызов — инструмент мока; у живой модели не больше TOOL_LIMIT выполненных вызовов
+    assert out["toolCalls"] <= 1 + ai_service.TOOL_LIMIT
+    assert len(live["requests"]) <= ai_service.TOOL_LIMIT + 2
