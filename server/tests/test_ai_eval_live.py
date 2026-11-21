@@ -24,8 +24,12 @@ pytestmark = pytest.mark.skipif(os.environ.get("SATTI_AI_EVAL_LIVE") != "1",
                                 reason="живой прогон тратит деньги: нужен SATTI_AI_EVAL_LIVE=1")
 
 HERE = Path(__file__).parent
-SETS = [("A", "ai_eval_set.json"), ("B", "ai_eval_set_b.json"), ("C", "ai_eval_set_c.json"), ("D", "ai_eval_set_d.json")]
-OFFICIAL = "D"  # слепая выборка, написанная до круга 2; остальные — для сравнения
+SETS = [("A", "ai_eval_set.json"), ("B", "ai_eval_set_b.json"), ("C", "ai_eval_set_c.json"),
+        ("D", "ai_eval_set_d.json"), ("E", "ai_eval_set_e.json")]
+OFFICIAL = "E"  # выборка владельца (круг 3); D — слепая (круг 2); A, B, C — для сравнения
+# SATTI_AI_EVAL_ONLY=E — прогнать только указанные выборки (через запятую), чтобы не тратить лишнее
+_ONLY = {s for s in os.environ.get("SATTI_AI_EVAL_ONLY", "").split(",") if s}
+SETS = [(k, f) for k, f in SETS if not _ONLY or k in _ONLY]
 THRESHOLD = 0.9
 
 
