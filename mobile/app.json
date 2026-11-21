@@ -25,7 +25,10 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "kz.satti.seller"
+      "package": "kz.satti.seller",
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -38,7 +41,8 @@
         "expo-image-picker",
         {
           "cameraPermission": "Satti Seller использует камеру, чтобы снять фото товара для описания. / Satti Seller тауар суретін описание үшін түсіру үшін камераны пайдаланады.",
-          "photosPermission": false
+          "photosPermission": false,
+          "microphonePermission": false
         }
       ],
       "expo-sharing",
