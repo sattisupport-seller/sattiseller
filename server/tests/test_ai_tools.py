@@ -36,7 +36,7 @@ def test_fourteen_day_period_runs_and_is_in_the_enum(demo):
     assert "14d" in ai_service.PRESET_NAMES
     tools = _tools(demo["shop_id"])
     out = ai_service.execute_tool("get_profit_summary", {"period": "14d"}, tools, [])
-    assert set(out) == {"period", "profit", "net_sales"}
+    assert {"period", "profit", "net_sales"} <= set(out) <= {"period", "profit", "net_sales", "margin"}
 
 
 def test_unknown_period_is_refused(demo):
@@ -75,3 +75,44 @@ def test_compare_periods_uses_one_tool_call(demo):
     tools = _tools(demo["shop_id"])
     ai_service.execute_tool("compare_periods", {"period_a": "7d", "period_b": "prev7d"}, tools, [])
     assert tools.calls == 1
+
+
+def _f(fid, kind, value):
+    return ai_service.Fact(fid, "t", kind, value)
+
+
+def test_calculate_sum_diff_average_and_share():
+    facts = [_f("F1", "money", 100000), _f("F2", "money", 150000)]
+    assert ai_service.execute_tool("calculate", {"op": "diff", "ids": ["F1", "F2"]}, None, facts)["result"] == "{F3}"
+    assert facts[-1].value == 50000 and facts[-1].kind == "money"  # второй минус первый
+    ai_service.execute_tool("calculate", {"op": "average", "ids": ["F1", "F2"]}, None, facts)
+    assert facts[-1].value == 125000
+    ai_service.execute_tool("calculate", {"op": "share", "ids": ["F1", "F2"]}, None, facts)
+    assert facts[-1].kind == "percent" and facts[-1].value == 6667  # 66,67% в базисных пунктах
+
+
+def test_calculate_percent_change_in_basis_points():
+    facts = [_f("F1", "money", 100000), _f("F2", "money", 150000)]
+    ai_service.execute_tool("calculate", {"op": "pct_change", "ids": ["F1", "F2"]}, None, facts)
+    assert facts[-1].kind == "percent" and facts[-1].value == 5000  # +50,00%
+
+
+@pytest.mark.parametrize("args, facts", [
+    ({"op": "power", "ids": ["F1"]}, [_f("F1", "money", 1)]),
+    ({"op": "pct_change", "ids": ["F1", "F2"]}, [_f("F1", "money", 0), _f("F2", "money", 5)]),
+    ({"op": "share", "ids": ["F1", "F2"]}, [_f("F1", "money", 5), _f("F2", "money", 0)]),
+    ({"op": "diff", "ids": ["F9", "F2"]}, [_f("F2", "money", 5)]),
+    ({"op": "sum", "ids": ["F1"]}, [_f("F1", "text", "abc")]),
+])
+def test_calculate_refuses_bad_input(args, facts):
+    with pytest.raises(ValueError):
+        ai_service.execute_tool("calculate", args, None, facts)
+
+
+def test_compare_periods_has_difference_and_percent(demo):
+    tools = _tools(demo["shop_id"])
+    facts: list = []
+    out = ai_service.execute_tool("compare_periods", {"period_a": "7d", "period_b": "prev7d"}, tools, facts)
+    assert "profit_change" in out
+    if "profit_change_pct" in out:
+        assert facts[-1].kind in {"money", "percent"}
