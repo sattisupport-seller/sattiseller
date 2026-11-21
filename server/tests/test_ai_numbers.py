@@ -112,3 +112,10 @@ def test_tool_payload_carries_values_for_the_model(demo, live):
     assert set(payload) == {"placeholders", "values"}
     assert all(str(v).startswith("{F") for v in payload["placeholders"].values() if isinstance(v, str)
                and v.startswith("{F"))
+
+
+def test_number_the_seller_typed_is_allowed():
+    """«За 14 дней» из вопроса продавца — не выдумка модели, а его собственное число."""
+    facts = [_fact("F1", "money", 1250000)]
+    assert ai_service.number_violations("Прибыль за 14 дней: {F1}", facts, "ru", "какая прибыль за 14 дней") == []
+    assert ai_service.number_violations("Прибыль за 21 день: {F1}", facts, "ru", "какая прибыль за 14 дней") == ["21"]
