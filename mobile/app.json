@@ -82,15 +82,15 @@
         }
       },
       "eas": {
-        "projectId": "035d71b9-7c3e-4e74-a52b-080231970c45"
+        "projectId": "aaae388c-89d6-4aeb-82d2-8b9088fdc5dc"
       }
     },
-    "owner": "bauyrzhan117",
     "runtimeVersion": {
       "policy": "appVersion"
     },
+    "owner": "sattisupport-seller",
     "updates": {
-      "url": "https://u.expo.dev/035d71b9-7c3e-4e74-a52b-080231970c45"
+      "url": "https://u.expo.dev/aaae388c-89d6-4aeb-82d2-8b9088fdc5dc"
     }
   }
 }
