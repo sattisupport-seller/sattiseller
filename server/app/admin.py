@@ -250,6 +250,18 @@ def stats(_: User = Depends(require_admin), db: DbSession = Depends(get_session)
     }
 
 
+@router.get("/analytics")
+def analytics_summary(days: int = 30, _: User = Depends(require_admin), db: DbSession = Depends(get_session)) -> dict:
+    """3.9: счётчики событий за последние дни (без пользователей и адресов)."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+    from .analytics import summary
+
+    days = max(1, min(days, 365))
+    since = (_dt.now(_tz.utc) - _td(days=days)).strftime("%Y-%m-%d")
+    return {"sinceDay": since, "rows": summary(db, since)}
+
+
 @router.get("/flags")
 def flags_get(_: User = Depends(require_admin), db: DbSession = Depends(get_session)) -> dict:
     stored = {f.key: f.enabled for f in db.scalars(select(FeatureFlag)).all()}

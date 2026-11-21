@@ -30,6 +30,7 @@ from .config import AppConfig, get_app_config, settings
 from .db import get_session
 from .demo_template import copy_template, create_demo_from_template, ensure_template
 from .flags import is_enabled, require_ai
+from . import analytics as analytics_service
 from . import kaspi as kaspi_service
 from .kaspi_client import KaspiAuthError, KaspiClient, KaspiUnavailable
 from .errors import ApiError, pick_lang
@@ -1327,14 +1328,18 @@ def kaspi_connect(shop_id: str, body: KaspiConnectIn, principal: Principal = Dep
     shop = shop_for(db, principal, shop_id)
     now = utcnow()
     client = KaspiClient(body.token)
+    analytics_service.record(db, "kaspi_connect_started", now)
     try:
         conn = kaspi_service.connect(db, shop, body.seller_id, body.token, client, now)
     except KaspiAuthError as exc:
+        analytics_service.record(db, "kaspi_connect_failed", now)
         raise ApiError(422, "kaspi_token_rejected", "Kaspi не принял этот ключ. Проверьте ключ и ID продавца.") from exc
     except KaspiUnavailable as exc:
+        analytics_service.record(db, "kaspi_connect_failed", now)
         raise ApiError(503, "kaspi_unavailable", "Kaspi сейчас недоступен. Попробуйте позже.") from exc
     finally:
         client.close()
+    analytics_service.record(db, "kaspi_connect_succeeded", now)
     return _kaspi_view(shop, conn)
 
 
@@ -1376,6 +1381,24 @@ def kaspi_disconnect(shop_id: str, principal: Principal = Depends(get_principal)
     shop = shop_for(db, principal, shop_id)
     kaspi_service.disconnect(db, shop.id)
     return {"enabled": True, "status": "not_connected"}
+
+
+class EventIn(BaseModel):
+    event: str = Field(min_length=1, max_length=64)
+
+
+@api.post("/analytics/events", status_code=204, tags=["аналитика"])
+def analytics_event(body: EventIn, request: Request) -> Response:
+    """3.9: счётчик события за день. Без входа, без адреса и устройства; не чаще 600 раз в час с одного адреса."""
+    if body.event not in analytics_service.ALLOWED_EVENTS:
+        raise ApiError(422, "validation", "Неизвестное событие.")
+    if not allow(f"analytics:{client_ip(request)}", 600):
+        raise ApiError(429, "rate_limited", "Слишком много событий. Попробуйте позже.")
+    from .db import SessionLocal
+
+    with SessionLocal() as db:
+        analytics_service.record(db, body.event, utcnow())
+    return Response(status_code=204)
 
 
 @api.get("/kaspi/price/{shop_id}/{price_key}", tags=["Kaspi"], include_in_schema=False)

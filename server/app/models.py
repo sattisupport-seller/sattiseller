@@ -315,3 +315,11 @@ class AIBudgetAlert(Base):
     month: Mapped[str] = mapped_column(String(7), primary_key=True)  # YYYY-MM
     level: Mapped[str] = mapped_column(String(16), primary_key=True)  # warn | exhausted
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AnalyticsDaily(Base):
+    """Счётчики событий использования по дням (3.9). Без пользователей, устройств и адресов: только имя события и дата."""
+    __tablename__ = "analytics_daily"
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)  # YYYY-MM-DD, UTC
+    event: Mapped[str] = mapped_column(String(64), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
