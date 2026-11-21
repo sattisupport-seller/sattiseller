@@ -56,6 +56,9 @@ class Settings:
     ai_daily_limit: int = 30  # ТЗ 2.1, раздел 11.2: вопросы и черновики вместе (ADR-0005)
     # Бюджет ИИ на весь сервис (ТЗ 2.1, 11.2): месячный, дневной — 1/20 месячного; стоимость одного вызова
     ai_budget_monthly_usd: float = float(os.environ.get("SATTI_AI_BUDGET_MONTHLY_USD", "20"))
+    # дневной лимит ИИ (ТЗ 2.1, 11.2): по умолчанию — 1/20 месячного; в тестах можно задать явно
+    ai_budget_daily_usd: float | None = (float(os.environ["SATTI_AI_BUDGET_DAILY_USD"])
+                                         if os.environ.get("SATTI_AI_BUDGET_DAILY_USD") else None)
     ai_cost_per_call_micro_usd: int = int(float(os.environ.get("SATTI_AI_COST_PER_CALL_USD", "0")) * 1_000_000)
     ai_max_question_length: int = 500
     import_max_bytes: int = 5 * 1024 * 1024

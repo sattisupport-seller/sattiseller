@@ -562,7 +562,7 @@ def budget_state(db: DbSession, now: datetime) -> dict:
     day_micro = db.scalar(select(func.coalesce(func.sum(AIUsageEvent.cost_micro_usd), 0)).where(
         AIUsageEvent.created_at >= day_start)) or 0
     monthly = settings.ai_budget_monthly_usd
-    daily = monthly / 20  # ТЗ 2.1, 11.2: дневной бюджет — 1/20 месячного
+    daily = settings.ai_budget_daily_usd or monthly / 20  # ТЗ 2.1, 11.2: дневной бюджет — 1/20 месячного, если не задан явно
     month_usd = month_micro / 1_000_000
     day_usd = day_micro / 1_000_000
     ratio = max(month_usd / monthly if monthly else 1.0, day_usd / daily if daily else 1.0)
