@@ -14,7 +14,8 @@
         "light": "./assets/icon.png",
         "dark": "./assets/icon-dark.png",
         "tinted": "./assets/icon-tinted.png"
-      }
+      },
+      "infoPlist": {}
     },
     "android": {
       "adaptiveIcon": {
@@ -58,6 +59,23 @@
     "scheme": "satti",
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "035d71b9-7c3e-4e74-a52b-080231970c45"
+      }
+    },
+    "owner": "bauyrzhan117",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/035d71b9-7c3e-4e74-a52b-080231970c45"
     }
   }
 }
