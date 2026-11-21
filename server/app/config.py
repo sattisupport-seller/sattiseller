@@ -15,6 +15,8 @@ def production_config_problems() -> list[str]:
         problems.append("SATTI_BILLING_PEPPER не задан: используется значение разработки")
     if settings.admin_totp_key == "dev-only-change-me":
         problems.append("SATTI_TOTP_KEY не задан: секрет 2FA администратора шифруется ключом разработки")
+    if not settings.smtp_host:
+        problems.append("SATTI_SMTP_HOST не задан: письма с кодами пишутся в папку outbox и не доходят до людей")
     if settings.kaspi_connection_enabled and not settings.kaspi_key:
         problems.append("KASPI_ENABLED=1, но SATTI_KASPI_KEY не задан: токены Kaspi нечем шифровать")
     if any("localhost" in o or "127.0.0.1" in o for o in os.environ.get(
@@ -65,6 +67,16 @@ class Settings:
     ai_consent_version: str = "2026-11-19"
     ai_service_name: str = "Satti AI (тестовый провайдер)"
     # 2.6: подключение Kaspi выключено по умолчанию; письменного разрешения Kaspi ещё нет (spec-2.1, раздел 22)
+    # 3.6: почта. Без SATTI_SMTP_HOST письма пишутся в папку outbox (разработка и тесты)
+    smtp_host: str = os.environ.get("SATTI_SMTP_HOST", "")
+    smtp_port: int = int(os.environ.get("SATTI_SMTP_PORT", "587"))
+    smtp_user: str = os.environ.get("SATTI_SMTP_USER", "")
+    smtp_password: str = os.environ.get("SATTI_SMTP_PASSWORD", "")
+    smtp_from: str = os.environ.get("SATTI_SMTP_FROM", "Satti Seller <no-reply@example.invalid>")
+    smtp_starttls: bool = os.environ.get("SATTI_SMTP_STARTTLS", "1") == "1"
+    smtp_timeout: float = float(os.environ.get("SATTI_SMTP_TIMEOUT", "20"))
+    # 1.4: адрес владельца для оповещений о бюджете ИИ (80% и 100%)
+    owner_alert_email: str = os.environ.get("SATTI_OWNER_ALERT_EMAIL", "").strip().lower()
     kaspi_connection_enabled: bool = os.environ.get("KASPI_ENABLED", "0") == "1"
     # 2.4: ключ шифрования токенов Kaspi (Fernet, 32 байта в base64). В продакшене обязателен.
     kaspi_key: str = os.environ.get("SATTI_KASPI_KEY", "")

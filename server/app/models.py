@@ -307,3 +307,11 @@ class KaspiConnection(Base):
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AIBudgetAlert(Base):
+    """Оповещение владельцу о бюджете ИИ: один раз на уровень (warn 80%, exhausted 100%) в месяц (1.4)."""
+    __tablename__ = "ai_budget_alerts"
+    month: Mapped[str] = mapped_column(String(7), primary_key=True)  # YYYY-MM
+    level: Mapped[str] = mapped_column(String(16), primary_key=True)  # warn | exhausted
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

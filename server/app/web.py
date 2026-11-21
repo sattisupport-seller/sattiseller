@@ -12,14 +12,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import markdown
-from fastapi import APIRouter, Depends, Form
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from .config import settings
 from .db import get_session
-from .mailer import send_code_email
+from .mailer import MailError, send_code_email
+from .errors import pick_lang
 from .accounts import delete_user_account
 from .models import AuthCode, User
 from .ratelimit import allow
@@ -117,7 +118,7 @@ def delete_account_page() -> HTMLResponse:
 
 
 @router.post("/delete-account/start", response_class=HTMLResponse)
-def delete_account_start(email: str = Form(...), db: DbSession = Depends(get_session)) -> HTMLResponse:
+def delete_account_start(request: Request, email: str = Form(...), db: DbSession = Depends(get_session)) -> HTMLResponse:
     address = email.strip().lower()
     if allow(f"webdelete:{address}", 5):
         user = db.scalar(select(User).where(User.email == address))
@@ -126,7 +127,10 @@ def delete_account_start(email: str = Form(...), db: DbSession = Depends(get_ses
             db.add(AuthCode(email=user.email, purpose="delete", user_id=user.id, code_hash=hash_code(user.email, code),
                             expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.code_ttl_minutes)))
             db.commit()
-            send_code_email(user.email, code, "delete")
+            try:
+                send_code_email(user.email, code, "delete", pick_lang(request.headers.get("accept-language")))
+            except MailError:
+                pass  # та же страница, что и без ошибки: не показываем, есть ли аккаунт
     return _page("Введите код", _code_form(address))
 
 

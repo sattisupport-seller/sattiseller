@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import json
 import re
 import uuid
@@ -20,7 +22,9 @@ from sqlalchemy.orm import Session as DbSession
 
 from .config import settings
 from .errors import ApiError
-from .models import AIConversation, AIFeedback, AITurn, AIUsageEvent, Shop
+from .mailer import MailError, send_owner_alert
+from .models import AIBudgetAlert, AIConversation, AIFeedback, AITurn, AIUsageEvent, Shop
+
 from .money import format_tenge, round_half_up_div
 from .periods import Period, resolve
 from .privacy import buyer_values_for_shop, contains_pii, mask_known, mask_text
@@ -34,6 +38,8 @@ from .reports import (
     missing_costs,
     product_stats,
 )
+
+log = logging.getLogger("satti.ai")
 
 TOOL_LIMIT = 3
 PLACEHOLDER = re.compile(r"\{(F\d+)\}")
@@ -504,6 +510,47 @@ def record_usage(db: DbSession, user_id: str | None, shop_id: str, now: datetime
     """Запись вызова ИИ: идёт и в квоту (вопросы и черновики вместе, QA-04), и в учёт расходов."""
     db.add(AIUsageEvent(user_id=user_id, shop_id=shop_id, created_at=now, tool_calls=tool_calls, kind=kind,
                         cost_micro_usd=settings.ai_cost_per_call_micro_usd))
+    db.flush()
+    check_budget_alerts(db, now)
+
+
+_BUDGET_ALERT_TEXT = {
+    "warn": ("Бюджет ИИ Satti: 80% за месяц",
+             "Расход помощника за {month} достиг 80% месячного бюджета ({spent:.2f} из {budget:.2f} USD). "
+             "Помощник работает. При 100% он будет временно недоступен, отчёты не пострадают."),
+    "exhausted": ("Бюджет ИИ Satti исчерпан",
+                  "Расход помощника за {month} достиг 100% месячного бюджета ({spent:.2f} из {budget:.2f} USD). "
+                  "Помощник временно недоступен, отчёты работают как обычно. Повысьте бюджет или дождитесь нового месяца."),
+}
+
+
+def check_budget_alerts(db: DbSession, now: datetime) -> list[str]:
+    """Письмо владельцу при 80% и 100% месячного бюджета ИИ — один раз на уровень в месяц (1.4).
+
+    Отметка пишется после успешной отправки, поэтому при ошибке почты оповещение повторится позже.
+    Возвращает уровни, по которым письмо отправлено.
+    """
+    state = budget_state(db, now)
+    if state["level"] == "ok":
+        return []
+    month = f"{now:%Y-%m}"
+    levels = ["warn", "exhausted"] if state["level"] == "exhausted" else ["warn"]
+    sent: list[str] = []
+    for level in levels:
+        if db.get(AIBudgetAlert, (month, level)) is not None:
+            continue
+        subject, template = _BUDGET_ALERT_TEXT[level]
+        text = template.format(month=month, spent=state["monthSpentUsd"], budget=state["monthBudgetUsd"])
+        try:
+            delivered = send_owner_alert(subject, text)
+        except MailError:
+            log.error("budget alert %s not sent: mail unavailable", level)
+            continue
+        if delivered:
+            db.add(AIBudgetAlert(month=month, level=level, sent_at=now))
+            db.flush()
+            sent.append(level)
+    return sent
 
 
 def budget_state(db: DbSession, now: datetime) -> dict:

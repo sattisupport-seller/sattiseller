@@ -32,7 +32,7 @@ from .demo_template import copy_template, create_demo_from_template, ensure_temp
 from .flags import is_enabled, require_ai
 from . import kaspi as kaspi_service
 from .kaspi_client import KaspiAuthError, KaspiClient, KaspiUnavailable
-from .errors import ApiError
+from .errors import ApiError, pick_lang
 from .imports import (
     FIELDS,
     auto_mapping,
@@ -43,7 +43,7 @@ from .imports import (
     parse_file,
     validate_rows,
 )
-from .mailer import send_code_email
+from .mailer import MailError, send_code_email
 from .models import (
     AIConversation,
     AITurn,
@@ -183,7 +183,10 @@ def auth_email_start(body: EmailIn, request: Request, db: DbSession = Depends(ge
     db.add(AuthCode(email=email, purpose="login", code_hash=hash_code(email, code),
                     expires_at=utcnow() + timedelta(minutes=settings.code_ttl_minutes)))
     db.commit()
-    send_code_email(email, code, "login")
+    try:
+        send_code_email(email, code, "login", pick_lang(request.headers.get("accept-language")))
+    except MailError as exc:
+        raise ApiError(503, "mail_unavailable", "Не удалось отправить код. Попробуйте позже.") from exc
     return {"status": "sent", "expires_in": settings.code_ttl_minutes * 60}
 
 
@@ -409,13 +412,17 @@ def me_update(body: MeIn, principal: Principal = Depends(get_principal), db: DbS
 
 
 @api.post("/me/deletion/start", status_code=202, tags=["пользователь"])
-def deletion_start(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+def deletion_start(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session),
+                   accept_language: str | None = Header(default=None)) -> dict:
     user = current_user(principal, db)
     code = new_code()
     db.add(AuthCode(email=user.email, purpose="delete", user_id=user.id, code_hash=hash_code(user.email, code),
                     expires_at=utcnow() + timedelta(minutes=settings.code_ttl_minutes)))
     db.commit()
-    send_code_email(user.email, code, "delete")
+    try:
+        send_code_email(user.email, code, "delete", pick_lang(accept_language))
+    except MailError as exc:
+        raise ApiError(503, "mail_unavailable", "Не удалось отправить код. Попробуйте позже.") from exc
     return {"status": "sent"}
 
 
