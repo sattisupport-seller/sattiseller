@@ -100,8 +100,11 @@
 
 ## Что нужно от владельца для подключения аккаунтов (21.11)
 
-- [ ] Адрес пустого приватного репозитория GitHub (вставить вместо `<АДРЕС РЕПОЗИТОРИЯ>`) — нужен для `git remote add origin` и push.
-- [ ] Команда подключения от Expo (`npx eas-cli@latest init --id ...`) — вставить вместо `<ВСТАВЬТЕ КОМАНДУ ...>`. Установка eas-cli и вход (`eas login`) — владелец выполняет в отдельном терминале.
+- [x] Репозиторий GitHub `sattisupport-seller/sattiseller` создан и отправлен (ветки feature/bootstrap, qa/full-check). Проверить результаты CI на странице Actions.
+- [x] Адрес пустого приватного репозитория GitHub (вставить вместо `<АДРЕС РЕПОЗИТОРИЯ>`) — нужен для `git remote add origin` и push.
+- [x] Проект Expo создан аккаунтом sattisupport-seller (ID aaae388c-89d6-4aeb-82d2-8b9088fdc5dc). Сборки не запускать до сервера с https.
+- [x] Команда подключения от Expo (`npx eas-cli@latest init --id ...`) — вставить вместо `<ВСТАВЬТЕ КОМАНДУ ...>`. Установка eas-cli и вход (`eas login`) — владелец выполняет в отдельном терминале.
+- [x] Ключ Anthropic вписан в server/.env (проверено: присутствует). Живая модель включается SATTI_AI_LIVE=1.
 - [ ] Ключ Anthropic: файл `C:\Users\user\Desktop\satti-seller\server\.env`, строка `ANTHROPIC_API_KEY=` (впишите значение сами). Сам ключ в чат не отправлять. Сервер пока не читает эту переменную: пункт 3.5 (живая модель) не сделан.
-- [ ] Перезапуск Claude Code для подхвата плагина expo@claude-plugins-official (уже установлен); после перезапуска написать «продолжаем».
+- [ ] Перезапуск Claude Code для подхвата плагина expo@claude-plugins-official (уже установлен). Нужен перезапуск; после него написать «продолжаем».
 - [ ] Почта проекта satti.support@gmail.com — для SATTI_SUPPORT_EMAIL и SMTP (3.6): учётные данные SMTP вписать в `.env` (SATTI_SMTP_HOST, SATTI_SMTP_USER, SATTI_SMTP_PASSWORD), без публикации.
