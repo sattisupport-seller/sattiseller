@@ -84,8 +84,7 @@ from .schemas import (
     TaxOut,
 )
 from .reports import (
-    build_facts,
-    load_shop,
+    base_for,
     order_detail,
     orders_list,
     overview,
@@ -505,8 +504,8 @@ def get_overview(shop_id: str, period: str = Query("7d"), principal: Principal =
     shop = shop_for(db, principal, shop_id)
 
     def compute() -> dict:
-        data = load_shop(db, shop)
-        return overview(data, build_facts(data), _period(period, shop), _now())
+        data, facts = base_for(db, shop)
+        return overview(data, facts, _period(period, shop), _now())
 
     return reportcache.memo(shop.id, f"overview|{period}|{_minute()}", compute)
 
@@ -517,8 +516,8 @@ def get_profit_breakdown(shop_id: str, period: str = Query("7d"), principal: Pri
     shop = shop_for(db, principal, shop_id)
 
     def compute() -> dict:
-        data = load_shop(db, shop)
-        return profit_breakdown(data, build_facts(data), _period(period, shop))
+        data, facts = base_for(db, shop)
+        return profit_breakdown(data, facts, _period(period, shop))
 
     return reportcache.memo(shop.id, f"profit|{period}|{_minute()}", compute)
 
@@ -530,7 +529,7 @@ def get_orders(shop_id: str, period: str = Query("7d"), status: str | None = Non
     shop = shop_for(db, principal, shop_id)
 
     def compute() -> dict:
-        data = load_shop(db, shop)
+        data, _facts = base_for(db, shop)
         return orders_list(data, _period(period, shop), status, q, _cursor(cursor), _limit(limit))
 
     key = f"orders|{period}|{status}|{q}|{cursor}|{limit}|{_minute()}"
@@ -544,8 +543,8 @@ def get_order(shop_id: str, order_id: str, principal: Principal = Depends(get_pr
     order = db.get(Order, order_id)
     if order is None or order.shop_id != shop.id:
         raise ApiError(404, "not_found")
-    data = load_shop(db, shop)
-    return order_detail(data, build_facts(data), order)
+    data, facts = base_for(db, shop)
+    return order_detail(data, facts, order)
 
 
 @api.get("/shops/{shop_id}/products/missing-costs", tags=["товары"], response_model=MissingCostsOut)
@@ -553,7 +552,7 @@ def get_missing_costs(shop_id: str, principal: Principal = Depends(get_principal
                       db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
     return reportcache.memo(shop.id, f"missing|{_minute()}",
-                            lambda: {"items": missing_costs_list(load_shop(db, shop))})
+                            lambda: {"items": missing_costs_list(base_for(db, shop)[0])})
 
 
 @api.get("/shops/{shop_id}/products", tags=["товары"], response_model=ProductsPageOut)
@@ -563,8 +562,8 @@ def get_products(shop_id: str, period: str = Query("30d"), filter: str | None = 
     shop = shop_for(db, principal, shop_id)
 
     def compute() -> dict:
-        data = load_shop(db, shop)
-        return products_list(data, build_facts(data), _period(period, shop), filter, sort, q,
+        data, facts = base_for(db, shop)
+        return products_list(data, facts, _period(period, shop), filter, sort, q,
                              _cursor(cursor), _limit(limit))
 
     key = f"products|{period}|{filter}|{sort}|{q}|{cursor}|{limit}|{_minute()}"
@@ -620,9 +619,9 @@ def export_profit_xlsx(shop_id: str, period: str = Query("30d"), principal: Prin
                        db: DbSession = Depends(get_session)) -> Response:
     """Отчёт о прибыли в Excel (ТЗ 2.1, 9.5). Итоги совпадают с экраном: те же функции расчёта."""
     shop = shop_for(db, principal, shop_id)
-    data = load_shop(db, shop)
+    data, facts = base_for(db, shop)
     p = _period(period, shop)
-    content = profit_workbook(data, build_facts(data), p, _now())
+    content = profit_workbook(data, facts, p, _now())
     return Response(content=content, media_type=XLSX_MEDIA,
                     headers={"Content-Disposition": f'attachment; filename="{profit_filename(p)}"'})
 
@@ -648,8 +647,8 @@ def get_product(shop_id: str, product_id: str, period: str = Query("30d"),
     product = db.get(Product, product_id)
     if product is None or product.shop_id != shop.id:
         raise ApiError(404, "not_found")
-    data = load_shop(db, shop)
-    return product_detail(data, build_facts(data), product, _period(period, shop), _now())
+    data, facts = base_for(db, shop)
+    return product_detail(data, facts, product, _period(period, shop), _now())
 
 
 # ---------- затраты ----------
