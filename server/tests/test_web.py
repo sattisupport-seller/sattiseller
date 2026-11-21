@@ -58,3 +58,15 @@ def test_favicon_is_served(client):
     r = client.get("/favicon.ico")
     assert r.status_code == 200
     assert r.headers["content-type"] == "image/png"
+
+
+def test_support_page_uses_env_email_and_hides_missing(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "support_email", "")
+    r = client.get("/support")
+    assert r.status_code == 200 and "будет указан" in r.text and "mailto:" not in r.text
+    monkeypatch.setattr(settings, "support_email", "help@example.invalid")
+    r = client.get("/support")
+    assert "mailto:help@example.invalid" in r.text
+    assert "/privacy" in r.text and "/terms" in r.text

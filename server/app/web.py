@@ -73,6 +73,27 @@ def _legal(slug: str) -> HTMLResponse:
     return _page(title, markdown.markdown(text, extensions=["tables"]))
 
 
+@router.get("/support", response_class=HTMLResponse)
+def support_page() -> HTMLResponse:
+    """Страница поддержки (5.8). Адрес — из SATTI_SUPPORT_EMAIL; без адреса письмо не показывается."""
+    if settings.support_email:
+        email = html.escape(settings.support_email)
+        contact = f'<p>Напишите нам: <a href="mailto:{email}">{email}</a>. Отвечаем в рабочие дни.</p>'
+    else:
+        contact = "<p>Адрес поддержки будет указан здесь перед публикацией приложения.</p>"
+    faq = """
+<h2>Частые вопросы</h2>
+<p><b>Что делает Satti?</b> Считает прибыль по каждому товару после закупки, комиссии, доставки и налога, показывает товары в минус и объясняет, почему изменилась прибыль.</p>
+<p><b>Это приложение Kaspi?</b> Нет. Satti — независимый сервис и не связан с Kaspi.kz.</p>
+<p><b>Почему прибыль — «оценка»?</b> Она зависит от данных, которые вы ввели: закупки, ставок комиссии, налога. Если чего-то не хватает, Satti показывает это и не выдаёт оценку за точное число.</p>
+<p><b>Как отменить подписку?</b> iPhone: Настройки → [ваше имя] → Подписки → Satti Seller → Отменить. Android: Google Play → Профиль → Платежи и подписки → Подписки → Satti Seller → Отменить.</p>
+<p><b>Как удалить аккаунт?</b> В приложении: Профиль → Удалить аккаунт. Понадобится код из письма.</p>
+"""
+    links = '<p><a href="/privacy">Политика конфиденциальности</a> · <a href="/terms">Условия использования</a></p>'
+    body = f"<h1>Поддержка</h1>{contact}{faq}{links}"
+    return _page("Поддержка Satti Seller", body)
+
+
 @router.get("/admin", response_class=HTMLResponse)
 def admin_page() -> HTMLResponse:
     """Веб-страница панели поверх API /v1/admin. Данные отдаёт только API, и только владельцу с кодом 2FA."""
