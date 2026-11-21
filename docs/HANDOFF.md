@@ -17,3 +17,28 @@
 Открыто: 1.11 — тесты нажатий не работают с RNTL 14 в этой настройке (см. LAUNCH_PLAN)
 Заблокировано: 3.1–3.3, 3.5–3.6 (аккаунты и ключи); 4.1, 4.3, 5.3, 5.10 (Docker, Android SDK, сервер)
 Не создано: docs/OWNER_TODO.md, docs/PROPOSALS.md — по разделам 7.1 и 9 MASTER
+
+## АУДИТ АККАУНТОВ (21.11, после подключения)
+
+| Что проверено | Ожидалось | Фактически | Статус |
+|---|---|---|---|
+| remote | адрес репозитория владельца | `sattisupport-seller/sattiseller` (владелец создал с таким именем, а не satti-seller) | ✅ по факту, расхождение с пожеланием |
+| ls-remote | ветки совпадают с локальными | feature/bootstrap = db6beff, qa/full-check = 8c2a2c8 — совпадают | ✅ |
+| учётные данные GitHub | только sattisupport-seller | `git:https://github.com`, пользователь sattisupport-seller | ✅ |
+| автор коммитов (локально) | Satti Seller <satti.support@gmail.com> | задан в .git/config репозитория; последние 4 коммита — он | ✅ (1 коммит c6e3b42 от dev@localhost, сделан до настройки; не переписываем) |
+| CI | зелёный | открыт Actions, статус смотрит владелец | ⏳ |
+| dependabot.yml | на месте | .github/dependabot.yml | ✅ |
+| eas whoami | аккаунт проекта | sattisupport-seller / satti.support@gmail.com | ✅ |
+| app.json owner / projectId / updates.url | проект аккаунта | sattisupport-seller / aaae388c-… / u.expo.dev/aaae388c-… | ✅ |
+| eas.json каналы | development, preview, production | совпадают | ✅ |
+| ключ Anthropic в server/.env | есть | есть (проверено: да) | ✅ |
+| сервер загружает .env | да | config._load_env_file; тест test_env_loader | ✅ |
+| тестовый вызов | прошёл | 2,1 с, ответ с плейсхолдерами, стоимость 0,000421 USD | ✅ |
+| .env в git | игнорируется | .gitignore:13 | ✅ |
+| плагин Expo | установлен | expo@claude-plugins-official | ✅ (нужен перезапуск) |
+| личные идентификаторы в дереве | нет | нет совпадений (почта, логины, прежний owner) | ✅ |
+| личные данные в истории | — | старый owner `bauyrzhan117`: коммиты 9fa4afd, fe6086f; телефонный шаблон: 9 коммитов | ❌ перечислено, не переписываем |
+| личные данные в docs/legal и docs/adr/0004 | — | имя владельца и телефон в docs/legal/*.md и docs/adr/0004 | ❌ юридические тексты не меняем; решает владелец |
+| SATTI_SUPPORT_EMAIL | satti.support@gmail.com везде | настройка и .env.example — да (коммит); страницы /support нет; .env — не трогали | ⚠️ частично |
+
+Что осталось: 5.8 (страница /support) не сделана; перезапуск Claude Code для плагина; проверка CI; решение владельца по старым коммитам и по docs/legal (имя и телефон в юридических текстах).
