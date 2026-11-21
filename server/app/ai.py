@@ -222,7 +222,7 @@ class MockProvider:
             plan.template = ("Изменять цены и остатки я не могу: помощник только показывает данные магазина. "
                              "Цену меняют в кабинете Kaspi.")
             return self._done(plan, facts)
-        if re.search(r"телефон|адрес покупател|имя покупател|номер покупател", q):
+        if re.search(r"телефон|адрес покупател|имя покупател|номер покупател|как зовут|фамили|кто (купил|покупал)|покупател\w* зовут", q):
             plan.template = ("Данных покупателей в приложении нет: телефоны, адреса и имена не хранятся "
                              "и не показываются.")
             return self._done(plan, facts)
@@ -234,7 +234,7 @@ class MockProvider:
         if re.search(r"почему.*(упала|снизил|сниз)|(упала|снизил\w*) прибыл|прибыль\w* (упала|снизил)", q):
             return self._profit_change(plan, facts, tools, data)
 
-        if re.search(r"в минус", q):
+        if re.search(r"в минус|минуста", q):
             period = tools.period("30d")
             plan.period = period
             negative = [r for r in tools.top_products(period, "asc", 5) if r.profit < 0]
@@ -249,7 +249,7 @@ class MockProvider:
             plan.suggested = [{"type": "open_product", "entityId": negative[0].product.id, "label": "Открыть товар"}]
             return self._done(plan, facts)
 
-        if re.search(r"нет закупк|без закупк|не заполнена закупк|без закупочн", q):
+        if re.search(r"нет закупк|без закупк|не заполнена закупк|без закупочн|нет закупочн|закупочн\w* цен\w* нет", q):
             missing = tools.missing_costs()
             if not missing:
                 plan.template = "Все товары с закупочной ценой."
