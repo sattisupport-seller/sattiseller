@@ -130,3 +130,19 @@ def test_tool_limit_is_enforced(demo, live):
     # 1 вызов — инструмент мока; у живой модели не больше TOOL_LIMIT выполненных вызовов
     assert out["toolCalls"] <= 1 + ai_service.TOOL_LIMIT
     assert len(live["requests"]) <= ai_service.TOOL_LIMIT + 2
+
+
+def test_empty_text_block_is_not_echoed_back(demo, live):
+    """Регресс HTTP 400: пустой текстовый блок ответа модели нельзя возвращать в историю запроса."""
+    live["script"] = [_reply([_text("   "), _tool("get_missing_costs")]),
+                      _reply([_text("Без закупки: {F1}.")])]
+    _ask(demo["shop_id"], QUESTION)
+    assistant = [m for m in live["requests"][1]["messages"] if m["role"] == "assistant"][0]["content"]
+    assert all(not (b["type"] == "text" and not b["text"].strip()) for b in assistant)
+
+
+def test_provider_error_is_logged_without_secrets(demo, live, caplog):
+    live["status"] = 500
+    _ask(demo["shop_id"], QUESTION)
+    assert "ai provider error 500" in caplog.text
+    assert "test-key-not-real" not in caplog.text

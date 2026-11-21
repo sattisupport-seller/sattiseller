@@ -658,6 +658,16 @@ TOOL_SPECS: list[dict] = [
 ]
 
 
+def _safe_error_text(resp) -> str:
+    """Текст ошибки провайдера для журнала: тип и сообщение, обрезанные. Ключ и тело запроса сюда не попадают."""
+    try:
+        err = resp.json().get("error", {})
+        text = f"{err.get('type', '')}: {err.get('message', '')}"
+    except Exception:  # noqa: BLE001 — тело не JSON: берём начало
+        text = resp.text
+    return " ".join(text.split())[:300]
+
+
 class LiveToolPlanner:
     """Живая модель выбирает инструменты (tool use), сервер выполняет их по данным магазина и возвращает
     только плейсхолдеры. Модель получает ответ-шаблон с плейсхолдерами; числа подставляет сервер."""
@@ -692,7 +702,10 @@ class LiveToolPlanner:
             body["tools"] = TOOL_SPECS
         resp = self._http.post(self.URL, json=body, headers={
             "x-api-key": self._key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            # В журнал — тип и текст ошибки API (без ключа и без текста вопроса); в ответ пользователю — ничего лишнего.
+            log.warning("ai provider error %s: %s", resp.status_code, _safe_error_text(resp))
+            resp.raise_for_status()
         data = resp.json()
         usage = data.get("usage", {})
         self.tin += int(usage.get("input_tokens", 0))
@@ -708,7 +721,9 @@ class LiveToolPlanner:
             uses = [b for b in blocks if b.get("type") == "tool_use"]
             if not uses:
                 return "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
-            messages.append({"role": "assistant", "content": blocks})
+            # В историю — только непустые блоки: API отклоняет пустые текстовые блоки (400)
+            kept = [b for b in blocks if not (b.get("type") == "text" and not str(b.get("text", "")).strip())]
+            messages.append({"role": "assistant", "content": kept})
             results = []
             for u in uses:
                 if self.calls >= TOOL_LIMIT:
