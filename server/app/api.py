@@ -362,7 +362,8 @@ def me(principal: Principal = Depends(get_principal), db: DbSession = Depends(ge
         return {"demo": True, "email": None, "name": None, "locale": "ru"}
     user = current_user(principal, db)
     return {"demo": False, "id": user.id, "email": user.email, "name": user.name, "locale": user.locale,
-            "age_confirmed": user.age_confirmed_at is not None}
+            "age_confirmed": user.age_confirmed_at is not None,
+            "terms_consent_required": user.terms_version != settings.legal_version}
 
 
 @api.post("/me/terms", tags=["пользователь"])

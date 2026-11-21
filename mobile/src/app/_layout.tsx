@@ -69,7 +69,7 @@ function Splash() {
 
 function Shell() {
   const { colors, mode } = useTheme();
-  const { status } = useSession();
+  const { status, termsRequired } = useSession();
   const router = useRouter();
   const segments = useSegments();
   const { t } = useI18n();
@@ -86,7 +86,11 @@ function Shell() {
     if (status === 'signedOut' && first !== 'welcome' && first !== 'login' && first !== 'code') {
       router.replace('/welcome');
     }
-  }, [status, router, segments]);
+    // 1.19: версия условий изменилась — до согласия остальные экраны недоступны.
+    if (status !== 'signedOut' && termsRequired && first !== 'terms-consent') {
+      router.replace('/terms-consent');
+    }
+  }, [status, termsRequired, router, segments]);
 
   return (
     <>
@@ -107,6 +111,7 @@ function Shell() {
         <Stack.Screen name="code" options={{ headerShown: true, title: t('code.title'), headerBackTitle: t('common.back') }} />
         <Stack.Screen name="shop-setup" options={{ headerShown: true, title: t('shopSetup.title'), headerBackVisible: false }} />
         <Stack.Screen name="update-required" options={{ headerShown: false }} />
+        <Stack.Screen name="terms-consent" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="profit" options={{ headerShown: true, title: t('profit.title'), headerBackTitle: t('common.back') }} />
         <Stack.Screen name="order/[id]" options={{ headerShown: true, title: t('orderDetail.title', { number: '' }), headerBackTitle: t('common.back') }} />

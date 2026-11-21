@@ -29,6 +29,9 @@ type SessionValue = {
   email: string | null;
   locale: Locale;
   themeMode: ThemeMode;
+  // 1.19: сервер просит принять обновлённые условия и политику (версия изменилась)
+  termsRequired: boolean;
+  acceptTerms: () => Promise<void>;
   startDemo: () => Promise<void>;
   requestCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string, acceptTerms?: boolean) => Promise<void>;
@@ -64,9 +67,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(null);
   const [locale, setLocaleState] = useState<Locale>('ru');
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const [termsRequired, setTermsRequired] = useState(false);
 
   const resolveShops = useCallback(async () => {
-    const { items } = await request<{ items: ShopSummary[] }>('/shops');
+    const [{ items }, me] = await Promise.all([
+      request<{ items: ShopSummary[] }>('/shops'),
+      request<{ terms_consent_required?: boolean }>('/me'),
+    ]);
+    setTermsRequired(me.terms_consent_required === true);
     if (items.length === 0) {
       setStatus('needsShop');
       return;
@@ -114,6 +122,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     await setStoredShopId(res.shop_id);
     setShopId(res.shop_id);
     setIsDemo(true);
+    setTermsRequired(false);
     setEmail(null);
     setStatus('ready');
   }, []);
@@ -169,7 +178,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setShopId(null);
     setEmail(null);
     setIsDemo(false);
+    setTermsRequired(false);
     setStatus('signedOut');
+  }, []);
+
+  // 1.19: повторное согласие с текущей версией условий и политики.
+  const acceptTerms = useCallback(async () => {
+    await request('/me/terms', { method: 'POST', body: { accepted: true } });
+    setTermsRequired(false);
   }, []);
 
   const setLocale = useCallback(async (l: Locale) => {
@@ -188,10 +204,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [resolveShops]);
 
   const value = useMemo<SessionValue>(() => ({
-    status, shopId, isDemo, email, locale, themeMode,
+    status, shopId, isDemo, email, locale, themeMode, termsRequired, acceptTerms,
     startDemo, requestCode, verifyCode, signInWithIdToken, createShop, selectShop, logout, setLocale, setThemeMode, refresh,
-  }), [status, shopId, isDemo, email, locale, themeMode, startDemo, requestCode, verifyCode, signInWithIdToken, createShop,
-    selectShop, logout, setLocale, setThemeMode, refresh]);
+  }), [status, shopId, isDemo, email, locale, themeMode, termsRequired, acceptTerms, startDemo, requestCode, verifyCode,
+    signInWithIdToken, createShop, selectShop, logout, setLocale, setThemeMode, refresh]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

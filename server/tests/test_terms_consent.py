@@ -55,3 +55,15 @@ def test_checkbox_at_login_records_version_and_time(client):
         user = db.query(User).filter(User.email == email).one()
         assert user.terms_version == settings.legal_version
         assert user.terms_accepted_at is not None
+
+
+def test_me_reports_consent_needed_after_new_version(client, monkeypatch):
+    """1.19, повтор согласия: приложение узнаёт о новой версии через /me и уводит на экран согласия."""
+    email = f"terms-{uuid.uuid4().hex[:8]}@example.invalid"
+    tokens = login(client, email, accept_terms=True)
+    headers = _auth(tokens)
+    assert client.get("/v1/me", headers=headers).json()["terms_consent_required"] is False
+    monkeypatch.setattr(settings, "legal_version", "2099-01-01-2")
+    assert client.get("/v1/me", headers=headers).json()["terms_consent_required"] is True
+    assert client.post("/v1/me/terms", json={"accepted": True}, headers=headers).status_code == 200
+    assert client.get("/v1/me", headers=headers).json()["terms_consent_required"] is False
