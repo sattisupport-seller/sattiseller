@@ -323,3 +323,10 @@ class AnalyticsDaily(Base):
     day: Mapped[str] = mapped_column(String(10), primary_key=True)  # YYYY-MM-DD, UTC
     event: Mapped[str] = mapped_column(String(64), primary_key=True)
     count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class OwnerAlertLog(Base):
+    """Отметка отправленного оповещения владельцу (3.10): одно письмо на ключ (день, час или событие)."""
+    __tablename__ = "owner_alert_log"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

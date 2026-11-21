@@ -48,14 +48,39 @@ def run_kaspi_sync(now: datetime | None = None) -> list[tuple[str, str]]:
     """Синхронизация заказов Kaspi для подключений, где пора (раз в 15 минут; 2.2). Без записи ключей в журнал."""
     from .kaspi import sync_due
 
+    from .owner_alerts import check_kaspi_results
+
     now = now or datetime.now(timezone.utc)
     db = SessionLocal()
     try:
         done = sync_due(db, now)
+        check_kaspi_results(db, now, done)  # 3.10: массовые ошибки синхронизации — письмо владельцу
+        db.commit()
     finally:
         db.close()
     log.info("kaspi: %d синхронизаций", len(done))
     return done
+
+
+def run_owner_checks_once(now: datetime | None = None) -> list[str]:
+    """3.10: проверки для владельца (резервная копия, ошибки сервера, сводка за день). Раз в час."""
+    from .owner_alerts import run_owner_checks
+
+    now = now or datetime.now(timezone.utc)
+    db = SessionLocal()
+    try:
+        return run_owner_checks(db, now)
+    finally:
+        db.close()
+
+
+def _owner_loop() -> None:
+    while not _stop.is_set():
+        try:
+            run_owner_checks_once()
+        except Exception:  # noqa: BLE001 — задача не должна валить сервер
+            log.exception("owner checks failed")
+        _stop.wait(3600)
 
 
 def _kaspi_loop() -> None:
@@ -79,6 +104,7 @@ def start_builtin_scheduler() -> threading.Thread | None:
 
     if settings.kaspi_connection_enabled:
         threading.Thread(target=_kaspi_loop, name="satti-kaspi-sync", daemon=True).start()
+    threading.Thread(target=_owner_loop, name="satti-owner-checks", daemon=True).start()
     return thread
 
 
