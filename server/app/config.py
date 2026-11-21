@@ -84,8 +84,10 @@ class Settings:
     anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
     ai_model: str = os.environ.get("SATTI_AI_MODEL", "claude-haiku-5-5")
     # цены за миллион токенов для учёта бюджета (проверить по актуальному прайсу провайдера)
-    ai_price_in_per_mtok: float = float(os.environ.get("SATTI_AI_PRICE_IN_PER_MTOK", "0.10")  # Claude Haiku 5.5, $ за миллион входных токенов (документация, 2026))
-    ai_price_out_per_mtok: float = float(os.environ.get("SATTI_AI_PRICE_OUT_PER_MTOK", "0.50")  # Claude Haiku 5.5, $ за миллион выходных токенов)
+    # Claude Haiku 5.5: 0,10 $ за миллион входных токенов (документация); другие модели — через переменную окружения
+    ai_price_in_per_mtok: float = float(os.environ.get("SATTI_AI_PRICE_IN_PER_MTOK", "0.10"))
+    # Claude Haiku 5.5: 0,50 $ за миллион выходных токенов
+    ai_price_out_per_mtok: float = float(os.environ.get("SATTI_AI_PRICE_OUT_PER_MTOK", "0.50"))
     ai_cost_per_call_micro_usd: int = int(float(os.environ.get("SATTI_AI_COST_PER_CALL_USD", "0")) * 1_000_000)
     ai_max_question_length: int = 500
     import_max_bytes: int = 5 * 1024 * 1024
