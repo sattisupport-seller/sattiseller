@@ -149,12 +149,17 @@ def test_wrong_code_counts_attempts(client):
 def test_delete_account(client):
     tokens = login(client, "delete@example.com")
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
-    assert client.post("/v1/me/deletion/start", headers=headers).status_code == 202
     from app.config import settings
 
-    letters = [p.read_text(encoding="utf-8") for p in settings.outbox_dir.glob("*.eml")]
-    newest = [t for t in letters if "удаления" in t][-1]
-    code = re.search(r"Ваш код: (\d{6})", newest).group(1)
+    outbox = settings.outbox_dir
+    before = set(outbox.glob("*.eml"))
+    assert client.post("/v1/me/deletion/start", headers=headers).status_code == 202
+    # Берём только письма, появившиеся после запроса: порядок glob() не гарантирован (на Linux иной, чем на Windows)
+    new = sorted(set(outbox.glob("*.eml")) - before)
+    letters = [p.read_text(encoding="utf-8") for p in new]
+    deletion = [t for t in letters if "удаления" in t]
+    assert len(deletion) == 1, f"ожидалось одно письмо об удалении, найдено: {len(deletion)}"
+    code = re.search(r"Ваш код: (\d{6})", deletion[0]).group(1)
     assert client.post("/v1/me/deletion/confirm", headers=headers, json={"code": code}).status_code == 200
     assert client.get("/v1/me", headers=headers).status_code == 401
 
