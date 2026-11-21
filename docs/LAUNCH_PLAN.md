@@ -117,9 +117,9 @@
 | 6.1 | Уборка по протоколу 8.4: мёртвый код, дубли функций времени, локальные импорты, таблица `audit_events` (только миграцией) | ⬜ |
 | 6.2 | Зависимости: pip и npm; попытка снять фиксацию Starlette/FastAPI; переход тестов на httpx2; pip-audit и npm audit | ⬜ |
 | 6.3 | Итоговая проверка: тесты SQLite и PostgreSQL, покрытие, фаззинг, bandit, pip-audit, gitleaks, нагрузка 10/50/100, учения восстановления; CRITICAL и HIGH исправить; обновить QA_REPORT («было / стало») (бывший 6.1) | ⬜ |
-| 6.4 | README: команды для Windows, ссылки на OPERATIONS.md, LAUNCH.md, MASTER_PLAN.md | ⬜ |
+| 6.4 | README: команды для Windows, ссылки на OPERATIONS.md, LAUNCH.md, MASTER_PLAN.md | 🟡 README обновлён: актуальные числа тестов, статусы, переменные (`server/.env.example`), ссылки на LAUNCH.md и OPERATIONS.md; команды для Windows уже были |
 | 6.5 | `docs/FINAL_REPORT.md` по структуре раздела 10 MASTER_PLAN | ⬜ |
-| 6.6 | `docs/LAUNCH.md` — пошаговый запуск для владельца | ⬜ |
+| 6.6 | `docs/LAUNCH.md` — пошаговый запуск для владельца | ✅ `docs/LAUNCH.md`: 11 шагов от решений и аккаунтов до публичного запуска; у каждого — что делаете вы, что делаю я, как проверить |
 | 6.7 | Слить `qa/full-check` в `feature/bootstrap` обычным merge (без переписывания истории) | ⬜ |
 
 ## Номера и переименования
