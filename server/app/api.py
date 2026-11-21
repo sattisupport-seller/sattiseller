@@ -143,7 +143,7 @@ def app_config(db: DbSession = Depends(get_session)) -> AppConfig:
     cfg = get_app_config()
     # флаги берутся из админки (выключатель ИИ, подписка, Kaspi), а не из констант
     cfg.flags.ai_assistant = is_enabled(db, "ai_assistant")
-    cfg.flags.kaspi_connection = is_enabled(db, "kaspi_connection")
+    cfg.flags.kaspi_connection = kaspi_enabled(db)
     cfg.flags.subscription = is_enabled(db, "subscription")
     return cfg
 
@@ -1287,9 +1287,13 @@ def _kaspi_disabled() -> ApiError:
     return ApiError(404, "not_found", "Подключение Kaspi будет доступно позже.")
 
 
-def _require_kaspi() -> None:
-    # 2.6: флаг KASPI_ENABLED, по умолчанию выключен; без письменного разрешения Kaspi включать нельзя
-    if not settings.kaspi_connection_enabled:
+def kaspi_enabled(db: DbSession) -> bool:
+    """2.6: нужны и KASPI_ENABLED на сервере (по умолчанию выключен), и флаг в админке. Так приложение и сервер согласованы."""
+    return settings.kaspi_connection_enabled and is_enabled(db, "kaspi_connection")
+
+
+def _require_kaspi(db: DbSession) -> None:
+    if not kaspi_enabled(db):
         raise _kaspi_disabled()
 
 
@@ -1312,7 +1316,7 @@ def _kaspi_view(shop: Shop, conn: KaspiConnection | None) -> dict:
 @api.post("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"], status_code=201)
 def kaspi_connect(shop_id: str, body: KaspiConnectIn, principal: Principal = Depends(get_principal),
                   db: DbSession = Depends(get_session)) -> dict:
-    _require_kaspi()
+    _require_kaspi(db)
     shop = shop_for(db, principal, shop_id)
     now = utcnow()
     client = KaspiClient(body.token)
@@ -1329,7 +1333,7 @@ def kaspi_connect(shop_id: str, body: KaspiConnectIn, principal: Principal = Dep
 
 @api.get("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"])
 def kaspi_status(shop_id: str, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
-    if not settings.kaspi_connection_enabled:
+    if not kaspi_enabled(db):
         return {"enabled": False, "status": "not_connected"}
     shop = shop_for(db, principal, shop_id)
     return _kaspi_view(shop, db.get(KaspiConnection, shop.id))
@@ -1337,7 +1341,7 @@ def kaspi_status(shop_id: str, principal: Principal = Depends(get_principal), db
 
 @api.post("/shops/{shop_id}/kaspi/sync", tags=["Kaspi"])
 def kaspi_sync_now(shop_id: str, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
-    _require_kaspi()
+    _require_kaspi(db)
     shop = shop_for(db, principal, shop_id)
     conn = db.get(KaspiConnection, shop.id)
     if conn is None:
@@ -1361,7 +1365,7 @@ def kaspi_sync_now(shop_id: str, principal: Principal = Depends(get_principal), 
 
 @api.delete("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"])
 def kaspi_disconnect(shop_id: str, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
-    _require_kaspi()
+    _require_kaspi(db)
     shop = shop_for(db, principal, shop_id)
     kaspi_service.disconnect(db, shop.id)
     return {"enabled": True, "status": "not_connected"}
@@ -1370,7 +1374,7 @@ def kaspi_disconnect(shop_id: str, principal: Principal = Depends(get_principal)
 @api.get("/kaspi/price/{shop_id}/{price_key}", tags=["Kaspi"], include_in_schema=False)
 def kaspi_price_list(shop_id: str, price_key: str, db: DbSession = Depends(get_session)) -> Response:
     """Прайс-лист для кабинета Kaspi. Доступ — по секрету в адресе (price_key), без входа в приложение."""
-    _require_kaspi()
+    _require_kaspi(db)
     shop = db.get(Shop, shop_id)
     conn = kaspi_service.find_by_price_key(db, shop_id, price_key) if shop else None
     if conn is None:

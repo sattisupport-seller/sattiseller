@@ -16,9 +16,24 @@ from app.models import KaspiConnection, Order, Product
 from tests.kaspi_mock import VALID_TOKEN, MockKaspi
 
 
+def _set_admin_flag(value: bool) -> None:
+    from datetime import datetime as _dt
+
+    from app.admin import FeatureFlag
+
+    with DbSession(engine) as db:
+        row = db.get(FeatureFlag, "kaspi_connection") or FeatureFlag(key="kaspi_connection")
+        row.enabled = value
+        row.updated_at = _dt.now(timezone.utc)
+        db.add(row)
+        db.commit()
+
+
 @pytest.fixture
 def kaspi_on(monkeypatch):
+    """Включены и переменная KASPI_ENABLED на сервере, и флаг в админке."""
     monkeypatch.setattr(settings, "kaspi_connection_enabled", True)
+    _set_admin_flag(True)
 
 
 @pytest.fixture
@@ -42,6 +57,12 @@ def _connect(client, demo, token=VALID_TOKEN):
 def _count_kaspi_orders(shop_id):
     with DbSession(engine) as db:
         return db.query(Order).filter(Order.shop_id == shop_id, Order.number.like("KC%")).count()
+
+
+def test_admin_flag_alone_is_not_enough(client, demo, monkeypatch, mock):
+    monkeypatch.setattr(settings, "kaspi_connection_enabled", False)
+    _set_admin_flag(True)
+    assert _connect(client, demo).status_code == 404
 
 
 def test_flag_is_off_by_default(client, demo):
