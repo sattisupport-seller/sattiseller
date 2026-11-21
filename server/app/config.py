@@ -106,6 +106,8 @@ class Settings:
     # 1.4: адрес владельца для оповещений о бюджете ИИ (80% и 100%)
     owner_alert_email: str = os.environ.get("SATTI_OWNER_ALERT_EMAIL", "").strip().lower()
     analytics_enabled: bool = os.environ.get("ANALYTICS_ENABLED", "0") == "1"  # 3.9: за флагом, по умолчанию выключено
+    # адрес поддержки (страница /support, тексты магазинов и бета-материалов; пункт 5.8)
+    support_email: str = os.environ.get("SATTI_SUPPORT_EMAIL", "").strip()
     kaspi_connection_enabled: bool = os.environ.get("KASPI_ENABLED", "0") == "1"
     # 2.4: ключ шифрования токенов Kaspi (Fernet, 32 байта в base64). В продакшене обязателен.
     kaspi_key: str = os.environ.get("SATTI_KASPI_KEY", "")
