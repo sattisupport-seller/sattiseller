@@ -68,3 +68,10 @@ def test_purchase_question_with_sku_does_not_crash(demo, client):
         product = db.query(Product).filter(Product.shop_id == shop.id).first()
         out = ai_service.ask(db, shop, f"какая закупочная цена у {product.sku}", None, None)
         assert out["renderedAnswer"]
+
+
+def test_compare_periods_uses_one_tool_call(demo):
+    """Регресс: сравнение двух периодов раньше расходовало два вызова и срывало лимит (tool limit exceeded)."""
+    tools = _tools(demo["shop_id"])
+    ai_service.execute_tool("compare_periods", {"period_a": "7d", "period_b": "prev7d"}, tools, [])
+    assert tools.calls == 1

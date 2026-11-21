@@ -149,3 +149,14 @@ def test_provider_error_is_logged_without_secrets(demo, live, caplog):
     _ask(demo["shop_id"], QUESTION)
     assert "ai provider error 500" in caplog.text
     assert "test-key-not-real" not in caplog.text
+
+
+def test_thinking_blocks_are_not_echoed_back(demo, live):
+    """Регресс HTTP 400 «invalid signature in thinking block»: блоки thinking не возвращаются в историю."""
+    thinking = {"type": "thinking", "thinking": "...", "signature": "sig-from-another-request"}
+    live["script"] = [{"content": [thinking, _tool("get_missing_costs")],
+                       "usage": {"input_tokens": 1, "output_tokens": 1}},
+                      _reply([_text("Без закупки: {F1}.")])]
+    _ask(demo["shop_id"], QUESTION)
+    assistant = [m for m in live["requests"][1]["messages"] if m["role"] == "assistant"][0]["content"]
+    assert all(b["type"] != "thinking" for b in assistant)

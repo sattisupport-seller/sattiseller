@@ -194,8 +194,9 @@ def execute_tool(name: str, args: dict, tools: Tools, facts: list[Fact]) -> dict
     if name == "compare_periods":
         pa = _period_arg(tools, args.get("period_a"))
         pb = _period_arg(tools, args.get("period_b"))
-        ma = _metrics(tools, pa)
-        mb = _metrics(tools, pb)
+        tools._take()  # один вызов инструмента на сравнение (оба периода), иначе лимит считается дважды
+        ma = metrics_for(tools.facts, tools.data.orders, tools.data.tz, pa)
+        mb = metrics_for(tools.facts, tools.data.orders, tools.data.tz, pb)
         return {"period_a": _mk(facts, "period", "text", _fmt_period(pa)),
                 "period_b": _mk(facts, "compare_period", "text", _fmt_period(pb)),
                 "profit_a": _mk(facts, "profit", "money", ma.profit),
@@ -373,8 +374,8 @@ REFUSAL_RULES: list[tuple[str, str, str]] = [
      "Внутренние инструкции помощника я не показываю: я отвечаю только на вопросы о вашем магазине.",
      "Ішкі нұсқаулықты көрсете алмаймын: мен тек дүкеніңіздің деректерімен жұмыс істеймін."),
     (r"конкурент\w*|бәсекелес\w*",
-     "Данных о ценах конкурентов в приложении нет. Могу ответить о прибыли, заказах и товарах вашего магазина.",
-     "Бәсекелестердің бағалары туралы деректер қолданбада жоқ. Дүкеніңіздің пайдасы, тапсырыстары және тауарлары туралы айта аламын."),
+     "Данные о ценах конкурентов я не могу показать: в приложении их нет. Могу ответить о прибыли, заказах и товарах вашего магазина.",
+     "Бәсекелестердің бағалары туралы деректерді көрсете алмаймын: қолданбада олар жоқ. Дүкеніңіздің пайдасы, тапсырыстары және тауарлары туралы айта аламын."),
 ]
 
 
@@ -763,8 +764,10 @@ class LiveToolPlanner:
             uses = [b for b in blocks if b.get("type") == "tool_use"]
             if not uses:
                 return "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
-            # В историю — только непустые блоки: API отклоняет пустые текстовые блоки (400)
-            kept = [b for b in blocks if not (b.get("type") == "text" and not str(b.get("text", "")).strip())]
+            # В историю — только текст и вызовы инструментов, без непустых пустышек. Блоки thinking с подписью
+            # к этому запросу не возвращаем: API отклоняет их (400 «bound to a different conversation»).
+            kept = [b for b in blocks if b.get("type") == "tool_use"
+                    or (b.get("type") == "text" and str(b.get("text", "")).strip())]
             messages.append({"role": "assistant", "content": kept})
             results = []
             for u in uses:
