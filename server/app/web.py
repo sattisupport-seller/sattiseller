@@ -68,6 +68,8 @@ def _legal(slug: str) -> HTMLResponse:
     if not path.exists():
         return _page(title, "<h1>Текст готовится</h1>")
     text = path.read_text(encoding="utf-8")
+    # имя оператора — из SATTI_OWNER_NAME (до регистрации ИП); в продакшене без него сервер не стартует
+    text = text.replace("{OWNER_NAME}", settings.owner_name or "Владелец приложения Satti Seller")
     return _page(title, markdown.markdown(text, extensions=["tables"]))
 
 

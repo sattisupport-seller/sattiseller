@@ -21,6 +21,7 @@ def good_production(monkeypatch):
     monkeypatch.setattr(settings, "free_access", False)
     monkeypatch.setattr(settings, "google_client_ids", "")
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.invalid")  # 3.6: письма с кодами идут по SMTP
+    monkeypatch.setattr(settings, "owner_name", "Имя оператора")  # юридические тексты
     return monkeypatch
 
 
@@ -56,3 +57,8 @@ def test_some_login_method_required(good_production):
 def test_smtp_host_required(good_production):
     good_production.setattr(settings, "smtp_host", "")
     assert any("SATTI_SMTP_HOST" in p for p in production_config_problems())
+
+
+def test_owner_name_required(good_production):
+    good_production.setattr(settings, "owner_name", "")
+    assert any("SATTI_OWNER_NAME" in p for p in production_config_problems())

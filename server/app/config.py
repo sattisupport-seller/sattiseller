@@ -33,6 +33,8 @@ def production_config_problems() -> list[str]:
         problems.append("SATTI_BILLING_PEPPER не задан: используется значение разработки")
     if settings.admin_totp_key == "dev-only-change-me":
         problems.append("SATTI_TOTP_KEY не задан: секрет 2FA администратора шифруется ключом разработки")
+    if not settings.owner_name:
+        problems.append("SATTI_OWNER_NAME не задан: в юридических текстах будет общий оператор без имени")
     if not settings.smtp_host:
         problems.append("SATTI_SMTP_HOST не задан: письма с кодами пишутся в папку outbox и не доходят до людей")
     if settings.kaspi_connection_enabled and not settings.kaspi_key:
@@ -108,6 +110,8 @@ class Settings:
     analytics_enabled: bool = os.environ.get("ANALYTICS_ENABLED", "0") == "1"  # 3.9: за флагом, по умолчанию выключено
     # адрес поддержки (страница /support, тексты магазинов и бета-материалов; пункт 5.8)
     support_email: str = os.environ.get("SATTI_SUPPORT_EMAIL", "").strip()
+    # имя оператора для юридических текстов (подставляется вместо {OWNER_NAME}); до регистрации ИП — из переменной
+    owner_name: str = os.environ.get("SATTI_OWNER_NAME", "").strip()
     kaspi_connection_enabled: bool = os.environ.get("KASPI_ENABLED", "0") == "1"
     # 2.4: ключ шифрования токенов Kaspi (Fernet, 32 байта в base64). В продакшене обязателен.
     kaspi_key: str = os.environ.get("SATTI_KASPI_KEY", "")
