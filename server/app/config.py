@@ -80,6 +80,7 @@ class Settings:
     smtp_timeout: float = float(os.environ.get("SATTI_SMTP_TIMEOUT", "20"))
     # 1.4: адрес владельца для оповещений о бюджете ИИ (80% и 100%)
     owner_alert_email: str = os.environ.get("SATTI_OWNER_ALERT_EMAIL", "").strip().lower()
+    analytics_enabled: bool = os.environ.get("ANALYTICS_ENABLED", "0") == "1"  # 3.9: за флагом, по умолчанию выключено
     kaspi_connection_enabled: bool = os.environ.get("KASPI_ENABLED", "0") == "1"
     # 2.4: ключ шифрования токенов Kaspi (Fernet, 32 байта в base64). В продакшене обязателен.
     kaspi_key: str = os.environ.get("SATTI_KASPI_KEY", "")
@@ -115,6 +116,7 @@ class FeatureFlags(BaseModel):
     kaspi_connection: bool = False
     ai_assistant: bool = True
     subscription: bool = False
+    analytics: bool = False  # 3.9: отправка событий из приложения (ANALYTICS_ENABLED и флаг в админке)
 
 
 class AppConfig(BaseModel):

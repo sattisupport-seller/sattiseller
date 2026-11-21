@@ -10,6 +10,8 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { useAppConfig } from '@/api/hooks';
+import { setAnalyticsEnabled } from '@/lib/analytics';
 import { ActivityIndicator, View } from 'react-native';
 
 // Нативный экран запуска (spec-2.1, раздел 15.2) держим, пока не загружены шрифты.
@@ -70,6 +72,9 @@ function Splash() {
 function Shell() {
   const { colors, mode } = useTheme();
   const { status, termsRequired } = useSession();
+  const appConfig = useAppConfig();
+  // 3.9: отправка событий — только когда сервер включил флаг analytics
+  useEffect(() => { setAnalyticsEnabled(appConfig.data?.flags.analytics ?? false); }, [appConfig.data?.flags.analytics]);
   const router = useRouter();
   const segments = useSegments();
   const { t } = useI18n();

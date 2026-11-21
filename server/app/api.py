@@ -145,6 +145,7 @@ def app_config(db: DbSession = Depends(get_session)) -> AppConfig:
     # флаги берутся из админки (выключатель ИИ, подписка, Kaspi), а не из констант
     cfg.flags.ai_assistant = is_enabled(db, "ai_assistant")
     cfg.flags.kaspi_connection = kaspi_enabled(db)
+    cfg.flags.analytics = settings.analytics_enabled and is_enabled(db, "analytics")  # 3.9
     cfg.flags.subscription = is_enabled(db, "subscription")
     return cfg
 
@@ -1385,6 +1386,29 @@ def kaspi_disconnect(shop_id: str, principal: Principal = Depends(get_principal)
 
 class EventIn(BaseModel):
     event: str = Field(min_length=1, max_length=64)
+
+
+class EventsIn(BaseModel):
+    events: list[str] = Field(min_length=1, max_length=50)
+
+
+@api.post("/analytics/batch", status_code=204, tags=["аналитика"], include_in_schema=False)
+def analytics_batch(body: EventsIn, request: Request) -> Response:
+    """3.9: пакет событий из приложения (до 50 за раз). Только при ANALYTICS_ENABLED=1 и флаге в админке."""
+    from .db import SessionLocal
+
+    if not settings.analytics_enabled:
+        raise ApiError(404, "not_found")
+    if any(e not in analytics_service.ALLOWED_EVENTS for e in body.events):
+        raise ApiError(422, "validation", "Неизвестное событие.")
+    if not allow(f"analytics-batch:{client_ip(request)}", 120):
+        raise ApiError(429, "rate_limited", "Слишком много пакетов. Попробуйте позже.")
+    with SessionLocal() as db:
+        if not is_enabled(db, "analytics"):
+            raise ApiError(404, "not_found")
+        for event in body.events:
+            analytics_service.record(db, event, utcnow())
+    return Response(status_code=204)
 
 
 @api.post("/analytics/events", status_code=204, tags=["аналитика"])

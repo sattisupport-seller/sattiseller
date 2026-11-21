@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CircleCheck } from 'lucide-react-native';
 import { ScrollView, View } from 'react-native';
 
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Surfaces';
 import { Txt } from '@/components/ui/Text';
 import { ErrorState, Skeleton } from '@/components/ui/Overlays';
+import { trackEvent } from '@/lib/analytics';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
@@ -16,6 +17,7 @@ import { useTheme } from '@/theme/useTheme';
 // Экран оплаты (ТЗ 2.1, 8.4). Покупок пока нет: кнопка идёт на сервер, а тот отвечает заглушкой магазина.
 export default function PaywallScreen() {
   const { t } = useI18n();
+  useEffect(() => { trackEvent('paywall_shown'); }, []);  // 3.9: событие без персональных данных
   const { colors, spacing } = useTheme();
   const router = useRouter();
   const { shopId } = useSession();

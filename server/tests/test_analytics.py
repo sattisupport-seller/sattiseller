@@ -75,3 +75,41 @@ def test_kaspi_connect_events_are_counted(client, demo, monkeypatch):
     assert r.status_code == 422
     assert _count("kaspi_connect_started") == before_started + 1
     assert _count("kaspi_connect_failed") == before_failed + 1
+
+
+def _set_analytics_admin_flag(value: bool) -> None:
+    from app.admin import FeatureFlag
+
+    with DbSession(engine) as db:
+        row = db.get(FeatureFlag, "analytics") or FeatureFlag(key="analytics")
+        row.enabled = value
+        row.updated_at = datetime.now(timezone.utc)
+        db.add(row)
+        db.commit()
+
+
+def test_batch_is_off_by_default(client):
+    r = client.post("/v1/analytics/batch", json={"events": ["lock_screen_shown"]})
+    assert r.status_code == 404
+
+
+def test_batch_needs_env_and_admin_flag(client, monkeypatch):
+    monkeypatch.setattr(settings, "analytics_enabled", True)
+    assert client.post("/v1/analytics/batch", json={"events": ["lock_screen_shown"]}).status_code == 404  # флага в админке нет
+    _set_analytics_admin_flag(True)
+    r = client.post("/v1/analytics/batch", json={"events": ["lock_screen_shown", "restore_tapped", "restore_tapped"]})
+    assert r.status_code == 204
+    assert _count("restore_tapped") == 2
+    assert _count("lock_screen_shown") == 1
+
+
+def test_batch_refuses_unknown_events_and_oversized_batches(client, monkeypatch):
+    monkeypatch.setattr(settings, "analytics_enabled", True)
+    _set_analytics_admin_flag(True)
+    assert client.post("/v1/analytics/batch", json={"events": ["email_seen"]}).status_code == 422
+    assert client.post("/v1/analytics/batch", json={"events": ["paywall_shown"] * 51}).status_code == 422
+
+
+def test_app_config_reports_analytics_flag_off_by_default(client):
+    body = client.get("/v1/app/config").json()
+    assert body["flags"]["analytics"] is False
