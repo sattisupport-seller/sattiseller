@@ -330,3 +330,11 @@ class OwnerAlertLog(Base):
     __tablename__ = "owner_alert_log"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AppErrorEvent(Base):
+    """Каждое появление ошибки сервера (для правила всплеска, 3.10). Хранится 2 суток; без текста и адреса."""
+    __tablename__ = "app_error_events"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    fingerprint: Mapped[str] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)

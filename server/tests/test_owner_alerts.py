@@ -112,3 +112,35 @@ def test_failed_mail_is_retried(monkeypatch, tmp_path):
         assert owner_alerts.check_backup(db, now, tmp_path / "none") is True
         db.commit()
     assert len(attempts) == 2
+
+
+def test_error_spike_counts_occurrences_in_window(sent, monkeypatch):
+    from app.models import AppErrorEvent
+
+    monkeypatch.setattr(owner_alerts, "SPIKE_MIN_EVENTS", 3)
+    now = datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc)
+    with DbSession(engine) as db:
+        for _ in range(2):
+            db.add(AppErrorEvent(fingerprint="fp1", created_at=now - timedelta(minutes=5)))
+        db.add(AppErrorEvent(fingerprint="fp1", created_at=now - timedelta(hours=2)))  # вне окна
+        db.commit()
+        assert owner_alerts.check_error_spike(db, now) is False  # 2 в окне: мало
+        db.add(AppErrorEvent(fingerprint="fp2", created_at=now - timedelta(minutes=1)))
+        db.commit()
+        assert owner_alerts.check_error_spike(db, now) is True  # 3 в окне
+        db.commit()
+        assert owner_alerts.check_error_spike(db, now) is False  # то же окно — повтора нет
+    assert len(sent) == 1 and "всплеск" in sent[0][0].lower()
+
+
+def test_error_events_older_than_two_days_are_purged():
+    from app.models import AppErrorEvent
+
+    now = datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc)
+    with DbSession(engine) as db:
+        db.add(AppErrorEvent(fingerprint="old", created_at=now - timedelta(days=3)))
+        db.add(AppErrorEvent(fingerprint="new", created_at=now - timedelta(days=1)))
+        db.commit()
+        assert owner_alerts.purge_error_events(db, now) == 1
+        db.commit()
+        assert db.query(AppErrorEvent).count() == 1

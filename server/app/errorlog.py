@@ -20,6 +20,7 @@ from sqlalchemy import DateTime, Integer, String, func, select
 from sqlalchemy.orm import Mapped, Session as DbSession, mapped_column
 
 from .admin import require_admin
+from .models import AppErrorEvent
 from .db import Base, get_session
 from .models import User
 from .privacy import mask_text
@@ -74,6 +75,8 @@ def record_error(db: DbSession, *, kind: str, exc_type: str, where: str, message
     row.count += 1
     row.last_seen = now
     row.message = safe_message
+    if kind == "server":
+        db.add(AppErrorEvent(fingerprint=fp, created_at=now))  # 3.10: появление ошибки для правила всплеска
     db.commit()
     return fp
 

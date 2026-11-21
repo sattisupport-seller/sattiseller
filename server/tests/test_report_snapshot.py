@@ -90,7 +90,6 @@ def test_write_triggers_the_warm_hook_once_per_invalidate():
 
 def test_warm_shop_fills_the_cache_from_the_database(demo):
     from app import reports
-    from app.db import SessionLocal
 
     reportcache.clear()
     reports.warm_shop(demo["shop_id"])
