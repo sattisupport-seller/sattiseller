@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 
 from .api import api
+from .logsetup import configure_logging
 from .db import init_db
 from .errors import ApiError, api_error_handler
 
@@ -40,6 +41,8 @@ async def lifespan(_: FastAPI):
     yield
     stop_builtin_scheduler()
 
+
+configure_logging()  # 4.2: журнал с ротацией (SATTI_LOG_FILE)
 
 app = FastAPI(
     title="Satti Seller API",
