@@ -142,7 +142,7 @@ class Tools:
 # Один набор: живая модель выбирает инструменты по описаниям, мок вызывает их по правилам.
 # Инструмент возвращает словарь «ключ → плейсхолдер {Fn}»: значения формирует сервер, модель их не видит.
 
-PRESET_NAMES = ("today", "yesterday", "7d", "30d", "90d", "this_month", "previous_month", "previous_week", "prev7d")
+PRESET_NAMES = ("today", "yesterday", "7d", "14d", "30d", "90d", "this_month", "previous_month", "previous_week", "prev7d")
 TOP_LIMIT_MAX = 5
 
 
@@ -368,8 +368,10 @@ def _period_key(q: str) -> str:
         return "previous_month"
     if re.search(r"этот месяц|этом месяце|текущ\w* месяц", q):
         return "this_month"
-    if re.search(r"90|трех месяц|трёх месяц|3 месяц", q):
+    if re.search(r"\b90\b|трех месяц|трёх месяц|3 месяц|90 күн", q):
         return "90d"
+    if re.search(r"\b14\b|две недел|2 недел|\bдве недели\b|\b2 недели\b|екі апта|14 күн|14 дн", q):
+        return "14d"
     if re.search(r"недел|\b7\b|апта", q):
         return "7d"
     return "30d"
