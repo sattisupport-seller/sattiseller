@@ -2,7 +2,7 @@
 
 На PostgreSQL копирование использует встроенные функции (md5, make_interval).
 SQLite их не умеет, поэтому на каждом соединении регистрируются эти же функции на Python.
-Результаты обеих баз совпадают: идентификатор строки — md5(исходный_id || магазин), сдвиг дат — в днях.
+Идентификатор строки в SQLite — sha256(исходный_id + магазин) (32 символа), на PostgreSQL — md5 (SQL); сравниваются только копии внутри одной базы.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ _TS_FORMAT = "%Y-%m-%d %H:%M:%S.%f"  # формат, в котором SQLAlchem
 
 
 def newid(source_id: str, shop_id: str) -> str:
-    return hashlib.md5(f"{source_id}{shop_id}".encode()).hexdigest()  # noqa: S324 — не для безопасности, для уникального id
+    return hashlib.sha256(f"{source_id}{shop_id}".encode()).hexdigest()[:32]  # уникальный id строки; не для безопасности
 
 
 def shift_timestamp(value: str | None, days: int) -> str | None:

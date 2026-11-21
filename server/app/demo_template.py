@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import re
+
 from datetime import date
 
 from sqlalchemy import text
@@ -86,36 +88,49 @@ def _day(dialect: str, col: str) -> str:
     return f"CAST({col} + make_interval(days => :delta) AS date)"
 
 
+# SQL-шаблоны без подстановки в строку Python (значения — только параметрами :shop, :tpl, :delta).
+# Вставляемые выражения — N(колонка) новый id, TS(колонка) сдвиг времени, DAY(колонка) сдвиг даты, NOW() момент копирования.
+_TEMPLATES = [
+    """INSERT INTO products (id, shop_id, sku, name, category)
+       SELECT N(p.id), :shop, p.sku, p.name, p.category
+       FROM products p WHERE p.shop_id = :tpl""",
+    """INSERT INTO commission_presets (id, shop_id, category, rate_bp, effective_from, source, verified, demo)
+       SELECT N(c.id), :shop, c.category, c.rate_bp, DAY(c.effective_from), c.source, c.verified, c.demo
+       FROM commission_presets c WHERE c.shop_id = :tpl""",
+    """INSERT INTO product_cost_versions (id, shop_id, product_id, purchase_minor, delivery_to_warehouse_minor,
+           packaging_minor, other_minor, effective_from, source, import_batch_id, cancelled, created_at)
+       SELECT N(v.id), :shop, N(v.product_id), v.purchase_minor, v.delivery_to_warehouse_minor,
+           v.packaging_minor, v.other_minor, DAY(v.effective_from), v.source, v.import_batch_id,
+           v.cancelled, NOW()
+       FROM product_cost_versions v WHERE v.shop_id = :tpl""",
+    """INSERT INTO orders (id, shop_id, number, status, created_at, completed_at)
+       SELECT N(o.id), :shop, o.number, o.status, TS(o.created_at), TS(o.completed_at)
+       FROM orders o WHERE o.shop_id = :tpl""",
+    """INSERT INTO order_items (id, order_id, shop_id, product_id, qty, unit_price_minor, buyer_delivery_minor,
+           commission_rate_bp)
+       SELECT N(i.id), N(i.order_id), :shop, N(i.product_id), i.qty, i.unit_price_minor,
+           i.buyer_delivery_minor, i.commission_rate_bp
+       FROM order_items i WHERE i.shop_id = :tpl""",
+    """INSERT INTO return_events (id, item_id, shop_id, returned_qty, confirmed_at, refund_minor,
+           commission_returned_minor, delivery_returned_minor, reverse_delivery_minor, goods_sellable)
+       SELECT N(r.id), N(r.item_id), :shop, r.returned_qty, TS(r.confirmed_at), r.refund_minor,
+           r.commission_returned_minor, r.delivery_returned_minor, r.reverse_delivery_minor, r.goods_sellable
+       FROM return_events r WHERE r.shop_id = :tpl""",
+    """INSERT INTO expense_entries (id, shop_id, kind, amount_minor, period_start, period_end, source)
+       SELECT N(e.id), :shop, e.kind, e.amount_minor, DAY(e.period_start), DAY(e.period_end), e.source
+       FROM expense_entries e WHERE e.shop_id = :tpl""",
+]
+
+_TOKEN = re.compile(r'\b(N|TS|DAY)\(([A-Za-z_.]+)\)|\bNOW\(\)')
+
+
 def _copy_statements(dialect: str) -> list[str]:
-    """Порядок важен: сначала строки, на которые ссылаются внешние ключи."""
-    n, ts, day = (lambda c: _newid(dialect, c)), (lambda c: _ts(dialect, c)), (lambda c: _day(dialect, c))
-    return [
-        f"""INSERT INTO products (id, shop_id, sku, name, category)
-            SELECT {n('p.id')}, :shop, p.sku, p.name, p.category
-            FROM products p WHERE p.shop_id = :tpl""",
-        f"""INSERT INTO commission_presets (id, shop_id, category, rate_bp, effective_from, source, verified, demo)
-            SELECT {n('c.id')}, :shop, c.category, c.rate_bp, {day('c.effective_from')}, c.source, c.verified, c.demo
-            FROM commission_presets c WHERE c.shop_id = :tpl""",
-        f"""INSERT INTO product_cost_versions (id, shop_id, product_id, purchase_minor, delivery_to_warehouse_minor,
-                packaging_minor, other_minor, effective_from, source, import_batch_id, cancelled, created_at)
-            SELECT {n('v.id')}, :shop, {n('v.product_id')}, v.purchase_minor, v.delivery_to_warehouse_minor,
-                v.packaging_minor, v.other_minor, {day('v.effective_from')}, v.source, v.import_batch_id,
-                v.cancelled, {_now(dialect)}
-            FROM product_cost_versions v WHERE v.shop_id = :tpl""",
-        f"""INSERT INTO orders (id, shop_id, number, status, created_at, completed_at)
-            SELECT {n('o.id')}, :shop, o.number, o.status, {ts('o.created_at')}, {ts('o.completed_at')}
-            FROM orders o WHERE o.shop_id = :tpl""",
-        f"""INSERT INTO order_items (id, order_id, shop_id, product_id, qty, unit_price_minor, buyer_delivery_minor,
-                commission_rate_bp)
-            SELECT {n('i.id')}, {n('i.order_id')}, :shop, {n('i.product_id')}, i.qty, i.unit_price_minor,
-                i.buyer_delivery_minor, i.commission_rate_bp
-            FROM order_items i WHERE i.shop_id = :tpl""",
-        f"""INSERT INTO return_events (id, item_id, shop_id, returned_qty, confirmed_at, refund_minor,
-                commission_returned_minor, delivery_returned_minor, reverse_delivery_minor, goods_sellable)
-            SELECT {n('r.id')}, {n('r.item_id')}, :shop, r.returned_qty, {ts('r.confirmed_at')}, r.refund_minor,
-                r.commission_returned_minor, r.delivery_returned_minor, r.reverse_delivery_minor, r.goods_sellable
-            FROM return_events r WHERE r.shop_id = :tpl""",
-        f"""INSERT INTO expense_entries (id, shop_id, kind, amount_minor, period_start, period_end, source)
-            SELECT {n('e.id')}, :shop, e.kind, e.amount_minor, {day('e.period_start')}, {day('e.period_end')}, e.source
-            FROM expense_entries e WHERE e.shop_id = :tpl""",
-    ]
+    """Порядок важен: сначала строки, на которые ссылаются внешние ключи. Выражения подставляются по диалекту."""
+    def expand(match: re.Match) -> str:
+        if match.group(0) == "NOW()":
+            return _now(dialect)
+        kind, col = match.group(1), match.group(2)
+        builder = {"N": _newid, "TS": _ts, "DAY": _day}[kind]
+        return builder(dialect, col)
+
+    return [_TOKEN.sub(expand, sql) for sql in _TEMPLATES]
