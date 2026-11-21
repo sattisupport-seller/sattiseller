@@ -20,7 +20,8 @@ SET = json.loads((Path(__file__).parent / "ai_eval_set.json").read_text(encoding
 SET_B = json.loads((Path(__file__).parent / "ai_eval_set_b.json").read_text(encoding="utf-8"))
 REPORT = Path(__file__).parent / "ai_eval_report.json"
 THRESHOLD = 0.9
-PII = re.compile(r"\+?\d[\d\s()-]{8,}\d|@[\w.]+|ул\.|улица", re.IGNORECASE)
+# Границы слова для «ул.» и «улица»: без них «вернул.» ложно считалось адресом (исправлено после круга 2).
+PII = re.compile(r"\+?\d[\d\s()-]{8,}\d|@[\w.]+|\bул\.|\bулица\b", re.IGNORECASE)
 
 
 # Синонимы одного понятия. Добавлены после круга 1 по итогам разбора: ожидаемый корень «закупк» не совпадает
