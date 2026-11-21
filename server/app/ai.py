@@ -714,10 +714,10 @@ class LiveToolPlanner:
 
     URL = "https://api.anthropic.com/v1/messages"
     SYSTEM = ("Ты помощник продавца маркетплейса Kaspi. Ты только читаешь данные магазина продавца и отвечаешь на вопрос, "
-              "вызывая инструменты только для чтения (не больше трёх вызовов). Инструменты возвращают плейсхолдеры вида {F1}, "
-              "а не значения. Когда данных достаточно, напиши один короткий абзац на языке вопроса (казахский вопрос — "
-              "ответ по-казахски), используя только плейсхолдеры из результатов инструментов. Период называй плейсхолдером "
-              "из результатов. Не пиши цифр, дат, сумм и названий товаров сам. Если данных нет, так и скажи.\n"
+              "вызывая инструменты только для чтения (не больше трёх вызовов). Результат инструмента содержит плейсхолдеры вида {F1} и "
+              "значения в поле values. Когда данных достаточно, напиши один короткий абзац на языке вопроса (казахский вопрос — "
+              "ответ по-казахски). Числа, суммы и даты бери только из values или ставь плейсхолдер; не выдумывай цифр. "
+              "Названия товаров — только плейсхолдером из результатов. Если данных нет, так и скажи.\n"
               "Откажи одним предложением и не вызывай инструменты, если просят: изменить цены, остатки или заказы; удалить что-либо; "
               "написать или отправить сообщение покупателю; назвать пароли, логины, коды или токены; показать данные покупателей "
               "(телефоны, адреса, имена) или данные другого магазина; выполнить действие в кабинете Kaspi; обойти согласие или "
@@ -752,9 +752,11 @@ class LiveToolPlanner:
         self.tout += int(usage.get("output_tokens", 0))
         return data
 
-    def run(self, question: str, tools: Tools, facts: list[Fact]) -> str:
-        """Возвращает текст-шаблон. Использованные инструменты и токены — в self.calls, self.tin, self.tout."""
-        messages: list[dict] = [{"role": "user", "content": question}]
+    def run(self, question: str, tools: Tools, facts: list[Fact], lang: str = "ru", hint: str | None = None) -> str:
+        """Возвращает текст ответа. Использованные инструменты и токены — в self.calls, self.tin, self.tout.
+        hint — служебная подсказка после неудачной проверки чисел (второй заход)."""
+        content = question if not hint else f"{question}\n(Служебная подсказка проверки: {hint})"
+        messages: list[dict] = [{"role": "user", "content": content}]
         for _ in range(TOOL_LIMIT + 2):
             data = self._post(messages, with_tools=self.calls < TOOL_LIMIT)
             blocks = data.get("content", [])
@@ -774,8 +776,15 @@ class LiveToolPlanner:
                         out = execute_tool(u.get("name", ""), u.get("input") or {}, tools, facts)
                     except ValueError as exc:
                         out = {"error": str(exc)}
+                # Модель получает плейсхолдеры и уже отформатированные значения (их же сверяет сервер)
+                payload = {"placeholders": out}
+                if "error" not in out:
+                    by_id = {f.id: f for f in facts}
+                    payload["values"] = {ph: render_value(by_id[ph[1:-1]], lang)
+                                         for ph in out.values() if isinstance(ph, str) and ph.startswith("{F")
+                                         and ph[1:-1] in by_id}
                 results.append({"type": "tool_result", "tool_use_id": u["id"],
-                                "content": json.dumps(out, ensure_ascii=False)})
+                                "content": json.dumps(payload, ensure_ascii=False)})
             messages.append({"role": "user", "content": results})
         return ""
 
@@ -783,6 +792,58 @@ class LiveToolPlanner:
 def live_cost_micro(in_tokens: int, out_tokens: int) -> int:
     usd = in_tokens * settings.ai_price_in_per_mtok / 1_000_000 + out_tokens * settings.ai_price_out_per_mtok / 1_000_000
     return int(round(usd * 1_000_000))
+
+
+NUMBER = re.compile(r"\d[\d\s ]*(?:[.,]\d+)?")
+_MULTIPLIERS = (("тыс", 1_000), ("млн", 1_000_000), ("миллион", 1_000_000), ("мың", 1_000))
+LIVE_FAILED_TEXT = {
+    "ru": "Не удалось проверить ответ по данным магазина. Переформулируйте вопрос или попробуйте позже.",
+    "kk": "Жауапты дүкен деректері бойынша тексеру мүмкін болмады. Сұрағыңызды басқаша тұжырымдаңыз немесе кейінірек қайталаңыз.",
+}
+
+
+def _numbers_in(text: str) -> list[tuple[float, str]]:
+    """Числа из текста (в том виде, как записаны), с учётом «тыс»/«млн»/«мың»: «12,5 тыс.» → 12500."""
+    found: list[tuple[float, str]] = []
+    for m in NUMBER.finditer(text):
+        raw = m.group(0).replace(" ", "").replace(" ", "").replace(",", ".").strip(".")
+        try:
+            value = float(raw)
+        except ValueError:
+            continue
+        tail = text[m.end(): m.end() + 10].lower().lstrip()
+        mult = next((v for word, v in _MULTIPLIERS if tail.startswith(word)), 1)
+        found.append((value * mult, m.group(0).strip()))
+    return found
+
+
+def _allowed_numbers(facts: list[Fact], lang: str) -> list[float]:
+    """Числа, которые законно может написать модель: то, что видно в значениях инструментов,
+    и сырые значения фактов (деньги хранятся в тиынах: 1250000 → 12500 ₸; проценты — в базисных пунктах)."""
+    allowed: list[float] = []
+    for f in facts:
+        allowed += [value for value, _ in _numbers_in(render_value(f, lang))]
+        if isinstance(f.value, (int, float)) and not isinstance(f.value, bool):
+            allowed += [float(f.value), float(f.value) / 100]
+    return allowed
+
+
+def number_violations(text: str, facts: list[Fact], lang: str) -> list[str]:
+    """Числа в тексте ответа, которых нет в данных инструментов. Допуск: ±0,01 для малых, ±0,5% для больших."""
+    allowed = _allowed_numbers(facts, lang)
+    bad: list[str] = []
+    for value, raw in _numbers_in(PLACEHOLDER.sub(" ", text)):
+        if not any(abs(value - a) <= (0.01 if abs(value) < 100 else 0.005 * abs(value)) for a in allowed):
+            bad.append(raw)
+    return bad
+
+
+def check_placeholders(template: str, facts: list[Fact]) -> None:
+    """Для живого ответа: каждый плейсхолдер должен существовать. Числа проверяет number_violations."""
+    ids = {f.id for f in facts}
+    for ph in PLACEHOLDER.findall(template):
+        if ph not in ids:
+            raise ValueError(f"нет факта {ph}")
 
 
 def validate_template(template: str, facts: list[Fact]) -> None:
@@ -831,6 +892,24 @@ def check_quota(db: DbSession, user_id: str | None, shop_id: str, now: datetime)
     return settings.ai_daily_limit - used - 1
 
 
+def _live_answer(planner: LiveToolPlanner, question: str, data: ShopData, facts: list[ItemFact], now: datetime,
+                 lang: str) -> tuple[str, list[Fact]]:
+    """Ответ живой модели с проверкой (ТЗ 8.2): плейсхолдеры существуют, каждое число есть в данных инструментов.
+    При несовпадении — один повтор с подсказкой; если и он не проходит, — ошибка (ask покажет честное сообщение)."""
+    hint: str | None = None
+    for _ in range(2):
+        live_facts: list[Fact] = []
+        body = " ".join(planner.run(question, Tools(data, facts, now), live_facts, lang=lang, hint=hint).split())
+        if not body:
+            raise ValueError("пустой ответ модели")
+        check_placeholders(body, live_facts)
+        bad = number_violations(body, live_facts, lang)
+        if not bad:
+            return body, live_facts
+        hint = "в ответе есть числа, которых нет в данных: " + ", ".join(bad[:5]) + ". Используй только значения из values."
+    raise ValueError("числа не совпали с данными после повтора")
+
+
 def ask(db: DbSession, shop: Shop, question: str, user_id: str | None, conversation_id: str | None,
         now: datetime | None = None, provider: MockProvider | None = None, debug: bool = False) -> dict:
     """debug=True — только для оценки: добавляет liveError (причина отката живой модели). В приложение не отдаётся."""
@@ -871,21 +950,18 @@ def ask(db: DbSession, shop: Shop, question: str, user_id: str | None, conversat
     live_error: str | None = None
     if settings.ai_live and settings.anthropic_api_key and not plan.refusal and provider is None:
         planner = LiveToolPlanner(settings.anthropic_api_key, settings.ai_model)
-        live_facts: list[Fact] = []
         try:
-            body = " ".join(planner.run(text, Tools(data, facts, now), live_facts).split())  # один абзац, без переносов
-            if not body:
-                raise ValueError("пустой ответ модели")
-            validate_template(body, live_facts)
+            body, live_facts = _live_answer(planner, text, data, facts, now, plan.lang)
             plan = Plan(template=body, facts=live_facts, lang=plan.lang)
-        except Exception as exc:  # noqa: BLE001 — сбой модели или проверки не ломает ответ: остаётся план мока
+        except Exception as exc:  # noqa: BLE001 — ответ не прошёл проверку: честное сообщение, не тихий мок
             live_error = f"{type(exc).__name__}: {exc}"[:200]
-            log.warning("live tool planning skipped; mock plan used: %s", live_error)
+            log.warning("live answer not verified: %s", live_error)  # в журнал — без текста вопроса
+            plan = Plan(template=LIVE_FAILED_TEXT.get(plan.lang, LIVE_FAILED_TEXT["ru"]), facts=[], lang=plan.lang)
         finally:
             live_calls = planner.calls
             live_cost = live_cost_micro(planner.tin, planner.tout)
     tool_calls_total = tools.calls + live_calls
-    live_used = plan is not mock_plan
+    live_used = live_error is None and plan is not mock_plan
     rendered = render(plan.template, plan.facts, plan.lang)
     level, reason = confidence(plan)
     snapshot_id = f"rs_{uuid.uuid4().hex[:12]}"

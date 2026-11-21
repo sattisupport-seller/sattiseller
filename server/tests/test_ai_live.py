@@ -80,12 +80,15 @@ def test_live_model_selects_tool_and_writes_template_with_placeholders(demo, liv
     assert cost == ai_service.live_cost_micro(800, 80) and cost > 0
 
 
-def test_tool_result_carries_placeholders_not_numbers(demo, live):
+def test_tool_result_has_placeholders_and_values_for_number_check(demo, live):
+    """Результат инструмента: плейсхолдеры (как раньше) и значения в поле values — их сверяет сервер."""
     live["script"] = [_reply([_tool("get_missing_costs")]), _reply([_text("Без закупки: {F1}.")])]
     _ask(demo["shop_id"], QUESTION)
     payload = json.loads(live["requests"][1]["messages"][-1]["content"][0]["content"])
-    for value in payload.values():  # ключи (name_1) не считаются; значения — только плейсхолдеры или текст
-        assert isinstance(value, str) and not re.search(r"\d", PLACEHOLDER.sub("", value))
+    assert set(payload) == {"placeholders", "values"}
+    for ph in payload["placeholders"].values():  # ключи (name_1) не считаются; значения — только плейсхолдеры
+        assert isinstance(ph, str) and PLACEHOLDER.fullmatch(ph)
+    assert all(PLACEHOLDER.fullmatch(k) for k in payload["values"])
 
 
 def test_text_without_facts_is_rejected_and_mock_plan_is_used(demo, live):
