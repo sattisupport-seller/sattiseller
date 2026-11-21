@@ -15,6 +15,8 @@ def production_config_problems() -> list[str]:
         problems.append("SATTI_BILLING_PEPPER не задан: используется значение разработки")
     if settings.admin_totp_key == "dev-only-change-me":
         problems.append("SATTI_TOTP_KEY не задан: секрет 2FA администратора шифруется ключом разработки")
+    if settings.kaspi_connection_enabled and not settings.kaspi_key:
+        problems.append("KASPI_ENABLED=1, но SATTI_KASPI_KEY не задан: токены Kaspi нечем шифровать")
     if any("localhost" in o or "127.0.0.1" in o for o in os.environ.get(
             "SATTI_CORS_ORIGINS", "http://localhost:8081,http://127.0.0.1:8081").split(",")):
         problems.append("SATTI_CORS_ORIGINS содержит localhost")
@@ -62,7 +64,10 @@ class Settings:
     demo_per_device_per_day: int = 3  # ADR-0005: не больше 3 новых демо в сутки с одного устройства (и сбросов)
     ai_consent_version: str = "2026-11-19"
     ai_service_name: str = "Satti AI (тестовый провайдер)"
-    kaspi_connection_enabled: bool = False
+    # 2.6: подключение Kaspi выключено по умолчанию; письменного разрешения Kaspi ещё нет (spec-2.1, раздел 22)
+    kaspi_connection_enabled: bool = os.environ.get("KASPI_ENABLED", "0") == "1"
+    # 2.4: ключ шифрования токенов Kaspi (Fernet, 32 байта в base64). В продакшене обязателен.
+    kaspi_key: str = os.environ.get("SATTI_KASPI_KEY", "")
     # QA-15: публичный адрес сайта (политика и условия по путям /privacy и /terms)
     public_base_url: str = os.environ.get("SATTI_PUBLIC_BASE_URL", "").rstrip("/")
     # 1.19: версия условий и политики; при смене — повторное согласие всех пользователей

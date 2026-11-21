@@ -30,6 +30,8 @@ from .config import AppConfig, get_app_config, settings
 from .db import get_session
 from .demo_template import copy_template, create_demo_from_template, ensure_template
 from .flags import is_enabled, require_ai
+from . import kaspi as kaspi_service
+from .kaspi_client import KaspiAuthError, KaspiClient, KaspiUnavailable
 from .errors import ApiError
 from .imports import (
     FIELDS,
@@ -55,6 +57,7 @@ from .models import (
     Product,
     ProductCostVersion,
     Session,
+    KaspiConnection,
     Shop,
     User,
 )
@@ -1284,18 +1287,92 @@ def _kaspi_disabled() -> ApiError:
     return ApiError(404, "not_found", "Подключение Kaspi будет доступно позже.")
 
 
-@api.post("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"])
-def kaspi_connect(shop_id: str, principal: Principal = Depends(get_principal)) -> dict:
-    raise _kaspi_disabled()
+def _require_kaspi() -> None:
+    # 2.6: флаг KASPI_ENABLED, по умолчанию выключен; без письменного разрешения Kaspi включать нельзя
+    if not settings.kaspi_connection_enabled:
+        raise _kaspi_disabled()
+
+
+class KaspiConnectIn(BaseModel):
+    seller_id: str = Field(min_length=1, max_length=64)
+    token: str = Field(min_length=8, max_length=256)
+
+
+def _kaspi_view(shop: Shop, conn: KaspiConnection | None) -> dict:
+    if conn is None:
+        return {"enabled": True, "status": "not_connected"}
+    price_path = f"/v1/kaspi/price/{shop.id}/{conn.price_key}"
+    return {"enabled": True, "status": conn.status, "seller_id": conn.seller_id,
+            "connected_at": conn.connected_at.isoformat(),
+            "last_sync_at": conn.last_sync_at.isoformat() if conn.last_sync_at else None,
+            "last_error": conn.last_error,
+            "price_url": (settings.public_base_url + price_path) if settings.public_base_url else price_path}
+
+
+@api.post("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"], status_code=201)
+def kaspi_connect(shop_id: str, body: KaspiConnectIn, principal: Principal = Depends(get_principal),
+                  db: DbSession = Depends(get_session)) -> dict:
+    _require_kaspi()
+    shop = shop_for(db, principal, shop_id)
+    now = utcnow()
+    client = KaspiClient(body.token)
+    try:
+        conn = kaspi_service.connect(db, shop, body.seller_id, body.token, client, now)
+    except KaspiAuthError as exc:
+        raise ApiError(422, "kaspi_token_rejected", "Kaspi не принял этот ключ. Проверьте ключ и ID продавца.") from exc
+    except KaspiUnavailable as exc:
+        raise ApiError(503, "kaspi_unavailable", "Kaspi сейчас недоступен. Попробуйте позже.") from exc
+    finally:
+        client.close()
+    return _kaspi_view(shop, conn)
 
 
 @api.get("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"])
-def kaspi_status(shop_id: str, principal: Principal = Depends(get_principal)) -> dict:
+def kaspi_status(shop_id: str, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     if not settings.kaspi_connection_enabled:
         return {"enabled": False, "status": "not_connected"}
-    raise _kaspi_disabled()
+    shop = shop_for(db, principal, shop_id)
+    return _kaspi_view(shop, db.get(KaspiConnection, shop.id))
+
+
+@api.post("/shops/{shop_id}/kaspi/sync", tags=["Kaspi"])
+def kaspi_sync_now(shop_id: str, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+    _require_kaspi()
+    shop = shop_for(db, principal, shop_id)
+    conn = db.get(KaspiConnection, shop.id)
+    if conn is None:
+        raise ApiError(404, "not_found", "Магазин Kaspi не подключён.")
+    db.commit()  # соединение — лимиту ниже (см. demo_session)
+    if not allow(f"kaspi-sync:{shop.id}", 12, 3600):
+        raise ApiError(429, "rate_limited", "Слишком часто. Синхронизация доступна не чаще 12 раз в час.")
+    client = None
+    try:
+        client = kaspi_service.client_for(conn)
+        stats = kaspi_service.sync(db, conn, client, utcnow())
+    except KaspiAuthError as exc:
+        raise ApiError(422, "kaspi_token_rejected", "Kaspi не принимает ключ. Подключите магазин заново.") from exc
+    except KaspiUnavailable as exc:
+        raise ApiError(503, "kaspi_unavailable", "Kaspi сейчас недоступен. Попробуйте позже.") from exc
+    finally:
+        if client is not None:
+            client.close()
+    return {**stats, "status": "synced"}
 
 
 @api.delete("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"])
-def kaspi_disconnect(shop_id: str, principal: Principal = Depends(get_principal)) -> dict:
-    raise _kaspi_disabled()
+def kaspi_disconnect(shop_id: str, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+    _require_kaspi()
+    shop = shop_for(db, principal, shop_id)
+    kaspi_service.disconnect(db, shop.id)
+    return {"enabled": True, "status": "not_connected"}
+
+
+@api.get("/kaspi/price/{shop_id}/{price_key}", tags=["Kaspi"], include_in_schema=False)
+def kaspi_price_list(shop_id: str, price_key: str, db: DbSession = Depends(get_session)) -> Response:
+    """Прайс-лист для кабинета Kaspi. Доступ — по секрету в адресе (price_key), без входа в приложение."""
+    _require_kaspi()
+    shop = db.get(Shop, shop_id)
+    conn = kaspi_service.find_by_price_key(db, shop_id, price_key) if shop else None
+    if conn is None:
+        raise ApiError(404, "not_found")
+    return Response(content=kaspi_service.price_list_xml(db, shop, conn), media_type="application/xml")

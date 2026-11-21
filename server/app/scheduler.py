@@ -44,12 +44,41 @@ def _loop() -> None:
         _stop.wait(INTERVAL_SECONDS)
 
 
+def run_kaspi_sync(now: datetime | None = None) -> list[tuple[str, str]]:
+    """Синхронизация заказов Kaspi для подключений, где пора (раз в 15 минут; 2.2). Без записи ключей в журнал."""
+    from .kaspi import sync_due
+
+    now = now or datetime.now(timezone.utc)
+    db = SessionLocal()
+    try:
+        done = sync_due(db, now)
+    finally:
+        db.close()
+    log.info("kaspi: %d синхронизаций", len(done))
+    return done
+
+
+def _kaspi_loop() -> None:
+    from .kaspi import SYNC_EVERY
+
+    while not _stop.is_set():
+        try:
+            run_kaspi_sync()
+        except Exception:  # noqa: BLE001 — задача не должна валить сервер
+            log.exception("kaspi sync loop failed")
+        _stop.wait(SYNC_EVERY)
+
+
 def start_builtin_scheduler() -> threading.Thread | None:
     """Запускает поток, если SATTI_SCHEDULER=1. Возвращает поток или None."""
     if os.environ.get("SATTI_SCHEDULER", "0") != "1":
         return None
     thread = threading.Thread(target=_loop, name="satti-daily-jobs", daemon=True)
     thread.start()
+    from .config import settings
+
+    if settings.kaspi_connection_enabled:
+        threading.Thread(target=_kaspi_loop, name="satti-kaspi-sync", daemon=True).start()
     return thread
 
 

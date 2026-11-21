@@ -293,3 +293,17 @@ class AuditEvent(Base):
     entity: Mapped[str] = mapped_column(String(64))
     result: Mapped[str] = mapped_column(String(16), default="ok")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class KaspiConnection(Base):
+    """Подключение магазина Kaspi (этап 2). Токен хранится только в зашифрованном виде (Fernet)."""
+    __tablename__ = "kaspi_connections"
+    shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id", ondelete="CASCADE"), primary_key=True)
+    seller_id: Mapped[str] = mapped_column(String(64))
+    token_enc: Mapped[str] = mapped_column(Text)
+    price_key: Mapped[str] = mapped_column(String(64))  # секрет в адресе прайс-листа; меняется при каждом подключении
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active | token_invalid
+    cursor_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # время создания самого свежего обработанного заказа
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

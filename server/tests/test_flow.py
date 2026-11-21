@@ -320,5 +320,6 @@ def test_feedback_and_conversation(client, demo):
 
 
 def test_kaspi_is_disabled(client, demo):
-    r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"])
+    r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/connection", json={"seller_id": "S-1", "token": "x" * 12},
+                    headers=demo["headers"])
     assert r.status_code == 404
