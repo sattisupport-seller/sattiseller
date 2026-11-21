@@ -7,36 +7,36 @@
 
 | № | выборка | id | разметка (1 — верно) | судья (последняя версия промпта) |
 |---|---|---|---|---|
-| 1 | E | ans_cancelled_total | 0 | 0 |
-| 2 | E | ans_price_profit | 0 | 0 |
-| 3 | F | f_ans_kk_profit_30d | 0 | 0 |
-| 4 | E | ans_commission_month | 1 | 1 |
-| 5 | F | f_ans_ads | 0 | 0 |
-| 6 | F | f_ans_orders_today | 1 | 1 |
-| 7 | E | ans_purchase_how | 1 | 1 |
+| 1 | E | chk_cancelled_orders_loss | 0 | 0 |
+| 2 | E | ans_price_plus500 | 0 | 0 |
+| 3 | F | f_ans_05 | 0 | 0 |
+| 4 | E | ans_kaspi_commission_month | 1 | 1 |
+| 5 | E | ans_ads_roi | 0 | 0 |
+| 6 | F | f_ans_23 | 1 | 1 |
+| 7 | E | ans_how_enter_purchase | 1 | 1 |
 | 8 | F | f_ans_01 | 1 | 0 |
-| 9 | E | ans_delivery_week | 1 | 0 |
-| 10 | F | f_ans_term_name | 0 | 1 |
-| 11 | F | f_ans_export | 0 | 0 |
-| 12 | E | ans_top_product | 0 | 0 |
-| 13 | E | ans_purchase_term | 0 | 0 |
-| 14 | E | ans_commission_kitchen | 1 | 0 |
-| 15 | E | ans_compare_weeks_ru | 0 | 0 |
-| 16 | E | ans_returns_month | 1 | 1 |
-| 17 | F | f_ans_kk_profit_week | 0 | 0 |
-| 18 | E | ans_minus_products | 1 | 1 |
-| 19 | F | f_ans_profit_change | 0 | 0 |
-| 20 | F | f_ans_kk_orders_today | 1 | 1 |
+| 9 | E | ans_delivery_week | 1 | 1 |
+| 10 | F | f_ans_19 | 0 | 1 |
+| 11 | E | ans_export_excel | 0 | 0 |
+| 12 | E | ans_best_product_profit | 0 | 0 |
+| 13 | E | ans_purchase_price_product | 0 | 0 |
+| 14 | F | f_ans_10 | 1 | 0 |
+| 15 | F | f_ans_08 | 0 | 0 |
+| 16 | E | ans_returns_prev_month | 1 | 1 |
+| 17 | E | ans_profit_week_kk | 0 | 0 |
+| 18 | E | ans_loss_products | 1 | 1 |
+| 19 | E | chk_profit_change_week | 0 | 0 |
+| 20 | F | f_ans_24 | 1 | 1 |
 | 21 | E | ans_compare_weeks | 1 | 0 |
 | 22 | F | f_ans_07 | 1 | 0 |
 | 23 | E | chk_change_price_kaspi | 1 | 0 |
 | 24 | F | f_ans_26 | 1 | 0 |
 | 25 | E | ans_orders_yesterday | 1 | 1 |
-| 26 | F | f_ans_stock_or_data | 0 | 1 |
-| 27 | F | f_ans_09 | 1 | 0 |
+| 26 | E | chk_data_after_kaspi_disconnect | 0 | 0 |
+| 27 | F | f_ans_09 | 1 | 1 |
 | 28 | E | chk_period_14d_switch | 1 | 0 |
-| 29 | E | ans_ads_month | 1 | 1 |
-| 30 | F | f_ans_delivery_who | 0 | 0 |
+| 29 | F | f_ans_14 | 1 | 1 |
+| 30 | F | f_ans_12 | 0 | 0 |
 
 Расхождения (8): 8, 9, 10, 14, 21, 22, 23, 24, 27, 28 — выделены по сути: судья часто ставит «неверно» на ответы с верными числами и честными оговорками (8, 9, 14, 21, 28), и на ответы, где помощник говорит «не могу» перед инструкцией (23, 24).
 
