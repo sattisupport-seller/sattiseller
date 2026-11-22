@@ -1,6 +1,8 @@
 """HTTP-маршруты Satti API /v1 (docs/spec.md, раздел 5.2)."""
 
 from __future__ import annotations
+from decimal import Decimal, InvalidOperation
+import json
 
 import io
 from datetime import date, datetime, timedelta, timezone
@@ -971,7 +973,6 @@ def commissions_list(shop_id: str, principal: Principal = Depends(get_principal)
 @api.post("/shops/{shop_id}/commissions", status_code=201, tags=["комиссии"], response_model=CommissionCreatedOut)
 def commissions_create(shop_id: str, body: CommissionIn, principal: Principal = Depends(get_principal),
                        db: DbSession = Depends(get_session)) -> dict:
-    from decimal import Decimal, InvalidOperation
 
     shop = shop_for(db, principal, shop_id)
     try:
@@ -1017,7 +1018,6 @@ def tax_get(shop_id: str, principal: Principal = Depends(get_principal),
 @api.post("/shops/{shop_id}/tax", status_code=201, tags=["налог"])
 def tax_set(shop_id: str, body: TaxIn, principal: Principal = Depends(get_principal),
             db: DbSession = Depends(get_session)) -> dict:
-    from decimal import Decimal, InvalidOperation
 
     from .models import TaxRate
 
@@ -1132,7 +1132,6 @@ def import_mapping(shop_id: str, import_id: str, body: MappingIn, principal: Pri
     payload = load_payload(batch.payload)
     if any(v and v not in payload.columns for v in body.mapping.values()):
         raise ApiError(422, "validation", "В файле нет такой колонки.")
-    import json
 
     batch.payload = json.dumps({**json.loads(batch.payload), "mapping": body.mapping,
                                 "duplicates": body.duplicates}, ensure_ascii=False)
@@ -1143,7 +1142,6 @@ def import_mapping(shop_id: str, import_id: str, body: MappingIn, principal: Pri
 
 
 def _preview_data(db: DbSession, shop: Shop, batch: ImportBatch) -> dict:
-    import json
 
     stored = json.loads(batch.payload)
     parsed = load_payload(batch.payload)
@@ -1324,7 +1322,6 @@ def ai_conversation(conversation_id: str, principal: Principal = Depends(get_pri
         raise ApiError(404, "not_found")
     shop_for(db, principal, conv.shop_id)
     turns = db.scalars(select(AITurn).where(AITurn.conversation_id == conv.id).order_by(AITurn.created_at)).all()
-    import json
 
     return {"id": conv.id, "title": conv.title, "turns": [
         {"id": t.id, "question": t.question, "answer": json.loads(t.answer_json)} for t in turns]}

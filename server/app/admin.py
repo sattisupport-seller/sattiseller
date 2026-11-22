@@ -7,6 +7,7 @@
 """
 
 from __future__ import annotations
+from datetime import datetime as _dt, timedelta as _td, timezone as _tz
 
 import base64
 import hashlib
@@ -254,7 +255,6 @@ def stats(_: User = Depends(require_admin), db: DbSession = Depends(get_session)
 @router.get("/analytics")
 def analytics_summary(days: int = 30, _: User = Depends(require_admin), db: DbSession = Depends(get_session)) -> dict:
     """3.9: счётчики событий за последние дни (без пользователей и адресов)."""
-    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
 
     from .analytics import summary
 

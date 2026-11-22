@@ -9,6 +9,7 @@
 """
 
 from __future__ import annotations
+from decimal import Decimal
 
 import logging
 import threading
@@ -585,7 +586,6 @@ def profit_breakdown(data: ShopData, facts: list[ItemFact], period: Period) -> d
 
 def _pct_label(bp: int) -> str:
     """Ставка в базисных пунктах → проценты для подписи: 400 → «4», 150 → «1,5»."""
-    from decimal import Decimal
 
     text = format((Decimal(bp) / Decimal(100)).normalize(), "f")
     return text.replace(".", ",")

@@ -6,6 +6,8 @@
 """
 
 from __future__ import annotations
+from sqlalchemy import delete
+from datetime import timedelta
 
 import logging
 import os
@@ -24,8 +26,6 @@ AI_FEEDBACK_KEEP_DAYS = 365  # оценки и жалобы на ответы п
 
 def purge_old_ai_feedback(db, now: datetime) -> int:
     """Удаляет оценки и жалобы старше 12 месяцев. Возвращает число удалённых."""
-    from datetime import timedelta
-    from sqlalchemy import delete
     from .models import AIFeedback
     cut = now - timedelta(days=AI_FEEDBACK_KEEP_DAYS)
     res = db.execute(delete(AIFeedback).where(AIFeedback.created_at < cut))

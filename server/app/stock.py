@@ -2,6 +2,7 @@
 + возвраты годного товара после него. Расчёт по заказам, без фоновых задач. Пороги уведомлений: 10, 5, 3 шт. и 0."""
 
 from __future__ import annotations
+import json
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -106,7 +107,6 @@ LEVEL_TEXT = {"out": "закончился", "t3": "осталось 3 шт. и�
 
 def stock_push_mock(shop: Shop, st: StockState) -> None:
     """Push на моке: файл в outbox/push (без персональных данных: только название товара и остаток)."""
-    import json
     from .config import settings
     folder = settings.outbox_dir / "push"
     folder.mkdir(parents=True, exist_ok=True)
