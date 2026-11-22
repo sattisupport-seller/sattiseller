@@ -165,9 +165,10 @@ def test_price_list_lists_sold_products_and_stops_after_disconnect(client, demo,
     r = client.get(path)
     assert r.status_code == 200 and "xml" in r.headers["content-type"]
     root = ET.fromstring(r.content)
-    offers = [o for o in root.findall("./offers/offer") if o.get("sku", "").startswith("K")]
+    assert root.tag == "{kaspiShopping}kaspi_catalog"  # пространство имён из документации Kaspi
+    offers = [o for o in root.findall("./{kaspiShopping}offers/{kaspiShopping}offer") if o.get("sku", "").startswith("K")]
     assert 1 <= len(offers) <= 10  # товары из заказов Kaspi; демо-товары тоже попадают в прайс
-    assert all(int(o.find("price").text) > 0 for o in root.findall("./offers/offer"))
+    assert all(int(o.find("{kaspiShopping}price").text) > 0 for o in root.findall("./{kaspiShopping}offers/{kaspiShopping}offer"))
     assert client.get(path.rsplit("/", 1)[0] + "/wrong-key-000000000000000000000").status_code == 404
     assert client.delete(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).status_code == 200
     assert client.get(path).status_code == 404
@@ -274,3 +275,27 @@ def test_orders_request_uses_documented_filter_and_headers():
         "filter[orders][creationDate][$ge]=1700000000000" in seen["url"], seen["url"]
     assert seen["headers"]["x-auth-token"] == VALID_TOKEN
     assert seen["headers"]["content-type"] == "application/vnd.api+json"
+
+
+def test_price_list_header_matches_kaspi_docs_and_bad_sku_is_skipped_with_note(client, demo, kaspi_on, mock):
+    """Прайс по документации Kaspi (сверка 22.11): корень в пространстве kaspiShopping с схемой; sku — латиница и цифры
+    до 20 знаков. Неподходящий артикул в файл не попадает, а в комментарии файла указывается, что его не передали."""
+    _connect(client, demo)
+    mock.generate(10, now=datetime.now(timezone.utc), products=3)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    with DbSession(engine) as db:
+        db.add(Product(shop_id=demo["shop_id"], sku="Артикул-кириллица", name="Плохой артикул"))
+        db.commit()
+    with DbSession(engine) as db:  # товар с плохим артикулом должен иметь продажу, чтобы попасть в прайс
+        from app.models import OrderItem as _OI
+        bad = db.query(Product).filter(Product.sku == "Артикул-кириллица").one()
+        ord_ = db.query(Order).filter(Order.shop_id == demo["shop_id"]).first()
+        db.add(_OI(order_id=ord_.id, shop_id=demo["shop_id"], product_id=bad.id, qty=1, unit_price_minor=100000))
+        db.commit()
+    path = client.get(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).json()["price_url"]
+    body = client.get(path).content.decode("utf-8")
+    assert body.lstrip().startswith("<?xml")
+    assert 'xmlns="kaspiShopping"' in body and "xsi:schemaLocation" in body
+    assert "ns0:" not in body
+    assert "Артикул-кириллица" not in body.split("<!--")[0]  # не попал в файл как предложение
+    assert "не переданы" in body and "Артикул-кириллица" in body  # но указан в комментарии

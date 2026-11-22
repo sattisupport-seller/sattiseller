@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import re
 import base64
 import hashlib
 import logging
@@ -211,6 +212,10 @@ def client_for(conn: KaspiConnection) -> KaspiClient:
 
 # ---------- XML-прайс ----------
 
+KASPI_NS = "kaspiShopping"
+XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+
+
 def price_list_xml(db: DbSession, shop: Shop, conn: KaspiConnection, today: date | None = None) -> bytes:
     """Прайс: цена — последняя продажная цена товара из заказов. UNVERIFIED: формат сверить с документацией Kaspi.
     Остатков Satti не ведёт, поэтому наличие не указывается."""
@@ -225,18 +230,33 @@ def price_list_xml(db: DbSession, shop: Shop, conn: KaspiConnection, today: date
     delisted = set(db.scalars(select(ProductStock.product_id).where(ProductStock.shop_id == shop.id, ProductStock.delisted.is_(True))).all())
     rows = [r for r in rows if r[0] not in delisted]
     offers: dict[str, tuple[str, int]] = {}
+    skipped: list[str] = []
     for pid, sku, name, price_minor, _created in rows:
+        # документация Kaspi: sku — латинские буквы и цифры, до 20 символов, уникален в файле
+        if not re.fullmatch(r"[A-Za-z0-9]{1,20}", sku or ""):
+            if sku and sku not in skipped:
+                skipped.append(sku)
+            continue
         if sku not in offers:
             offers[sku] = (name, price_minor // 100)
-    root = ET.Element("kaspi_catalog", date=(today or date.today()).isoformat())
-    ET.SubElement(root, "company").text = shop.name
-    ET.SubElement(root, "merchantid").text = conn.seller_id
-    offers_el = ET.SubElement(root, "offers")
+    ET.register_namespace("", KASPI_NS)
+    ET.register_namespace("xsi", XSI_NS)
+    root = ET.Element(f"{{{KASPI_NS}}}kaspi_catalog", {
+        "date": (today or date.today()).isoformat(),
+        f"{{{XSI_NS}}}schemaLocation": f"{KASPI_NS} http://kaspi.kz/kaspishopping.xsd"})
+    ET.SubElement(root, f"{{{KASPI_NS}}}company").text = shop.name
+    ET.SubElement(root, f"{{{KASPI_NS}}}merchantid").text = conn.seller_id
+    offers_el = ET.SubElement(root, f"{{{KASPI_NS}}}offers")
     for sku, (name, price) in sorted(offers.items()):
-        offer = ET.SubElement(offers_el, "offer", sku=sku)
-        ET.SubElement(offer, "model").text = name
-        ET.SubElement(offer, "price").text = str(price)
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+        offer = ET.SubElement(offers_el, f"{{{KASPI_NS}}}offer", sku=sku)
+        ET.SubElement(offer, f"{{{KASPI_NS}}}model").text = name
+        ET.SubElement(offer, f"{{{KASPI_NS}}}price").text = str(price)
+    body = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    if skipped:  # не попали в файл: артикул не подходит под правило Kaspi (см. docs/kaspi-assumptions.md)
+        note = ("<!-- не переданы: артикул не латиница/цифры до 20 знаков: "
+                + ", ".join(s.replace("--", "-") for s in skipped[:50]) + " -->").encode("utf-8")
+        body = body.replace(b"?>", b"?>" + note, 1) if body.startswith(b"<?xml") else note + body
+    return body
 
 
 def find_by_price_key(db: DbSession, shop_id: str, price_key: str) -> KaspiConnection | None:
