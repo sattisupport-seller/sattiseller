@@ -56,6 +56,7 @@ class ShopData:
     orders: list[Order]
     expenses: list[ExpenseEntry]
     tax_rates: list[TaxRate] = field(default_factory=list)
+    stock: dict[str, int] = field(default_factory=dict)  # остаток по товару (внесён вручную); нет записи — не знаем
 
 
 def load_shop(db: DbSession, shop: Shop) -> ShopData:

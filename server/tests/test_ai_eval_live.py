@@ -144,7 +144,7 @@ def test_live_eval(demo, monkeypatch):
                                          now=datetime.now(timezone.utc), debug=True)
                     db.commit()
                     answer = out["renderedAnswer"]
-                    ok, why = verdict(item, answer)
+                    ok, why = verdict(item, answer, refused=bool(out.get("refused")))
                     row = {"id": item["id"], "kind": item_type(item), "ok": ok, "why": why,
                            "contacts": bool(PII.search(answer)), "refused": out.get("refused"),
                            "refusalCategory": out.get("refusalCategory"), "liveUsed": out["liveUsed"],

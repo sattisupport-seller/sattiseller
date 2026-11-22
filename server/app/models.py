@@ -209,6 +209,17 @@ class ExpenseEntry(Base):
     source: Mapped[str] = mapped_column(String(16), default="manual")
 
 
+class ProductStock(Base):
+    """Остаток товара, внесённый продавцом вручную (склад, ТЗ/PROPOSALS пункт 18). Не меняет данные Kaspi."""
+    __tablename__ = "product_stocks"
+    __table_args__ = (UniqueConstraint("product_id", name="uq_product_stock_product"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id", ondelete="CASCADE"), index=True)
+    product_id: Mapped[str] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    qty: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class ImportBatch(Base):
     __tablename__ = "import_batches"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
@@ -255,6 +266,10 @@ class AIFeedback(Base):
     kind: Mapped[str] = mapped_column(String(16))  # up | down | flag
     reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Контекст для измерения качества на бете: вопрос с маскировкой (телефоны, почта, адреса), признак отказа
+    question_masked: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refused: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    refusal_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

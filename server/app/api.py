@@ -50,6 +50,7 @@ from .models import (
     AIConversation,
     AITurn,
     AuthCode,
+    ProductStock,
     CommissionPreset,
     DemoInstallation,
     ExpenseEntry,
@@ -709,6 +710,44 @@ def _add_cost(db: DbSession, shop: Shop, product: Product, body: CostIn, source:
     db.add(v)
     db.flush()
     return v
+
+
+class StockIn(BaseModel):
+    qty: int = Field(ge=0, le=10_000_000)  # остаток, внесённый продавцом вручную (склад)
+
+
+def _product_of_shop(db: DbSession, shop: Shop, product_id: str) -> Product:
+    product = db.get(Product, product_id)
+    if product is None or product.shop_id != shop.id:
+        raise ApiError(404, "not_found")
+    return product
+
+
+@api.get("/shops/{shop_id}/products/{product_id}/stock", tags=["склад"])
+def get_stock_row(shop_id: str, product_id: str, principal: Principal = Depends(get_principal),
+                  db: DbSession = Depends(get_session)) -> dict:
+    shop = shop_for(db, principal, shop_id)
+    _product_of_shop(db, shop, product_id)
+    row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
+    return {"qty": None if row is None else row.qty,
+            "updatedAt": None if row is None else row.updated_at.isoformat()}
+
+
+@api.put("/shops/{shop_id}/products/{product_id}/stock", tags=["склад"])
+def put_stock_row(shop_id: str, product_id: str, body: StockIn, principal: Principal = Depends(get_principal),
+                  db: DbSession = Depends(get_session)) -> dict:
+    shop = shop_for(db, principal, shop_id)
+    _product_of_shop(db, shop, product_id)
+    row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
+    now = datetime.now(timezone.utc)
+    if row is None:
+        row = ProductStock(shop_id=shop.id, product_id=product_id, qty=body.qty, updated_at=now)
+        db.add(row)
+    else:
+        row.qty = body.qty
+        row.updated_at = now
+    db.commit()
+    return {"qty": row.qty, "updatedAt": row.updated_at.isoformat()}
 
 
 @api.get("/shops/{shop_id}/products/{product_id}/cost-versions", tags=["затраты"], response_model=CostVersionsOut)
