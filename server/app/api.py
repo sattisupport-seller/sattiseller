@@ -1469,6 +1469,7 @@ def _kaspi_view(shop: Shop, conn: KaspiConnection | None) -> dict:
             "last_sync_at": conn.last_sync_at.isoformat() if conn.last_sync_at else None,
             "last_error": conn.last_error,
             "store_ids": kaspi_service.store_list(conn),
+            "store_hint": conn.store_hint,
             "price_url": (settings.public_base_url + price_path) if settings.public_base_url else price_path}
 
 

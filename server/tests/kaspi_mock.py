@@ -91,7 +91,8 @@ class MockKaspi:
             rows = self.entries.get(m.group(1), [])
             data = [{"type": "orderentries", "id": r["id"],
                      "attributes": {"quantity": r["qty"], "basePrice": r["basePrice"]},
-                     "relationships": {"product": {"links": {"related": f"/orderentries/{r['id']}/product"}}}}
+                     "relationships": {"product": {"links": {"related": f"/orderentries/{r['id']}/product"}},
+                                       "deliveryPointOfService": {"data": {"type": "pointofservices", "id": "PP1"}}}}
                     for r in rows]
             return self._json({"data": data})
         m = re.search(r"/orderentries/([^/]+)/product$", path)

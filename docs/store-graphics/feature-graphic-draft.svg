@@ -7,15 +7,14 @@
     </linearGradient>
   </defs>
   <rect width="1024" height="500" fill="url(#bg)"/>
-  <g transform="translate(110 138) scale(0.36) translate(-190 -250)">
+  <g transform="translate(92 138) scale(0.36) translate(-190 -250)">
     <g transform="translate(190 250) scale(26)" fill="none" stroke="#FFFFFF" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
     <path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/>
     <path d="M12 22V12"/>
     <path d="m3.3 7 7.7 4.73a2 2 0 0 0 2 0L20.7 7"/>
   </g>
   </g>
-  <text x="380" y="222" font-family="Inter, Arial, sans-serif" font-size="92" font-weight="700" fill="#FFFFFF">Satti</text>
-  <text x="380" y="292" font-family="Inter, Arial, sans-serif" font-size="30" fill="#E0E7FF">Прибыль по каждому товару,</text>
-  <text x="380" y="334" font-family="Inter, Arial, sans-serif" font-size="30" fill="#E0E7FF">заказы и ИИ-помощник</text>
-  <text x="380" y="376" font-family="Inter, Arial, sans-serif" font-size="30" fill="#E0E7FF">для продавца маркетплейса</text>
+  <text x="400" y="232" font-family="Inter, Arial, sans-serif" font-size="76" font-weight="700" fill="#FFFFFF">Satti Seller</text>
+  <text x="400" y="296" font-family="Inter, Arial, sans-serif" font-size="28" fill="#E0E7FF">Прибыль по каждому товару, заказы</text>
+  <text x="400" y="336" font-family="Inter, Arial, sans-serif" font-size="28" fill="#E0E7FF">и ИИ-помощник для продавца маркетплейса</text>
 </svg>

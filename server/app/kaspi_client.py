@@ -83,6 +83,7 @@ class KaspiClient:
                  min_interval: float = MIN_INTERVAL_SECONDS, max_attempts: int = MAX_ATTEMPTS,
                  sleep=time.sleep, clock=time.monotonic) -> None:
         # Content-Type — как в примерах документации Kaspi (JSON:API)
+        self.last_point_id: str | None = None  # подсказка кода склада из связи позиции (deliveryPointOfService)
         self._sku_by_entry: dict[str, str | None] = {}
         self._sku_by_master: dict[str, str | None] = {}
         self._http = httpx.Client(base_url=base_url, headers={AUTH_HEADER: token, "Accept": "application/json", "Content-Type": "application/vnd.api+json"},
@@ -144,6 +145,10 @@ class KaspiClient:
     def order_entries(self, order_code: str) -> list[OrderEntry]:
         """Позиции заказа: GET /orders/{code}/entries (документация: раздел «Состав заказа», q3203)."""
         body = self._get(f"{ORDERS_PATH}/{order_code}/entries", {})
+        for item in body.get("data", []):
+            point = ((item.get("relationships") or {}).get("deliveryPointOfService") or {}).get("data") or {}
+            if point.get("id"):
+                self.last_point_id = str(point["id"])
         return [parse_entry(item) for item in body.get("data", [])]
 
     def entry_sku(self, entry_id: str) -> str | None:

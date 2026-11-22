@@ -23,7 +23,12 @@ type KaspiStatus = {
   last_sync_at?: string | null;
   last_error?: string | null;
   price_url?: string;
+  store_ids?: string[];
+  store_hint?: string | null;
 };
+
+// Код склада Kaspi (storeId): латиница, цифры, «-» и «_», до 40 знаков (документация Kaspi, К-7).
+const STORE_RE = /^[A-Za-z0-9_-]{1,40}$/;
 
 type SyncResult = { added: number; updated: number; pages: number; status: string };
 
@@ -49,6 +54,8 @@ export default function KaspiScreen() {
   const [token, setToken] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [storeInput, setStoreInput] = useState('');
+  const [storeError, setStoreError] = useState<string | null>(null);
   const enabled = config.data?.flags.kaspi_connection ?? false;
 
   const status = useQuery({
@@ -63,6 +70,19 @@ export default function KaspiScreen() {
     }),
     onMutate: () => { setError(null); setNotice(null); },
     onSuccess: () => { setToken(''); void qc.invalidateQueries({ queryKey: [KEY, shopId] }); },
+    onError: (e) => setError(errorText(e, t)),
+  });
+
+  const saveStores = useMutation({
+    mutationFn: (codes: string[]) => request<KaspiStatus>(`/shops/${shopId}/kaspi/stores`, {
+      method: 'PUT', body: { store_ids: codes },
+    }),
+    onMutate: () => { setStoreError(null); setError(null); setNotice(null); },
+    onSuccess: () => {
+      setStoreInput('');
+      setNotice(t('kaspi.storeSaved'));
+      void qc.invalidateQueries({ queryKey: [KEY, shopId] });
+    },
     onError: (e) => setError(errorText(e, t)),
   });
 
@@ -123,7 +143,7 @@ export default function KaspiScreen() {
 
   const data = status.data;
   const connected = data && data.status !== 'not_connected';
-  const busy = connect.isPending || sync.isPending || disconnect.isPending;
+  const busy = connect.isPending || sync.isPending || disconnect.isPending || saveStores.isPending;
   const lastSync = data?.last_sync_at
     ? new Date(data.last_sync_at).toLocaleString(locale === 'kk' ? 'kk-KZ' : 'ru-RU')
     : t('kaspi.never');
@@ -161,6 +181,35 @@ export default function KaspiScreen() {
             </View>
             <Txt variant="footnote" tone="secondary">{t('kaspi.lastSync')}: {lastSync}</Txt>
             {data?.last_error ? <Banner text={data.last_error} tone="warning" /> : null}
+          </Card>
+
+          <Card style={{ gap: spacing.sm }}>
+            <Txt variant="subheadMedium">{t('kaspi.storeTitle')}</Txt>
+            {data?.store_ids?.length
+              ? <Txt variant="footnote" tone="secondary">{t('kaspi.storeCurrent', { codes: data.store_ids.join(', ') })}</Txt>
+              : <Banner text={t('kaspi.storeMissing')} tone="warning" />}
+            {data?.store_hint && !(data?.store_ids ?? []).includes(data.store_hint) ? (
+              <Button title={t('kaspi.storeSuggest', { code: data.store_hint })} variant="outline"
+                onPress={() => setStoreInput(data.store_hint!)} fullWidth />
+            ) : null}
+            <TextField label={t('kaspi.storeLabel')} value={storeInput} onChangeText={setStoreInput}
+              hint={t('kaspi.storeHint')} maxLength={200} />
+            {storeError ? <Banner text={storeError} tone="danger" /> : null}
+            <Button
+              title={saveStores.isPending ? t('kaspi.syncing') : t('kaspi.storeSave')}
+              variant="outline"
+              loading={saveStores.isPending}
+              disabled={busy || !storeInput.trim()}
+              onPress={() => {
+                const codes = storeInput.split(',').map((x) => x.trim()).filter(Boolean);
+                if (codes.length === 0 || !codes.every((c) => STORE_RE.test(c))) {
+                  setStoreError(t('kaspi.storeInvalid'));
+                  return;
+                }
+                saveStores.mutate(codes);
+              }}
+              fullWidth
+            />
           </Card>
 
           {data?.price_url ? (

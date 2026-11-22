@@ -316,9 +316,11 @@ def test_sku_comes_from_product_links_not_from_entry_fields(client, demo, kaspi_
 
 
 def test_partial_cancel_reduces_the_item_and_recalculates_net_sales(client, demo, kaspi_on, mock):
-    """К-6 п.2: частичная отмена (orderPartialCancel) уменьшает количество в позиции после первой синхронизации.
-    Выручка обзора и позиция заказа должны пересчитаться."""
-    from app.models import OrderItem as _OI
+    """К-6/К-7 п.2–3: частичная отмена (orderPartialCancel) уменьшает количество в позиции после первой синхронизации.
+    Выручка и прибыль (позиции) пересчитываются; остаток склада растёт на отменённое; в журнале — движение «отмена»."""
+    from app.models import OrderItem as _OI, Product as _Prod, StockMovement as _SM
+    from app.stock import stock_states
+    from app.models import Shop as _Shop
 
     _connect(client, demo)
     mock.generate(9, now=datetime.now(timezone.utc), days=5, state_cycle=["COMPLETED"], products=3)
@@ -328,28 +330,23 @@ def test_partial_cancel_reduces_the_item_and_recalculates_net_sales(client, demo
         ov = client.get(f"/v1/shops/{demo['shop_id']}/overview?period=30d", headers=demo["headers"])
         return ov.json()["kpi"]["net_sales_minor"]
 
-    # выбираем заказ с позицией из 2+ штук
     code = next(c for c, rows in mock.entries.items() if rows[0]["qty"] >= 2)
     old_qty = mock.entries[code][0]["qty"]
     price = mock.entries[code][0]["basePrice"]
     sku = f"K{mock.entries[code][0]['idx']}"
 
-    def sold_of(sku_: str) -> int:
-        from app.stock import stock_states
-        from app.models import Shop as _Shop
+    def stock_now() -> int:
         with DbSession(engine) as db:
             states = stock_states(db, db.get(_Shop, demo["shop_id"]))
-            return next((st.sold_since for st in states.values() if st.sku == sku_), 0)
+            return next(st.current for st in states.values() if st.sku == sku)
 
-    # склад считает продажи от даты инвентаризации: ставим её на 10 дней назад, до всех заказов теста
-    from app.models import Product as _Prod, StockMovement as _SM
+    # склад считает от инвентаризации, датированной на 10 дней назад (раньше всех заказов теста)
     with DbSession(engine) as db:
         pid = db.query(_Prod.id).filter(_Prod.shop_id == demo["shop_id"], _Prod.sku == sku).scalar()
         db.add(_SM(id="inv" + pid[:20], shop_id=demo["shop_id"], product_id=pid, kind="inventory", qty=500,
                    occurred_at=datetime.now(timezone.utc) - timedelta(days=10)))
         db.commit()
-    sold_before_stock = sold_of(sku)
-    before = net()
+    before_net, before_stock = net(), stock_now()
     mock.partial_cancel(code, 0, 1)
     r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
     assert r.status_code == 200, r.text
@@ -358,10 +355,20 @@ def test_partial_cancel_reduces_the_item_and_recalculates_net_sales(client, demo
         order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == code).one()
         items = db.query(_OI).filter(_OI.order_id == order.id).all()
         assert sum(it.qty for it in items) == sum(r_["qty"] for r_ in mock.entries[code])  # совпадает с Kaspi
-    after = net()
-    assert before - after == (old_qty - 1) * price * 100, (before, after, old_qty, price)  # цена в моке — тенге, в базе — тиын
-    # склад: продажи того же товара уменьшились на отменённые штуки
-    assert sold_before_stock - sold_of(sku) == old_qty - 1, (sold_before_stock, sold_of(sku))
+        moves = db.query(_SM).filter(_SM.shop_id == demo["shop_id"], _SM.kind == "cancel", _SM.product_id == pid).all()
+        assert [m.qty for m in moves] == [old_qty - 1]  # движение «отмена» на разницу
+    assert before_net - net() == (old_qty - 1) * price * 100, "цифры в обзоре: цена в моке — тенге, в базе — тиын"
+    assert stock_now() - before_stock == old_qty - 1, "остаток вырос ровно на отменённые штуки (без двойного учёта)"
+
+
+def test_store_hint_comes_from_order_data_and_is_only_a_suggestion(client, demo, kaspi_on, mock):
+    """К-7 п.1: код склада из данных заказов (связь позиции с пунктом выдачи) — только подсказка.
+    Значение задаёт продавец; подсказка не подставляется сама."""
+    _connect(client, demo)
+    mock.generate(4, now=datetime.now(timezone.utc), days=5, products=2)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    view = client.get(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).json()
+    assert view["store_hint"] == "PP1" and view["store_ids"] == []
 
 
 def test_delisting_keeps_offer_with_available_no_and_zero_stock_when_store_codes_are_set(client, demo, kaspi_on, mock):

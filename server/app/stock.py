@@ -84,6 +84,11 @@ def stock_states(db: DbSession, shop: Shop, now: datetime | None = None) -> dict
                        and _aware(m.occurred_at) > base_at)
         sold = sum(q for ipid, q, created, status in items
                    if ipid == pid and status not in CANCEL and _aware(created) >= base_at)
+        # частичные отмены Kaspi (движение «cancel»): позиция уже уменьшена, поэтому остаток не меняем дважды;
+        # в «продано всего» отменённые штуки возвращаем, чтобы продажи были видны как было заказано
+        cancelled = sum(m.qty for m in moves if m.kind == "cancel" and m.product_id == pid
+                        and _aware(m.occurred_at) >= base_at)
+        sold_gross = sold + cancelled
         returned = sum(q for rpid, q, confirmed, sellable in returns
                        if rpid == pid and sellable and _aware(confirmed) >= base_at)
         current = base_qty + receipts - sold + returned
@@ -92,7 +97,7 @@ def stock_states(db: DbSession, shop: Shop, now: datetime | None = None) -> dict
         avg = recent / SALE_WINDOW_DAYS
         days = int(current / avg) if avg > 0 and current > 0 else (0 if current <= 0 else None)
         row = legacy.get(pid)
-        out[pid] = StockState(pid, p.sku, p.name, base_qty, base_at, sold, returned, current,
+        out[pid] = StockState(pid, p.sku, p.name, base_qty, base_at, sold_gross, returned, current,
                               round(avg, 2), days, _level(current), bool(row.delisted) if row else False)
     return out
 

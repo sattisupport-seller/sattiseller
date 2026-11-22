@@ -161,8 +161,16 @@ def _lines(client: KaspiClient, code: str) -> list[tuple[str, int, int]]:
     return out
 
 
+def _log_cancel(db: DbSession, shop: Shop, order: Order, product_id: str, qty: int, now: datetime) -> None:
+    """Движение «отмена» в журнале склада (К-7): сколько штук Kaspi сняла с заказа."""
+    from .models import StockMovement
+    if qty > 0:
+        db.add(StockMovement(id=_uid(), shop_id=shop.id, product_id=product_id, kind="cancel", qty=qty,
+                             occurred_at=now, created_at=now))
+
+
 def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, int, int]],
-               products: dict[str, Product]) -> bool:
+               products: dict[str, Product], now: datetime) -> bool:
     """Приводит позиции заказа к данным Kaspi: количество, цена, удаление позиций, которых больше нет.
     Частичная отмена уменьшает количество — прибыль и остатки пересчитываются по позициям. Возвращает, менялось ли."""
     fresh: dict[str, tuple[int, int]] = {}  # product_id -> (количество, цена)
@@ -179,6 +187,7 @@ def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, i
         qty, price = fresh.get(pid, (0, 0))
         if qty <= 0:  # позиции больше нет в заказе
             for it in items:
+                _log_cancel(db, shop, order, pid, it.qty, now)
                 db.delete(it)
                 changed = True
             continue
@@ -191,6 +200,8 @@ def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, i
         for it in extra:  # дубли одного товара в заказе сводим в одну позицию
             db.delete(it)
             changed = True
+        if keep.qty > qty:  # частичная отмена: уменьшилось количество
+            _log_cancel(db, shop, order, pid, keep.qty - qty, now)
         if keep.qty != qty or keep.unit_price_minor != price * 100:
             keep.qty = qty
             keep.unit_price_minor = price * 100
@@ -199,13 +210,11 @@ def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, i
 
 
 def _needs_refresh(order: Order, status: str, now: datetime) -> bool:
-    """Позиции перечитываем у незавершённых заказов и у выполненных за последние 14 дней (там бывают частичные отмены).
-    Остальные — не трогаем, чтобы не делать по запросу на каждый заказ при каждой синхронизации."""
+    """Состав перечитываем у заказов, созданных за последние 14 дней (К-7), и у всех незавершённых: там бывают частичные отмены.
+    Старые выполненные заказы не трогаем, чтобы не делать запрос на каждый заказ при каждой синхронизации."""
     if status in ("pending", "in_progress"):
         return True
-    if order.completed_at is not None:
-        return _aware(order.completed_at) >= now - timedelta(milliseconds=OVERLAP_MS)
-    return False
+    return _aware(order.created_at) >= now - timedelta(milliseconds=OVERLAP_MS)
 
 
 def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: dict[str, Product],
@@ -224,7 +233,7 @@ def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: d
                           created_at=_utc(ko.created_ms), completed_at=completed_at)
             db.add(order)
             db.flush()
-            _reconcile(db, shop, order, _lines(client, ko.code), products)
+            _reconcile(db, shop, order, _lines(client, ko.code), products, now)
             added += 1
             continue
         if order.status != status:
@@ -233,7 +242,7 @@ def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: d
         if order.completed_at is None and status in ("completed", "returned"):
             order.completed_at = completed_at or now
         if _needs_refresh(order, status, now):
-            if _reconcile(db, shop, order, _lines(client, ko.code), products):
+            if _reconcile(db, shop, order, _lines(client, ko.code), products, now):
                 items_changed += 1
     return added, updated, items_changed
 
@@ -266,6 +275,8 @@ def sync(db: DbSession, conn: KaspiConnection, client: KaspiClient, now: datetim
             pages += 1
             newest = max(o.created_ms for o in orders)
             conn.cursor_ms = max(conn.cursor_ms or 0, newest)
+            if client.last_point_id and not conn.store_ids:  # подсказка только пока код склада не задан
+                conn.store_hint = client.last_point_id
             conn.last_error = None
             db.commit()
             if len(orders) < PAGE_SIZE:
