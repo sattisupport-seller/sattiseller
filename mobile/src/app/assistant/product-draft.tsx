@@ -5,13 +5,14 @@ import { useState } from 'react';
 import { Image, Pressable, ScrollView, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
-import { useProductDraft } from '@/api/hooks';
+import { useAIConsent, useProductDraft } from '@/api/hooks';
+import { draftErrorText, isConsentError } from '@/api/aiErrors';
 import type { ProductDraft } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/Inputs';
 import { Txt } from '@/components/ui/Text';
 import { Banner, Card, Chip, Section } from '@/components/ui/Surfaces';
-import { useToast } from '@/components/ui/Overlays';
+import { Sheet, useToast } from '@/components/ui/Overlays';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
@@ -25,6 +26,8 @@ export default function ProductDraftScreen() {
   const toast = useToast();
   const { shopId } = useSession();
   const draft = useProductDraft(shopId);
+  const consent = useAIConsent();
+  const [consentOpen, setConsentOpen] = useState(false);
   const [facts, setFacts] = useState('');
   const [photos, setPhotos] = useState<{ uri: string; name: string; type: string }[]>([]);
   const [lang, setLang] = useState<Lang>('ru');
@@ -62,7 +65,22 @@ export default function ProductDraftScreen() {
     try {
       setResult(await draft.mutateAsync(form));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : t('common.unknownError'));
+      // нет согласия — показываем то же согласие, что в чате; после «Разрешить» черновик создаётся сразу
+      if (isConsentError(e)) {
+        setConsentOpen(true);
+        return;
+      }
+      setError(draftErrorText(e, t));
+    }
+  };
+
+  const allowConsent = async () => {
+    try {
+      await consent.mutateAsync(true);
+      setConsentOpen(false);
+      await make();
+    } catch {
+      setError(t('assistant.failed'));
     }
   };
 
@@ -156,6 +174,10 @@ export default function ProductDraftScreen() {
           <Button title={t('assistant.copyAll')} onPress={copyAll} fullWidth />
         </>
       ) : null}
+      <Sheet visible={consentOpen} onClose={() => setConsentOpen(false)} title={t('assistant.consentTitle')}>
+        <Txt variant="body" tone="secondary">{t('assistant.consentBody', { service: 'Satti AI' })}</Txt>
+        <Button title={t('assistant.allow')} onPress={allowConsent} loading={consent.isPending} fullWidth />
+      </Sheet>
     </ScrollView>
   );
 }

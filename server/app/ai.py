@@ -1397,11 +1397,11 @@ def product_draft(facts_text: str, languages: str, photos: int) -> dict:
     facts_text = mask_text(facts_text)  # ADR-0004
 
     lines = [ln.strip(" -•\t") for ln in re.split(r"[\n;]+", facts_text) if ln.strip()]
-    base = lines[0][:60]
+    base = _short_title(lines[0])
     titles = [base]
     if len(lines) > 1:
-        titles.append(f"{base}, {lines[1]}"[:60])
-    titles.append(f"{base} — {lines[-1]}"[:60] if len(lines) > 2 else f"{base} для дома"[:60])
+        titles.append(_short_title(f"{base}, {lines[1]}"))
+    titles.append(_short_title(f"{base} — {lines[-1]}") if len(lines) > 2 else _short_title(f"{base} для дома"))
     description = " ".join(ln if ln.endswith(".") else f"{ln}." for ln in lines)
 
     characteristics = [
@@ -1426,6 +1426,22 @@ def product_draft(facts_text: str, languages: str, photos: int) -> dict:
     }
     _check_no_new_numbers(out, facts_text)
     return out
+
+
+def _short_title(text: str, limit: int = 60) -> str:
+    """Заголовок не длиннее limit: режем по границе слова и никогда внутри числа (К-12).
+    «2024» не превращается в «20»: если за границей цифра, отступаем до начала числа."""
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    space = cut.rfind(" ")
+    if space > 0:
+        cut = cut[:space]
+    else:
+        while cut and cut[-1].isdigit() and text[len(cut)].isdigit():
+            cut = cut[:-1]
+    return cut.rstrip(" ,;:-—")
 
 
 def _check_no_new_numbers(out: dict, source: str) -> None:
