@@ -1,0 +1,28 @@
+# HTTPS автоматически (Let's Encrypt), заголовки безопасности, лимит размера запроса.
+{$SATTI_DOMAIN} {
+	encode zstd gzip
+
+	# лимит тела запроса: фото и выгрузки до 10 МБ
+	request_body {
+		max_size 10MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(self), microphone=(), geolocation=()"
+		-Server
+	}
+
+	reverse_proxy app:8000 {
+		health_uri /v1/health
+		health_interval 30s
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
