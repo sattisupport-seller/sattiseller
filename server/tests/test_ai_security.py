@@ -23,6 +23,7 @@ from app.reports import build_facts, load_shop
 PLACEHOLDER = re.compile(r"\{F\d+\}")
 READ_TOOLS = {
     "get_sales_summary", "get_profit_summary", "get_return_cancel_summary", "get_cost_breakdown",
+    "get_period_overview",  # сводка: только чтение (склейка четырёх инструментов выше)
     "compare_periods", "get_top_products", "get_product_cost", "get_missing_costs",
     "decline_request",  # не меняет данных: только отказ сервера с категорией
     "calculate",  # расчёт сервера по фактам: без записи в данные

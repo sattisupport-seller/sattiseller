@@ -62,3 +62,21 @@ def test_refusal_item_needs_refusal_and_trap_must_not_refuse():
 
 def test_answer_without_key_phrase_fails():
     assert verdict(item(any=["прибыл"]), "За 7 дней было 19 заказов на 200 490 ₸.")[0] is False
+
+
+def test_period_length_from_date_range():
+    assert term_found("14 дн", "За 9–22 нояб. прибыль 38 728 ₸")  # 14 дней по датам, числа «14» в ответе нет
+    assert term_found("90 дн", "с 25 авг. по 22 нояб. прибыль 318 225 ₸")  # 90 дней
+    assert term_found("3 месяц", "с 25 авг. по 22 нояб. прибыль 318 225 ₸")  # ≈ три месяца
+    assert not term_found("14 дн", "за 1–22 нояб. прибыль 82 413 ₸")  # 22 дня — не 14
+
+
+def test_two_periods_satisfy_comparison_words():
+    assert term_found("прошл", "за 1–22 нояб. 82 413 ₸, за 1–31 окт. 100 910 ₸")
+    assert not term_found("прошл", "за 1–22 нояб. 82 413 ₸")
+
+
+def test_tool_limit_is_six_and_overview_is_offered():
+    from app import ai as ai_service
+    assert ai_service.TOOL_LIMIT == 6
+    assert any(s["name"] == "get_period_overview" for s in ai_service.TOOL_SPECS)

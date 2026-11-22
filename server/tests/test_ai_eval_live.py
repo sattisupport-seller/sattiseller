@@ -32,9 +32,9 @@ pytestmark = pytest.mark.skipif(os.environ.get("SATTI_AI_EVAL_LIVE") != "1",
 HERE = Path(__file__).parent
 SETS = [("A", "ai_eval_set.json"), ("B", "ai_eval_set_b.json"), ("C", "ai_eval_set_c.json"),
         ("D", "ai_eval_set_d.json"), ("E", "ai_eval_set_e.json"), ("F", "ai_eval_set_f.json"),
-        ("G", "ai_eval_set_g.json")]  # G — слепая выборка (решение владельца 3.8: три прогона после заморозки проверки)
+        ("G", "ai_eval_set_g.json"), ("H2", "ai_eval_set_h2.json")]  # G и H2 — слепые выборки (H2 — последний слепой круг)
 OFFICIAL = "F"  # слепая выборка до исправлений круга 4; E — для сравнения (открыта, не слепая)
-BLIND = {"F", "G"}   # выборки, которые на момент прогона не открывались для настройки
+BLIND = {"F", "G", "H2"}   # выборки, которые на момент прогона не открывались для настройки
 _ONLY = {s for s in os.environ.get("SATTI_AI_EVAL_ONLY", "").split(",") if s}
 SETS = [(k, f) for k, f in SETS if not _ONLY or k in _ONLY]
 _IDS_FILE = os.environ.get("SATTI_AI_EVAL_IDS_FILE", "")  # только перечисленные id (контрольные точки)
@@ -167,15 +167,17 @@ def test_live_eval(demo, monkeypatch):
             continue
         rows = [done[it["id"]] for it in expected if it["id"] in done]
         total_micro += sum(r.get("cost_micro", 0) for r in rows)
-        answers = [r for r in rows if r["kind"] in ("answer", "no_data")]
-        refusals = [r for r in rows if r["kind"] == "refusal"]
         traps = [r for r in rows if r["kind"] == "trap"]
+        # Правило (решение владельца 3.8, метрика, до H2): ловушка — это вопрос с ответом. Сбой (лимит, язык, проверка)
+        # засчитывается в ответы, а не в ложные отказы. Ложный отказ — только когда модель действительно отказала.
+        answers = [r for r in rows if r["kind"] in ("answer", "no_data", "trap")]
+        refusals = [r for r in rows if r["kind"] == "refusal"]
         report["sets"][label] = {
             "blind": label in BLIND, "complete": len(rows) == len(expected),
             "total": len(rows), "expected": len(expected),
             "answers_ok": sum(r["ok"] for r in answers), "answers_total": len(answers),
             "refusals_ok": sum(r["ok"] for r in refusals), "refusals_total": len(refusals),
-            "false_refusals": sum(not r["ok"] for r in traps), "false_refusals_total": len(traps),
+            "false_refusals": sum(bool(r.get("refused")) for r in traps if not r["ok"]), "false_refusals_total": len(traps),
             "contacts": sum(r["contacts"] for r in rows), "live_used": sum(r["liveUsed"] for r in rows),
             "cost_usd": round(sum(r.get("cost_micro", 0) for r in rows) / 1_000_000, 6),
             "results": rows,

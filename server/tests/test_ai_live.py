@@ -194,3 +194,17 @@ def test_russian_question_states_russian_language_without_retry(demo, live):
     assert len(live["requests"]) == 1
     assert "(Язык ответа: русский.)" in live["requests"][0]["messages"][0]["content"]
     assert out["liveUsed"] is True
+
+
+def test_exhausted_tools_are_announced_to_the_model(demo, live):
+    """3.8 (решение владельца по G): при исчерпании лимита модель получает «инструментов больше нет»."""
+    live["script"] = [_reply([_tool("get_missing_costs", uid=f"t{i}")]) for i in range(ai_service.TOOL_LIMIT)] + \
+                     [_reply([_text("Ответ по уже полученным данным.")])]
+    _ask(demo["shop_id"], QUESTION)
+    announced = False
+    for body in live["requests"]:
+        last = body["messages"][-1]
+        if isinstance(last.get("content"), list) and any(
+                b.get("type") == "text" and "Инструментов больше нет" in b.get("text", "") for b in last["content"]):
+            announced = True
+    assert announced

@@ -37,9 +37,56 @@ def _word_forms_found(term: str, answer_low: str) -> bool:
     return all(any(t.startswith(_stem(w)) for t in tokens) for w in words)
 
 
+_MONTH_NUM = {"янв": 1, "фев": 2, "февр": 2, "мар": 3, "март": 3, "апр": 4, "апрел": 4, "май": 5, "мая": 5,
+              "июн": 6, "июл": 7, "авг": 8, "сент": 9, "окт": 10, "октябр": 10, "нояб": 11, "ноябр": 11,
+              "дек": 12, "декабр": 12}
+_SPAN_RANGE = re.compile(r"(\d{1,2})\s*([а-яё]{3,})\.?\s*(?:[–\-—]|по)\s*(\d{1,2})\s*([а-яё]{3,})\.?")
+_SPAN_SAME = re.compile(r"(\d{1,2})\s*[–\-—]\s*(\d{1,2})\s+([а-яё]{3,})\.?")
+
+
+def _month_of(word: str) -> int | None:
+    w = word.lower()
+    for stem, num in sorted(_MONTH_NUM.items(), key=lambda x: -len(x[0])):
+        if w.startswith(stem):
+            return num
+    return None
+
+
+def period_spans_days(answer_low: str) -> list[int]:
+    """Длины периодов в ответе по датам вида «9–22 нояб.» или «25 авг. по 22 нояб.» (включая оба конца). Год не важен."""
+    import datetime as _dt
+    days: list[int] = []
+    for m in _SPAN_RANGE.finditer(answer_low):
+        d1, m1, d2, m2 = int(m.group(1)), _month_of(m.group(2)), int(m.group(3)), _month_of(m.group(4))
+        if m1 and m2:
+            try:
+                days.append((_dt.date(2026, m2, d2) - _dt.date(2026, m1, d1)).days + 1)
+            except ValueError:
+                pass
+    for m in _SPAN_SAME.finditer(answer_low):
+        d1, d2, mon = int(m.group(1)), int(m.group(2)), _month_of(m.group(3))
+        if mon:
+            try:
+                days.append(d2 - d1 + 1)
+            except ValueError:
+                pass
+    return days
+
+
 def term_found(term: str, answer: str) -> bool:
     answer_low = answer.lower()
     t = term.lower().strip()
+    # Длина периода: «14 дн», «14 дней», «90 дн», «3 месяц» — по датам из ответа (решение владельца 3.8, пункт 3)
+    span = period_spans_days(answer_low)
+    dm = re.fullmatch(r"(\d+) (?:дн|дней|день)", t)
+    if dm and int(dm.group(1)) in span:
+        return True
+    mm = re.fullmatch(r"(\d+) месяц\w*", t)
+    if mm and any(int(mm.group(1)) * 28 <= d <= int(mm.group(1)) * 31 for d in span):
+        return True
+    # Сравнение двух периодов: слова «прошл», «предыдущ», «сравн» находятся, если в ответе два периода
+    if t.startswith(("прошл", "предыдущ", "сравн")) and len(span) >= 2:
+        return True
     if re.fullmatch(r"\d+( дн)?", t):  # число (с «дн»): целым числом, с «дн» — рядом
         num = t.split()[0]
         ok = re.search(rf"(?<![\d.,]){num}(?![\d])", answer_low) is not None
