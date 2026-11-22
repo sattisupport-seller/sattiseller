@@ -76,7 +76,8 @@ class KaspiClient:
     def __init__(self, token: str, *, base_url: str = BASE_URL, transport: httpx.BaseTransport | None = None,
                  min_interval: float = MIN_INTERVAL_SECONDS, max_attempts: int = MAX_ATTEMPTS,
                  sleep=time.sleep, clock=time.monotonic) -> None:
-        self._http = httpx.Client(base_url=base_url, headers={AUTH_HEADER: token, "Accept": "application/json"},
+        # Content-Type — как в примерах документации Kaspi (JSON:API)
+        self._http = httpx.Client(base_url=base_url, headers={AUTH_HEADER: token, "Accept": "application/json", "Content-Type": "application/vnd.api+json"},
                                   timeout=30.0, transport=transport)
         self._min_interval = min_interval
         self._max_attempts = max_attempts
@@ -128,7 +129,7 @@ class KaspiClient:
         body = self._get(ORDERS_PATH, {
             "page[number]": page,
             "page[size]": PAGE_SIZE,
-            "filter[orders][creationDate][ge]": since_ms,
+            "filter[orders][creationDate][$ge]": since_ms,  # документация Kaspi: [$ge], в миллисекундах
         })
         return [parse_order(item) for item in body.get("data", [])]
 

@@ -251,3 +251,26 @@ def test_kaspi_orders_feed_the_profit_figures_exactly(client, demo, kaspi_on, mo
     after = _net_sales()
     assert after["net_sales_minor"] - before == expected, (after["net_sales_minor"] - before, expected)
     assert isinstance(after["profit_minor"], int) and 0 <= after["coverage_bp"] <= 10000
+
+
+def test_orders_request_uses_documented_filter_and_headers():
+    """К-2 п.1 (сверка с документацией Kaspi, 22.11): фильтр даты — filter[orders][creationDate][$ge] в миллисекундах;
+    заголовки — X-Auth-Token и JSON:API Content-Type."""
+    import httpx
+
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["headers"] = dict(request.headers)
+        return httpx.Response(200, json={"data": []})
+
+    client = KaspiClient(VALID_TOKEN, transport=httpx.MockTransport(handler), sleep=lambda s: None, min_interval=0)
+    try:
+        client.list_orders(1_700_000_000_000, 1)
+    finally:
+        client.close()
+    assert "filter%5Borders%5D%5BcreationDate%5D%5B%24ge%5D=1700000000000" in seen["url"] or \
+        "filter[orders][creationDate][$ge]=1700000000000" in seen["url"], seen["url"]
+    assert seen["headers"]["x-auth-token"] == VALID_TOKEN
+    assert seen["headers"]["content-type"] == "application/vnd.api+json"

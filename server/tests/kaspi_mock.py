@@ -70,7 +70,7 @@ class MockKaspi:
         if not request.url.path.endswith("/" + kaspi_client.ORDERS_PATH):
             return httpx.Response(404, json={"error": "not found"})
         q = request.url.params
-        since = int(q.get("filter[orders][creationDate][ge]", "0"))
+        since = int(q.get("filter[orders][creationDate][$ge]", "0"))
         page = int(q.get("page[number]", "0"))
         size = int(q.get("page[size]", str(kaspi_client.PAGE_SIZE)))
         rows = sorted((o for o in self.orders if o["attributes"]["creationDate"] >= since),
