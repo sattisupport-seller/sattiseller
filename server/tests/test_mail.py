@@ -50,11 +50,11 @@ def smtp(monkeypatch):
 
 
 def test_code_goes_through_smtp_when_configured(smtp):
-    send_code_email("seller@example.invalid", "123456", "login", "kk")
+    send_code_email("seller@example.invalid", "123456", "login", "ru")  # К-13: письма только на русском
     host, port, to, subject, body = smtp.sent[0]
     assert host == "smtp.example.invalid" and port == settings.smtp_port
     assert to == "seller@example.invalid"
-    assert "123456" in body and subject.startswith("Satti Seller")
+    assert "123456" in body and "Satti Seller" in subject
 
 
 def test_code_goes_to_outbox_without_smtp(monkeypatch, tmp_path):

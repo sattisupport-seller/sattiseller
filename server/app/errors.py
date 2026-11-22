@@ -44,8 +44,7 @@ def localized(code: str, lang: str = "ru") -> str:
 
 
 def pick_lang(accept_language: str | None) -> str:
-    if accept_language and accept_language.lower().startswith("kk"):
-        return "kk"
+    # К-13 (22.11): интерфейс только на русском; казахские тексты в словаре не используются
     return "ru"
 
 

@@ -33,7 +33,7 @@ export default function SubscriptionEndedScreen() {
   }
 
   const date = sub.data.data_delete_on ?? '—';
-  const dateText = date === '—' ? date : new Date(`${date}T00:00:00`).toLocaleDateString(locale === 'kk' ? 'kk-KZ' : 'ru-RU');
+  const dateText = date === '—' ? date : new Date(`${date}T00:00:00`).toLocaleDateString('ru-RU');
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 48, gap: spacing.lg }} style={{ backgroundColor: colors.bg }}>

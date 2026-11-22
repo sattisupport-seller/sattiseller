@@ -67,7 +67,7 @@ describe('счётчики', () => {
   });
 
   it('казахский — без изменения существительного', () => {
-    expect(formatCount(64, 'orders', 'kk')).toBe('64 тапсырыс');
+    expect(formatCount(64, 'orders', 'ru')).toBe('64 заказа');
   });
 
   it('штуки', () => {

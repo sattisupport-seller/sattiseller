@@ -1,7 +1,8 @@
 // Форматирование для интерфейса (docs/spec.md, раздел 8; docs/design.md, раздел 8).
 // Приложение ничего не считает: суммы приходят с сервера в тиынах (целые числа) и здесь только печатаются.
 
-export type Locale = 'ru' | 'kk';
+// К-13 (22.11): интерфейс только на русском
+export type Locale = 'ru';
 
 const NBSP = ' ';
 const MINUS = '−';
@@ -45,7 +46,7 @@ export function formatMoneyShort(minor: number | null | undefined, mode: 'kpi' |
   const millions = abs / 1_000_000;
   const digits = mode === 'kpi' ? 2 : 1;
   const value = roundHalfUp(millions, digits).toFixed(digits).replace('.', ',');
-  const unit = locale === 'kk' ? 'млн' : 'млн';
+  const unit = 'млн';
   const sign = tenge < 0 ? MINUS : '';
   return `${sign}${value}${NBSP}${unit}${NBSP}${TENGE}`;
 }
@@ -75,11 +76,6 @@ export type CountNoun = 'orders' | 'products' | 'units';
 /** "1 заказ", "3 заказа", "64 заказа"; для казахского — без изменения формы. */
 export function formatCount(n: number, noun: CountNoun, locale: Locale = 'ru'): string {
   const value = groupDigits(n);
-  if (locale === 'kk') {
-    if (noun === 'orders') return `${value} тапсырыс`;
-    if (noun === 'products') return `${value} тауар`;
-    return `${value} дана`;
-  }
   if (noun === 'units') return `${value} шт.`;
   const forms: [string, string, string] = noun === 'orders' ? ['заказ', 'заказа', 'заказов'] : ['товар', 'товара', 'товаров'];
   return `${value} ${pluralRu(n, forms)}`;
@@ -94,7 +90,6 @@ export function pluralRu(n: number, forms: [string, string, string]): string {
 }
 
 const MONTHS_RU_SHORT = ['янв.', 'февр.', 'мар.', 'апр.', 'мая', 'июн.', 'июл.', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.'];
-const MONTHS_KK_SHORT = ['қаң.', 'ақп.', 'нау.', 'сәу.', 'мам.', 'мау.', 'шіл.', 'там.', 'қыр.', 'қаз.', 'қар.', 'жел.'];
 
 function parseIsoDate(iso: string): { y: number; m: number; d: number } {
   const [y, m, d] = iso.split('-').map(Number);
@@ -103,10 +98,10 @@ function parseIsoDate(iso: string): { y: number; m: number; d: number } {
 
 /** "сегодня", "вчера", "17 нояб.", "17 нояб. 2025" (если год не текущий). */
 export function formatDayLabel(iso: string, todayIso: string, locale: Locale = 'ru', yesterdayIso?: string): string {
-  if (iso === todayIso) return locale === 'kk' ? 'бүгін' : 'сегодня';
-  if (yesterdayIso && iso === yesterdayIso) return locale === 'kk' ? 'кеше' : 'вчера';
+  if (iso === todayIso) return 'сегодня';
+  if (yesterdayIso && iso === yesterdayIso) return 'вчера';
   const { y, m, d } = parseIsoDate(iso);
-  const months = locale === 'kk' ? MONTHS_KK_SHORT : MONTHS_RU_SHORT;
+  const months = MONTHS_RU_SHORT;
   const currentYear = parseIsoDate(todayIso).y;
   const base = `${d} ${months[m - 1]}`;
   return y === currentYear ? base : `${base} ${y}`;
@@ -116,7 +111,7 @@ export function formatDayLabel(iso: string, todayIso: string, locale: Locale = '
 export function formatPeriodRange(fromIso: string, toIso: string, locale: Locale = 'ru'): string {
   const a = parseIsoDate(fromIso);
   const b = parseIsoDate(toIso);
-  const months = locale === 'kk' ? MONTHS_KK_SHORT : MONTHS_RU_SHORT;
+  const months = MONTHS_RU_SHORT;
   if (fromIso === toIso) return `${b.d} ${months[b.m - 1]}`;
   if (a.m === b.m && a.y === b.y) return `${a.d}–${b.d} ${months[b.m - 1]}`;
   return `${a.d} ${months[a.m - 1]} – ${b.d} ${months[b.m - 1]}`;

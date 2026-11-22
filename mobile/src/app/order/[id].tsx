@@ -88,7 +88,7 @@ export default function OrderScreen() {
             {data.items.flatMap((i) => i.returns.map((r, idx) => (
               <ListRow
                 key={`${i.product_id}-${r.day}-${idx}`}
-                title={`${r.day} · ${r.qty} ${locale === 'kk' ? 'дана' : 'шт.'}`}
+                title={`${r.day} · ${r.qty} шт.`}
                 subtitle={i.name}
                 right={<Txt variant="headline" numeric>{formatMoney(r.refund_minor)}</Txt>}
               />

@@ -145,7 +145,7 @@ export default function KaspiScreen() {
   const connected = data && data.status !== 'not_connected';
   const busy = connect.isPending || sync.isPending || disconnect.isPending || saveStores.isPending;
   const lastSync = data?.last_sync_at
-    ? new Date(data.last_sync_at).toLocaleString(locale === 'kk' ? 'kk-KZ' : 'ru-RU')
+    ? new Date(data.last_sync_at).toLocaleString('ru-RU')
     : t('kaspi.never');
 
   return wrap(

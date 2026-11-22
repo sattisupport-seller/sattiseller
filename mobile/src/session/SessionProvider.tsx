@@ -1,5 +1,4 @@
 // Сессия приложения: вход, демо-режим, магазин, язык и тема. Токены — только в защищённом хранилище.
-import * as Localization from 'expo-localization';
 import { deleteItem, getItem, setItem } from '@/lib/storage';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
@@ -19,7 +18,8 @@ import {
 import type { ShopSummary } from '@/api/types';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
-export type Locale = 'ru' | 'kk';
+// К-13 (22.11): интерфейс только на русском. Казахский перевод в словаре не подключён (kk.ts оставлен).
+export type Locale = 'ru';
 type Status = 'loading' | 'signedOut' | 'needsShop' | 'ready';
 
 type SessionValue = {
@@ -39,17 +39,12 @@ type SessionValue = {
   createShop: (name: string, timezone: string, language: Locale) => Promise<void>;
   selectShop: (id: string) => Promise<void>;
   logout: () => Promise<void>;
-  setLocale: (l: Locale) => Promise<void>;
   setThemeMode: (m: ThemeMode) => Promise<void>;
   refresh: () => Promise<void>;
 };
 
 const Ctx = createContext<SessionValue | null>(null);
 
-function deviceLocale(): Locale {
-  const first = Localization.getLocales()[0]?.languageCode;
-  return first === 'kk' ? 'kk' : 'ru';
-}
 
 async function readPref<T extends string>(key: string, allowed: readonly T[], fallback: T): Promise<T> {
   try {
@@ -65,7 +60,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [shopId, setShopId] = useState<string | null>(null);
   const [isDemo, setIsDemo] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
-  const [locale, setLocaleState] = useState<Locale>('ru');
+  const locale: Locale = 'ru';
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const [termsRequired, setTermsRequired] = useState(false);
 
@@ -93,10 +88,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setStatus('signedOut');
     });
     (async () => {
-      const loc = await readPref('satti.locale', ['ru', 'kk'] as const, deviceLocale());
       const theme = await readPref('satti.theme', ['system', 'light', 'dark'] as const, 'system');
-      setLocaleState(loc);
-      setAcceptLanguage(loc);
+      setAcceptLanguage('ru');
       setThemeModeState(theme);
       await loadStoredSession();
       if (!hasSession()) {
@@ -188,12 +181,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setTermsRequired(false);
   }, []);
 
-  const setLocale = useCallback(async (l: Locale) => {
-    setLocaleState(l);
-    setAcceptLanguage(l);
-    await setItem('satti.locale', l);
-  }, []);
-
   const setThemeMode = useCallback(async (m: ThemeMode) => {
     setThemeModeState(m);
     await setItem('satti.theme', m);
@@ -205,9 +192,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<SessionValue>(() => ({
     status, shopId, isDemo, email, locale, themeMode, termsRequired, acceptTerms,
-    startDemo, requestCode, verifyCode, signInWithIdToken, createShop, selectShop, logout, setLocale, setThemeMode, refresh,
+    startDemo, requestCode, verifyCode, signInWithIdToken, createShop, selectShop, logout, setThemeMode, refresh,
   }), [status, shopId, isDemo, email, locale, themeMode, termsRequired, acceptTerms, startDemo, requestCode, verifyCode,
-    signInWithIdToken, createShop, selectShop, logout, setLocale, setThemeMode, refresh]);
+    signInWithIdToken, createShop, selectShop, logout, setThemeMode, refresh]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

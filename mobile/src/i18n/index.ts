@@ -2,12 +2,14 @@ import { useCallback } from 'react';
 
 import { useSession } from '@/session/SessionProvider';
 
-import { kk } from './kk';
 import { ru, type Dict } from './ru';
 
-export type Locale = 'ru' | 'kk';
+// К-13 (22.11): только русский. kk.ts оставлен в репозитории, но не подключён.
+export type Locale = 'ru';
+/** Языки интерфейса, подключённые в приложение (К-13: только русский). */
+export const LOCALES: readonly Locale[] = ['ru'];
 
-const dictionaries: Record<Locale, Dict> = { ru, kk };
+const dictionaries: Record<Locale, Dict> = { ru };
 
 // Пути вида "overview.title" — проверяются типами: опечатка в ключе не соберётся.
 type Paths<T, P extends string = ''> = {

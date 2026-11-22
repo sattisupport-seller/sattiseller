@@ -23,9 +23,11 @@ def test_stock_question_gets_honest_no_data_answer(demo):
     assert out["missingData"] == ["Нет данных об остатках"]
 
 
-def test_stock_question_in_kazakh(demo):
+def test_stock_question_in_kazakh_is_answered_in_russian(demo):
+    """К-13 (22.11): вопрос на казахском понимаем, ответ — всегда по-русски."""
     out = _ask(demo["shop_id"], "Қойманың қалдығы қанша?")
-    assert out["lang"] == "kk" and "қалдық" in out["renderedAnswer"]
+    assert out["lang"] == "ru"
+    assert not any(ch in "әғқңөұүһі" for ch in out["renderedAnswer"].lower())
 
 
 def test_tax_rate_fixture_is_isolated_to_its_shop(demo, client):

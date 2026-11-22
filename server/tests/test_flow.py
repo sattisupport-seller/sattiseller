@@ -276,13 +276,14 @@ def test_ai_refusals_and_injection(client, demo):
     assert "1 000 000" not in inj.json()["renderedAnswer"]
 
 
-def test_ai_kazakh_answer(client, demo):
+def test_ai_kazakh_question_gets_russian_answer(client, demo):
+    """К-13 (22.11): казахский вопрос понимается, ответ — по-русски."""
     shop = demo["shop_id"]
     client.post("/v1/ai/consent", headers=demo["headers"], json={"granted": True})
     r = client.post(f"/v1/shops/{shop}/ai/ask", headers=demo["headers"],
                     json={"question": "Соңғы 7 күнде қанша тапсырыс болды?"})
-    assert r.json()["lang"] == "kk"
-    assert "тапсырыс" in r.json()["renderedAnswer"]
+    assert r.json()["lang"] == "ru"
+    assert "заказ" in r.json()["renderedAnswer"]
 
 
 def test_ai_daily_limit(client, demo):

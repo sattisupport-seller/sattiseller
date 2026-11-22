@@ -375,7 +375,7 @@ def _wipe_shop_data(db: DbSession, shop_id: str) -> None:
 
 class MeIn(BaseModel):
     name: str | None = Field(default=None, max_length=120)
-    locale: Literal["ru", "kk"] | None = None
+    locale: Literal["ru"] | None = None  # К-13: только русский
 
 
 @api.get("/me", tags=["пользователь"], response_model=MeOut)
@@ -461,7 +461,7 @@ def deletion_confirm(body: ConfirmIn, principal: Principal = Depends(get_princip
 class ShopIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     timezone: str = settings.default_timezone
-    language: Literal["ru", "kk"] = "ru"
+    language: Literal["ru"] = "ru"  # К-13: только русский
 
 
 @api.get("/shops", tags=["магазины"], response_model=ShopsOut)
@@ -493,7 +493,7 @@ def shops_create(body: ShopIn, principal: Principal = Depends(get_principal), db
 class ShopPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     timezone: str | None = None
-    language: Literal["ru", "kk"] | None = None
+    language: Literal["ru"] | None = None  # К-13: только русский
 
 
 @api.patch("/shops/{shop_id}", tags=["магазины"])

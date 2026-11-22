@@ -685,19 +685,20 @@ class MockProvider:
 
     def plan(self, question: str, tools: Tools, data: ShopData) -> Plan:
         q = question.lower()
-        lang = detect_lang(q)
-        plan = Plan(lang=lang)
+        lang = detect_lang(q)  # язык вопроса нужен для разбора (периоды, отказы); ответ — всегда по-русски (К-13)
+        reply_lang = "ru"
+        plan = Plan(lang=reply_lang)
         facts: list[Fact] = []
 
         refusal = _refusal_template(q, lang)
         if refusal:
-            plan.template = decline_text(refusal, lang)
+            plan.template = decline_text(refusal, reply_lang)
             plan.refusal = True
             plan.refusal_category = refusal
             return self._done(plan, facts)
         mock_cat = _mock_decline(q)
         if mock_cat and not HOWTO.search(q):
-            plan.template = decline_text(mock_cat, lang)
+            plan.template = decline_text(mock_cat, reply_lang)
             plan.mock_decline_category = mock_cat
             return self._done(plan, facts)
 
@@ -732,7 +733,7 @@ class MockProvider:
                                "label": "Заполнить закупку"}]
             return self._done(plan, facts)
 
-        topic = self._topic(q, lang, plan, facts, tools)
+        topic = self._topic(q, reply_lang, plan, facts, tools)
         if topic is not None:
             return topic
 
@@ -748,7 +749,7 @@ class MockProvider:
             plan.period = period
             n = tools.orders_count(period)
             plan.coverage_inputs = []
-            if lang == "kk":
+            if reply_lang == "kk":
                 if label == "вчера":
                     plan.template = f"Кеше {_mk(facts, 'orders', 'orders', n)} болды."
                 else:
@@ -1421,7 +1422,7 @@ def product_draft(facts_text: str, languages: str, photos: int) -> dict:
         "description": description,
         "characteristics": characteristics,
         "warnings": ["Проверьте текст перед публикацией. Satti ничего не публикует в Kaspi."],
-        "languages": languages,
+        "languages": "ru",  # К-13: описание только на русском
         "photosUsed": photos,
     }
     _check_no_new_numbers(out, facts_text)

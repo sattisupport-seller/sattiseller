@@ -69,7 +69,7 @@ def _deliver(to_email: str, subject: str, text: str) -> None:
 
 
 def _lang(lang: str | None) -> str:
-    return "kk" if lang == "kk" else "ru"
+    return "ru"  # К-13 (22.11): письма только на русском
 
 
 def send_code_email(to_email: str, code: str, purpose: str = "login", lang: str | None = None) -> None:

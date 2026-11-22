@@ -22,19 +22,17 @@ export default function ProfileScreen() {
   const { colors, spacing } = useTheme();
   const router = useRouter();
   const toast = useToast();
-  const { isDemo, email, locale, themeMode, setLocale, setThemeMode, logout, shopId } = useSession();
+  const { isDemo, email, themeMode, setThemeMode, logout, shopId } = useSession();
   const config = useAppConfig();
   const quota = useAIQuota(shopId);
   const consent = useAIConsent();
   const reset = useResetDemo();
-  const [langOpen, setLangOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const version = (Constants.expoConfig?.version as string | undefined) ?? '1.0.0';
   const build = String(Constants.expoConfig?.ios?.buildNumber ?? Constants.expoConfig?.android?.versionCode ?? '1');
   const initials = (email ?? 'Satti').slice(0, 2).toUpperCase();
   const themeLabel = themeMode === 'system' ? t('settings.system') : themeMode === 'light' ? t('settings.light') : t('settings.dark');
-  const langLabel = locale === 'kk' ? t('settings.kk') : t('settings.ru');
   const aiOn = quota.data?.consent_active ?? false;
   const assistantOn = config.data?.flags.ai_assistant === true;
 
@@ -94,7 +92,6 @@ export default function ProfileScreen() {
 
       <Section title={t('profile.settings')}>
         <GroupCard>
-          <ListRow title={t('profile.language')} right={<Txt variant="subhead" tone="tertiary">{langLabel}</Txt>} onPress={() => setLangOpen(true)} />
           <ListRow title={t('profile.theme')} right={<Txt variant="subhead" tone="tertiary">{themeLabel}</Txt>} onPress={() => setThemeOpen(true)} />
           <ListRow title={t('profile.notifications')} onPress={() => router.push('/settings/notifications')} />
           {assistantOn ? (
@@ -137,12 +134,6 @@ export default function ProfileScreen() {
         <Txt variant="footnote" tone="tertiary" align="center">{t('profile.version', { version, build })}</Txt>
         <Txt variant="footnote" tone="tertiary" align="center">{t('profile.independent')}</Txt>
       </Pressable>
-
-      <Sheet visible={langOpen} onClose={() => setLangOpen(false)} title={t('settings.languageTitle')}>
-        {(['ru', 'kk'] as Locale[]).map((l) => (
-          <Option key={l} label={l === 'ru' ? t('settings.ru') : t('settings.kk')} selected={locale === l} onPress={() => { setLocale(l); setLangOpen(false); }} />
-        ))}
-      </Sheet>
 
       <Sheet visible={themeOpen} onClose={() => setThemeOpen(false)} title={t('settings.themeTitle')}>
         {(['system', 'light', 'dark'] as ThemeMode[]).map((m) => (

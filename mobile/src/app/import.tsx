@@ -183,7 +183,7 @@ export default function ImportScreen() {
           <Txt variant="footnote" tone="secondary">{t('imp.s3hint')}</Txt>
           <Card>
             <Txt variant="bodyMedium">{file.filename}</Txt>
-            <Txt variant="footnote" tone="tertiary">{formatCountRows(file.rows_total, locale)}</Txt>
+            <Txt variant="footnote" tone="tertiary">{formatCountRows(file.rows_total)}</Txt>
           </Card>
           {FIELD_KEYS.map((key) => (
             <View key={key} style={{ gap: 8 }}>
@@ -279,8 +279,8 @@ export default function ImportScreen() {
   );
 }
 
-function formatCountRows(n: number, locale: 'ru' | 'kk'): string {
-  return locale === 'kk' ? `${n} жол` : `${n} строк`;
+function formatCountRows(n: number): string {
+  return `${n} строк`;
 }
 
 function Stat({ title, value, tone }: { title: string; value: string; tone?: 'success' | 'warning' | 'danger' }) {

@@ -17,9 +17,8 @@ export default function ShopSetup() {
   const router = useRouter();
   const { t } = useI18n();
   const { colors, spacing } = useTheme();
-  const { createShop, locale } = useSession();
+  const { createShop } = useSession();
   const [name, setName] = useState('');
-  const [lang, setLang] = useState<'ru' | 'kk'>(locale);
   const [error, setError] = useState<string | null>(null);
   const [age, setAge] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -38,7 +37,7 @@ export default function ShopSetup() {
     try {
       // Возраст 18+ фиксируется на сервере до создания магазина (ADR-0004).
       await request('/me/age-confirm', { method: 'POST' });
-      await createShop(name.trim(), 'Asia/Almaty', lang);
+      await createShop(name.trim(), 'Asia/Almaty', 'ru');
       router.replace('/');
     } catch (e) {
       setError(errorMessage(e, t('common.unknownError')));
@@ -66,31 +65,6 @@ export default function ShopSetup() {
           <Txt variant="footnoteStrong" tone="secondary">{t('shopSetup.tz')}</Txt>
           <Txt variant="body" style={{ marginTop: 4 }}>{t('shopSetup.tzAlmaty')}</Txt>
         </Card>
-        <View style={{ gap: spacing.sm }}>
-          <Txt variant="footnoteStrong" tone="secondary">{t('shopSetup.language')}</Txt>
-          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-            {(['ru', 'kk'] as const).map((l) => (
-              <Pressable
-                key={l}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: lang === l }}
-                onPress={() => setLang(l)}
-                style={{
-                  flex: 1,
-                  height: 44,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: lang === l ? colors.primary : colors.border,
-                  backgroundColor: lang === l ? colors.primarySoft : colors.surface,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Txt variant="subheadMedium" tone={lang === l ? 'primaryText' : 'secondary'}>{l === 'ru' ? 'Русский' : 'Қазақша'}</Txt>
-              </Pressable>
-            ))}
-          </View>
-        </View>
         <Pressable
           accessibilityRole="checkbox"
           accessibilityState={{ checked: age }}

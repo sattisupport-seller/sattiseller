@@ -174,18 +174,14 @@ def test_thinking_blocks_are_not_echoed_back(demo, live):
 KK_QUESTION = "Соңғы 7 күнде қанша тапсырыс болды?"
 
 
-def test_kazakh_question_states_language_and_retries_once_when_answer_is_russian(demo, live):
+def test_kazakh_question_gets_russian_answer_without_retry(demo, live):
     """3.8 (решение владельца 1): язык определяет сервер, модели передаётся явно; ответ не на казахском — один повтор."""
-    live["script"] = [_reply([_text("За последние семь дней было заказы.")]),
-                      _reply([_text("Соңғы жеті күнде тапсырыстар болды.")])]
+    live["script"] = [_reply([_text("За последние семь дней было заказов.")])]
     out, _ = _ask(demo["shop_id"], KK_QUESTION)
-    assert len(live["requests"]) == 2
+    assert len(live["requests"]) == 1
     first_user = live["requests"][0]["messages"][0]["content"]
-    assert "(Язык ответа: казахский.)" in first_user
-    second_user = live["requests"][1]["messages"][0]["content"]
-    assert "по-казахски" in second_user
-    assert out["lang"] == "kk" and out["liveUsed"] is True
-    assert "Соңғы" in out["renderedAnswer"]
+    assert "(Язык ответа: русский.)" in first_user  # К-13: ответ всегда по-русски
+    assert out["lang"] == "ru" and out["liveUsed"] is True
 
 
 def test_russian_question_states_russian_language_without_retry(demo, live):

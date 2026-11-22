@@ -17,8 +17,6 @@ import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
 
-type Lang = 'ru' | 'kk' | 'both';
-
 // Черновик описания товара (docs/spec.md, 8.9): только по введённым фактам и фото, ничего не публикуется.
 export default function ProductDraftScreen() {
   const { t } = useI18n();
@@ -30,7 +28,6 @@ export default function ProductDraftScreen() {
   const [consentOpen, setConsentOpen] = useState(false);
   const [facts, setFacts] = useState('');
   const [photos, setPhotos] = useState<{ uri: string; name: string; type: string }[]>([]);
-  const [lang, setLang] = useState<Lang>('ru');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ProductDraft | null>(null);
 
@@ -60,7 +57,7 @@ export default function ProductDraftScreen() {
     const form = new FormData();
     form.append('shop_id', shopId ?? '');
     form.append('facts', facts);
-    form.append('languages', lang);
+    form.append('languages', 'ru');  // К-13: описание только на русском
     photos.forEach((p) => form.append('photos', { uri: p.uri, name: p.name, type: p.type } as unknown as Blob));
     try {
       setResult(await draft.mutateAsync(form));
@@ -129,13 +126,6 @@ export default function ProductDraftScreen() {
             </Pressable>
           </>
         ) : null}
-      </View>
-
-      <Txt variant="subheadMedium" tone="secondary">{t('assistant.languages')}</Txt>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-        <Chip label={t('assistant.langRu')} selected={lang === 'ru'} onPress={() => setLang('ru')} />
-        <Chip label={t('assistant.langKk')} selected={lang === 'kk'} onPress={() => setLang('kk')} />
-        <Chip label={t('assistant.langBoth')} selected={lang === 'both'} onPress={() => setLang('both')} />
       </View>
 
       {error ? <Banner text={error} tone="danger" /> : null}
