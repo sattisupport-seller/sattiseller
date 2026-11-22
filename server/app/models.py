@@ -335,6 +335,7 @@ class KaspiConnection(Base):
     seller_id: Mapped[str] = mapped_column(String(64))
     token_enc: Mapped[str] = mapped_column(Text)
     price_key: Mapped[str] = mapped_column(String(64))  # секрет в адресе прайс-листа; меняется при каждом подключении
+    store_ids: Mapped[str | None] = mapped_column(Text, nullable=True)  # коды складов Kaspi через запятую (storeId из кабинета)
     status: Mapped[str] = mapped_column(String(16), default="active")  # active | token_invalid
     cursor_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # время создания самого свежего обработанного заказа
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

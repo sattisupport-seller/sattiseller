@@ -75,6 +75,11 @@ def _utc(ms: int) -> datetime:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
 
 
+def _aware(dt: datetime) -> datetime:
+    """Время из базы может прийти без часового пояса (SQLite): считаем его UTC."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
 def connect(db: DbSession, shop: Shop, seller_id: str, token: str, client: KaspiClient, now: datetime) -> KaspiConnection:
     """Проверяет токен запросом к Kaspi и сохраняет его зашифрованным. Бросает KaspiAuthError / KaspiUnavailable."""
     client.ping(_now_ms(now))
@@ -89,6 +94,32 @@ def connect(db: DbSession, shop: Shop, seller_id: str, token: str, client: Kaspi
     db.add(conn)
     db.commit()
     return conn
+
+
+STORE_ID = re.compile(r"[A-Za-z0-9_-]{1,40}")
+
+
+def set_store_ids(db: DbSession, shop_id: str, store_ids: list[str]) -> list[str]:
+    """Коды складов Kaspi (storeId из кабинета «Склады и магазины»). Без них наличие в XML не передаётся."""
+    clean = []
+    for sid in store_ids:
+        sid = sid.strip()
+        if not STORE_ID.fullmatch(sid):
+            raise ValueError(f"код склада не подходит: {sid!r}")
+        if sid not in clean:
+            clean.append(sid)
+    conn = db.get(KaspiConnection, shop_id)
+    if conn is None:
+        raise KaspiUnavailable("Kaspi не подключён")
+    conn.store_ids = ",".join(clean) or None
+    db.add(conn)
+    db.commit()
+    return clean
+
+
+def store_list(conn: KaspiConnection | None) -> list[str]:
+    raw = getattr(conn, "store_ids", None) or "" if conn else ""
+    return [x for x in raw.split(",") if x]
 
 
 def disconnect(db: DbSession, shop_id: str) -> None:
@@ -121,11 +152,67 @@ def _product_for(db: DbSession, shop_id: str, cache: dict[str, Product], offer: 
     return product
 
 
+def _lines(client: KaspiClient, code: str) -> list[tuple[str, int, int]]:
+    """Позиции заказа: (артикул, количество, цена). Позиция без артикула не теряет выручку: код строится из её id."""
+    out = []
+    for e in client.order_entries(code):
+        sku = client.entry_sku(e.entry_id) or f"KX-{e.entry_id[:16]}"
+        out.append((sku, e.qty, e.unit_price))
+    return out
+
+
+def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, int, int]],
+               products: dict[str, Product]) -> bool:
+    """Приводит позиции заказа к данным Kaspi: количество, цена, удаление позиций, которых больше нет.
+    Частичная отмена уменьшает количество — прибыль и остатки пересчитываются по позициям. Возвращает, менялось ли."""
+    fresh: dict[str, tuple[int, int]] = {}  # product_id -> (количество, цена)
+    for sku, qty, price in lines:
+        product = _product_for(db, shop.id, products, sku, sku)
+        q0, _p0 = fresh.get(product.id, (0, price))
+        fresh[product.id] = (q0 + qty, price)
+    existing: dict[str, list[OrderItem]] = {}
+    for it in db.scalars(select(OrderItem).where(OrderItem.order_id == order.id)).all():
+        existing.setdefault(it.product_id, []).append(it)
+    changed = False
+    for pid in set(existing) | set(fresh):
+        items = existing.get(pid, [])
+        qty, price = fresh.get(pid, (0, 0))
+        if qty <= 0:  # позиции больше нет в заказе
+            for it in items:
+                db.delete(it)
+                changed = True
+            continue
+        if not items:
+            db.add(OrderItem(id=_uid(), order_id=order.id, shop_id=shop.id, product_id=pid, qty=qty,
+                             unit_price_minor=price * 100, buyer_delivery_minor=None, commission_rate_bp=None))
+            changed = True
+            continue
+        keep, extra = items[0], items[1:]
+        for it in extra:  # дубли одного товара в заказе сводим в одну позицию
+            db.delete(it)
+            changed = True
+        if keep.qty != qty or keep.unit_price_minor != price * 100:
+            keep.qty = qty
+            keep.unit_price_minor = price * 100
+            changed = True
+    return changed
+
+
+def _needs_refresh(order: Order, status: str, now: datetime) -> bool:
+    """Позиции перечитываем у незавершённых заказов и у выполненных за последние 14 дней (там бывают частичные отмены).
+    Остальные — не трогаем, чтобы не делать по запросу на каждый заказ при каждой синхронизации."""
+    if status in ("pending", "in_progress"):
+        return True
+    if order.completed_at is not None:
+        return _aware(order.completed_at) >= now - timedelta(milliseconds=OVERLAP_MS)
+    return False
+
+
 def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: dict[str, Product],
-                now: datetime) -> tuple[int, int]:
-    """Добавляет новые заказы и обновляет статусы уже известных. Возвращает (добавлено, обновлено)."""
+                now: datetime, client: KaspiClient) -> tuple[int, int, int]:
+    """Добавляет новые заказы, обновляет статусы и позиции. Возвращает (добавлено, обновлено статусы, изменено позиций)."""
     existing = _existing_orders(db, shop.id, [o.code for o in orders])
-    added = updated = 0
+    added = updated = items_changed = 0
     for ko in orders:
         status = STATE_MAP.get(ko.state, DEFAULT_STATUS)
         completed_at = _utc(ko.completed_ms) if ko.completed_ms else None
@@ -137,11 +224,7 @@ def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: d
                           created_at=_utc(ko.created_ms), completed_at=completed_at)
             db.add(order)
             db.flush()
-            for entry in ko.entries:
-                product = _product_for(db, shop.id, products, entry.offer_code, entry.name)
-                db.add(OrderItem(id=_uid(), order_id=order.id, shop_id=shop.id, product_id=product.id,
-                                 qty=entry.qty, unit_price_minor=entry.unit_price * 100,
-                                 buyer_delivery_minor=None, commission_rate_bp=None))
+            _reconcile(db, shop, order, _lines(client, ko.code), products)
             added += 1
             continue
         if order.status != status:
@@ -149,7 +232,10 @@ def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: d
             updated += 1
         if order.completed_at is None and status in ("completed", "returned"):
             order.completed_at = completed_at or now
-    return added, updated
+        if _needs_refresh(order, status, now):
+            if _reconcile(db, shop, order, _lines(client, ko.code), products):
+                items_changed += 1
+    return added, updated, items_changed
 
 
 def sync(db: DbSession, conn: KaspiConnection, client: KaspiClient, now: datetime) -> dict:
@@ -166,16 +252,17 @@ def sync(db: DbSession, conn: KaspiConnection, client: KaspiClient, now: datetim
     else:
         since = _now_ms(now) - FIRST_SYNC_DAYS * 86_400_000
     products: dict[str, Product] = {}
-    added = updated = pages = 0
+    added = updated = pages = items_changed = 0
     try:
         page = 0
         while True:
             orders = client.list_orders(since_ms=since, page=page)
             if not orders:
                 break
-            a, u = _apply_page(db, shop, orders, products, now)
+            a, u, c = _apply_page(db, shop, orders, products, now, client)
             added += a
             updated += u
+            items_changed += c
             pages += 1
             newest = max(o.created_ms for o in orders)
             conn.cursor_ms = max(conn.cursor_ms or 0, newest)
@@ -202,7 +289,7 @@ def sync(db: DbSession, conn: KaspiConnection, client: KaspiClient, now: datetim
     db.add(conn)
     db.commit()
     reportcache.invalidate(shop.id)  # AUD-12: появились новые заказы
-    return {"pages": pages, "added": added, "updated": updated}
+    return {"pages": pages, "added": added, "updated": updated, "items_changed": items_changed}
 
 
 def client_for(conn: KaspiConnection) -> KaspiClient:
@@ -226,19 +313,21 @@ def price_list_xml(db: DbSession, shop: Shop, conn: KaspiConnection, today: date
         .where(Product.shop_id == shop.id)
         .order_by(Order.created_at.desc())
     ).all()
-    from .models import ProductStock  # снятые с продажи (склад) в прайс не попадают
+    from .models import ProductStock  # снятые с продажи (склад)
+    from .stock import stock_states
     delisted = set(db.scalars(select(ProductStock.product_id).where(ProductStock.shop_id == shop.id, ProductStock.delisted.is_(True))).all())
-    rows = [r for r in rows if r[0] not in delisted]
-    offers: dict[str, tuple[str, int]] = {}
+    stores = store_list(conn)
+    states = stock_states(db, shop) if stores else {}
+    # документация Kaspi: sku — латиница и цифры до 20 знаков, уникален в файле
+    offers: dict[str, tuple[str, int, str]] = {}  # sku -> (название, цена тенге, product_id)
     skipped: list[str] = []
     for pid, sku, name, price_minor, _created in rows:
-        # документация Kaspi: sku — латинские буквы и цифры, до 20 символов, уникален в файле
         if not re.fullmatch(r"[A-Za-z0-9]{1,20}", sku or ""):
             if sku and sku not in skipped:
                 skipped.append(sku)
             continue
         if sku not in offers:
-            offers[sku] = (name, price_minor // 100)
+            offers[sku] = (name, price_minor // 100, pid)
     ET.register_namespace("", KASPI_NS)
     ET.register_namespace("xsi", XSI_NS)
     root = ET.Element(f"{{{KASPI_NS}}}kaspi_catalog", {
@@ -247,14 +336,31 @@ def price_list_xml(db: DbSession, shop: Shop, conn: KaspiConnection, today: date
     ET.SubElement(root, f"{{{KASPI_NS}}}company").text = shop.name
     ET.SubElement(root, f"{{{KASPI_NS}}}merchantid").text = conn.seller_id
     offers_el = ET.SubElement(root, f"{{{KASPI_NS}}}offers")
-    for sku, (name, price) in sorted(offers.items()):
+    for sku, (name, price, pid) in sorted(offers.items()):
+        delisted_now = pid in delisted
+        if not stores and delisted_now:
+            continue  # без кодов складов снятый товар нельзя описать наличием — остаётся вне файла (см. комментарий)
         offer = ET.SubElement(offers_el, f"{{{KASPI_NS}}}offer", sku=sku)
         ET.SubElement(offer, f"{{{KASPI_NS}}}model").text = name
+        if stores:
+            # снятие с продажи — available="no" и stockCount="0" на всех складах (обратимо, без удаления из файла)
+            qty = max(states[pid].current, 0) if pid in states else 0
+            av_el = ET.SubElement(offer, f"{{{KASPI_NS}}}availabilities")
+            for sid in stores:
+                if delisted_now:
+                    ET.SubElement(av_el, f"{{{KASPI_NS}}}availability", available="no", storeId=sid, stockCount="0")
+                else:
+                    ET.SubElement(av_el, f"{{{KASPI_NS}}}availability",
+                                  available="yes" if qty > 0 else "no", storeId=sid, stockCount=str(qty))
         ET.SubElement(offer, f"{{{KASPI_NS}}}price").text = str(price)
+    notes = []
+    if skipped:
+        notes.append("не переданы, артикул не латиница/цифры до 20 знаков: " + ", ".join(skipped[:50]))
+    if not stores:
+        notes.append("наличие не передаётся: не указаны коды складов (storeId); снятые с продажи товары не включены")
     body = ET.tostring(root, encoding="utf-8", xml_declaration=True)
-    if skipped:  # не попали в файл: артикул не подходит под правило Kaspi (см. docs/kaspi-assumptions.md)
-        note = ("<!-- не переданы: артикул не латиница/цифры до 20 знаков: "
-                + ", ".join(s.replace("--", "-") for s in skipped[:50]) + " -->").encode("utf-8")
+    if notes:  # комментарий в файле: что не передано и почему (см. docs/kaspi-assumptions.md)
+        note = ("<!-- " + "; ".join(n.replace("--", "-") for n in notes) + " -->").encode("utf-8")
         body = body.replace(b"?>", b"?>" + note, 1) if body.startswith(b"<?xml") else note + body
     return body
 

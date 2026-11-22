@@ -299,3 +299,103 @@ def test_price_list_header_matches_kaspi_docs_and_bad_sku_is_skipped_with_note(c
     assert "ns0:" not in body
     assert "Артикул-кириллица" not in body.split("<!--")[0]  # не попал в файл как предложение
     assert "не переданы" in body and "Артикул-кириллица" in body  # но указан в комментарии
+
+
+def test_sku_comes_from_product_links_not_from_entry_fields(client, demo, kaspi_on, mock):
+    """К-6 п.1: в позиции заказа артикула нет; код берётся через orderentries → masterproducts → merchantProduct.
+    Если связь не отдала код, позиция не теряется: её код строится из id (префикс KX-)."""
+    _connect(client, demo)
+    mock.generate(8, now=datetime.now(timezone.utc), days=5, products=3)
+    r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    assert r.status_code == 200, r.text
+    from app.models import Product as _P
+    with DbSession(engine) as db:
+        skus = {p.sku for p in db.query(_P).filter(_P.shop_id == demo["shop_id"]).all()}
+    kaspi_skus = {x for x in skus if x.startswith("K") and not x.startswith("KX-")}
+    assert kaspi_skus and not {x for x in skus if x.startswith("KX-")}, skus
+
+
+def test_partial_cancel_reduces_the_item_and_recalculates_net_sales(client, demo, kaspi_on, mock):
+    """К-6 п.2: частичная отмена (orderPartialCancel) уменьшает количество в позиции после первой синхронизации.
+    Выручка обзора и позиция заказа должны пересчитаться."""
+    from app.models import OrderItem as _OI
+
+    _connect(client, demo)
+    mock.generate(9, now=datetime.now(timezone.utc), days=5, state_cycle=["COMPLETED"], products=3)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+
+    def net() -> int:
+        ov = client.get(f"/v1/shops/{demo['shop_id']}/overview?period=30d", headers=demo["headers"])
+        return ov.json()["kpi"]["net_sales_minor"]
+
+    # выбираем заказ с позицией из 2+ штук
+    code = next(c for c, rows in mock.entries.items() if rows[0]["qty"] >= 2)
+    old_qty = mock.entries[code][0]["qty"]
+    price = mock.entries[code][0]["basePrice"]
+    sku = f"K{mock.entries[code][0]['idx']}"
+
+    def sold_of(sku_: str) -> int:
+        from app.stock import stock_states
+        from app.models import Shop as _Shop
+        with DbSession(engine) as db:
+            states = stock_states(db, db.get(_Shop, demo["shop_id"]))
+            return next((st.sold_since for st in states.values() if st.sku == sku_), 0)
+
+    # склад считает продажи от даты инвентаризации: ставим её на 10 дней назад, до всех заказов теста
+    from app.models import Product as _Prod, StockMovement as _SM
+    with DbSession(engine) as db:
+        pid = db.query(_Prod.id).filter(_Prod.shop_id == demo["shop_id"], _Prod.sku == sku).scalar()
+        db.add(_SM(id="inv" + pid[:20], shop_id=demo["shop_id"], product_id=pid, kind="inventory", qty=500,
+                   occurred_at=datetime.now(timezone.utc) - timedelta(days=10)))
+        db.commit()
+    sold_before_stock = sold_of(sku)
+    before = net()
+    mock.partial_cancel(code, 0, 1)
+    r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    assert r.status_code == 200, r.text
+    assert r.json()["items_changed"] >= 1
+    with DbSession(engine) as db:
+        order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == code).one()
+        items = db.query(_OI).filter(_OI.order_id == order.id).all()
+        assert sum(it.qty for it in items) == sum(r_["qty"] for r_ in mock.entries[code])  # совпадает с Kaspi
+    after = net()
+    assert before - after == (old_qty - 1) * price * 100, (before, after, old_qty, price)  # цена в моке — тенге, в базе — тиын
+    # склад: продажи того же товара уменьшились на отменённые штуки
+    assert sold_before_stock - sold_of(sku) == old_qty - 1, (sold_before_stock, sold_of(sku))
+
+
+def test_delisting_keeps_offer_with_available_no_and_zero_stock_when_store_codes_are_set(client, demo, kaspi_on, mock):
+    """К-6 п.3: снятие с продажи — available="no" и stockCount="0" на всех складах, offer остаётся в файле.
+    Без кодов складов наличие не передаётся: снятый товар не попадает в файл, и это записано в комментарии."""
+    from app.models import Product as _Prod, ProductStock as _PS
+
+    _connect(client, demo)
+    mock.generate(9, now=datetime.now(timezone.utc), days=5, state_cycle=["COMPLETED"], products=3)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    sku = f"K{mock.entries[next(iter(mock.entries))][0]['idx']}"
+    with DbSession(engine) as db:
+        pid = db.query(_Prod.id).filter(_Prod.shop_id == demo["shop_id"], _Prod.sku == sku).scalar()
+        db.add(_PS(id="ds" + pid[:20], shop_id=demo["shop_id"], product_id=pid, qty=0, delisted=True))
+        db.commit()
+    path = client.get(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).json()["price_url"]
+
+    # без кодов складов: товар вне файла, в комментарии — почему
+    body = client.get(path).content.decode("utf-8")
+    assert f'sku="{sku}"' not in body and "наличие не передаётся" in body
+
+    # с кодом склада: товар в файле, наличие 0 и available="no"
+    r = client.put(f"/v1/shops/{demo['shop_id']}/kaspi/stores", json={"store_ids": ["S-100"]}, headers=demo["headers"])
+    assert r.status_code == 200, r.text
+    assert r.json()["store_ids"] == ["S-100"]
+    body = client.get(path).content.decode("utf-8")
+    ns = "{kaspiShopping}"
+    root = ET.fromstring(body.encode("utf-8"))
+    offer = next(o for o in root.findall(f"./{ns}offers/{ns}offer") if o.get("sku") == sku)
+    av = offer.find(f"{ns}availabilities/{ns}availability")
+    assert av.get("available") == "no" and av.get("stockCount") == "0" and av.get("storeId") == "S-100"
+
+
+def test_store_code_is_validated(client, demo, kaspi_on, mock):
+    _connect(client, demo)
+    r = client.put(f"/v1/shops/{demo['shop_id']}/kaspi/stores", json={"store_ids": ["bad code!"]}, headers=demo["headers"])
+    assert r.status_code == 422 and r.json()["error"]["code"] == "kaspi_store_invalid"

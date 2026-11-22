@@ -1456,6 +1456,10 @@ class KaspiConnectIn(BaseModel):
     token: str = Field(min_length=8, max_length=256)
 
 
+class KaspiStoresIn(BaseModel):
+    store_ids: list[str] = Field(default_factory=list, max_length=20)
+
+
 def _kaspi_view(shop: Shop, conn: KaspiConnection | None) -> dict:
     if conn is None:
         return {"enabled": True, "status": "not_connected"}
@@ -1464,6 +1468,7 @@ def _kaspi_view(shop: Shop, conn: KaspiConnection | None) -> dict:
             "connected_at": conn.connected_at.isoformat(),
             "last_sync_at": conn.last_sync_at.isoformat() if conn.last_sync_at else None,
             "last_error": conn.last_error,
+            "store_ids": kaspi_service.store_list(conn),
             "price_url": (settings.public_base_url + price_path) if settings.public_base_url else price_path}
 
 
@@ -1487,6 +1492,22 @@ def kaspi_connect(shop_id: str, body: KaspiConnectIn, principal: Principal = Dep
         client.close()
     analytics_service.record(db, "kaspi_connect_succeeded", now)
     audit.record(db, "kaspi_connect", "kaspi_connection", actor_id=principal.user_id, shop_id=shop.id)
+    return _kaspi_view(shop, conn)
+
+
+@api.put("/shops/{shop_id}/kaspi/stores", tags=["Kaspi"])
+def kaspi_set_stores(shop_id: str, body: KaspiStoresIn, principal: Principal = Depends(get_principal),
+                     db: DbSession = Depends(get_session)) -> dict:
+    """Коды складов Kaspi (storeId) — без переподключения и без сброса курсора синхронизации."""
+    _require_kaspi(db)
+    shop = shop_for(db, principal, shop_id)
+    try:
+        kaspi_service.set_store_ids(db, shop.id, body.store_ids)
+    except ValueError as exc:
+        raise ApiError(422, "kaspi_store_invalid", str(exc)) from exc
+    except KaspiUnavailable as exc:
+        raise ApiError(409, "kaspi_not_connected", "Сначала подключите Kaspi.") from exc
+    conn = db.get(KaspiConnection, shop.id)
     return _kaspi_view(shop, conn)
 
 

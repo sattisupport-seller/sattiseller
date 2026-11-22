@@ -39,10 +39,11 @@ class KaspiUnavailable(KaspiError):
 
 @dataclass
 class OrderEntry:
-    offer_code: str
-    name: str
+    """Позиция заказа по документации Kaspi (сверка 22.11): у позиции нет артикула продавца.
+    Артикул получаем отдельно: позиция → product (masterproducts) → merchantProduct (код)."""
+    entry_id: str
     qty: int
-    unit_price: int  # тенге, целое
+    unit_price: int  # тенге, целое (basePrice)
 
 
 @dataclass
@@ -55,20 +56,25 @@ class KaspiOrder:
 
 
 def parse_order(item: dict) -> KaspiOrder:
-    """Разбор заказа из ответа. Формат — предполагаемый (см. docs/kaspi-assumptions.md)."""
+    """Разбор заказа из списка. Позиции приходят отдельным запросом (см. KaspiClient.order_entries)."""
     attrs = item.get("attributes", {})
-    entries = []
-    for e in attrs.get("entries", []):
-        qty = int(e.get("quantity", 1))
-        price = int(round(float(e.get("basePrice", 0))))
-        entries.append(OrderEntry(str(e["offerCode"]), str(e.get("productName", e["offerCode"])), qty, price))
     completed = attrs.get("completedDate")
     return KaspiOrder(
         code=str(item["id"]),
         state=str(attrs.get("state", "")),
         created_ms=int(attrs["creationDate"]),
         completed_ms=int(completed) if completed is not None else None,
-        entries=entries,
+        entries=[],
+    )
+
+
+def parse_entry(item: dict) -> OrderEntry:
+    """Позиция из /orders/{id}/entries. Поля quantity и basePrice — по документации; id позиции — из ответа."""
+    attrs = item.get("attributes", {})
+    return OrderEntry(
+        entry_id=str(item["id"]),
+        qty=int(attrs.get("quantity", 1)),
+        unit_price=int(round(float(attrs.get("basePrice", 0)))),
     )
 
 
@@ -77,6 +83,8 @@ class KaspiClient:
                  min_interval: float = MIN_INTERVAL_SECONDS, max_attempts: int = MAX_ATTEMPTS,
                  sleep=time.sleep, clock=time.monotonic) -> None:
         # Content-Type — как в примерах документации Kaspi (JSON:API)
+        self._sku_by_entry: dict[str, str | None] = {}
+        self._sku_by_master: dict[str, str | None] = {}
         self._http = httpx.Client(base_url=base_url, headers={AUTH_HEADER: token, "Accept": "application/json", "Content-Type": "application/vnd.api+json"},
                                   timeout=30.0, transport=transport)
         self._min_interval = min_interval
@@ -132,6 +140,27 @@ class KaspiClient:
             "filter[orders][creationDate][$ge]": since_ms,  # документация Kaspi: [$ge], в миллисекундах
         })
         return [parse_order(item) for item in body.get("data", [])]
+
+    def order_entries(self, order_code: str) -> list[OrderEntry]:
+        """Позиции заказа: GET /orders/{code}/entries (документация: раздел «Состав заказа», q3203)."""
+        body = self._get(f"{ORDERS_PATH}/{order_code}/entries", {})
+        return [parse_entry(item) for item in body.get("data", [])]
+
+    def entry_sku(self, entry_id: str) -> str | None:
+        """Артикул продавца для позиции: orderentries/{id}/product → masterproducts/{id}/merchantProduct.
+        Формат ответов — по связям из документации; код берётся из attributes.code. Результат кэшируется на клиенте."""
+        if entry_id in self._sku_by_entry:
+            return self._sku_by_entry[entry_id]
+        sku = None
+        product = self._get(f"orderentries/{entry_id}/product", {}).get("data") or {}
+        master_id = product.get("id")
+        if master_id:
+            if master_id not in self._sku_by_master:
+                mp = self._get(f"masterproducts/{master_id}/merchantProduct", {}).get("data") or {}
+                self._sku_by_master[master_id] = str((mp.get("attributes") or {}).get("code") or "") or None
+            sku = self._sku_by_master[master_id]
+        self._sku_by_entry[entry_id] = sku
+        return sku
 
     def ping(self, now_ms: int) -> None:
         """Проверка токена: короткий запрос за последние сутки."""
