@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
+import { ApiError } from '@/api/client';
 import { useProducts, useStockAlerts, useStockList, useStockMutations, type StockItem } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/Inputs';
@@ -29,6 +30,9 @@ export default function StockScreen() {
   const [qty, setQty] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [confirmDelist, setConfirmDelist] = useState<StockItem | null>(null);
+  // Первый приход без инвентаризации: сначала остаток (можно 0), потом приход (К-4)
+  const [countFirst, setCountFirst] = useState<{ productId: string; name: string; qty: number } | null>(null);
+  const [pendingReceipt, setPendingReceipt] = useState<{ productId: string; qty: number } | null>(null);
 
   const stockByProduct = new Map((list.data?.items ?? []).map((s) => [s.productId, s]));
   const allProducts = (products.data?.pages ?? []).flatMap((p) => p.items);
@@ -46,7 +50,18 @@ export default function StockScreen() {
       setMode(null);
       setQty('');
       toast.show(t('stock.done'));
-    } catch {
+      if (mode.kind === 'inventory' && pendingReceipt && pendingReceipt.productId === mode.productId) {
+        const pr = pendingReceipt;
+        setPendingReceipt(null);
+        await mut.receipt.mutateAsync({ productId: pr.productId, qty: pr.qty });
+        toast.show(t('stock.done'));
+      }
+    } catch (e) {
+      if (mode.kind === 'receipt' && e instanceof ApiError && e.code === 'stock_not_counted') {
+        setCountFirst({ productId: mode.productId, name: mode.name, qty: n });
+        setMode(null);
+        return;
+      }
       setError(t('stock.invalid'));
     }
   };
@@ -92,7 +107,7 @@ export default function StockScreen() {
             )}
             <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
               <Button title={t('stock.inventory')} variant="secondary" onPress={() => setMode({ kind: 'inventory', productId: p.product_id, name: p.name })} />
-              {s && <Button title={t('stock.receipt')} variant="secondary" onPress={() => setMode({ kind: 'receipt', productId: p.product_id, name: p.name })} />}
+              <Button title={t('stock.receipt')} variant="secondary" onPress={() => setMode({ kind: 'receipt', productId: p.product_id, name: p.name })} />
               {s && s.level === 'out' && !s.delisted && (
                 <Button title={t('stock.delist')} variant="text" onPress={() => setConfirmDelist(s)} />
               )}
@@ -107,6 +122,19 @@ export default function StockScreen() {
           </Card>
         );
       })}
+      <Sheet visible={!!countFirst} onClose={() => setCountFirst(null)} title={t('stock.countFirst')}>
+        <Txt variant="body" tone="secondary">{t('stock.countFirstBody')}</Txt>
+        <Button
+          title={t('stock.countFirstBtn')}
+          onPress={() => {
+            if (!countFirst) return;
+            setPendingReceipt({ productId: countFirst.productId, qty: countFirst.qty });
+            setMode({ kind: 'inventory', productId: countFirst.productId, name: countFirst.name });
+            setCountFirst(null);
+          }}
+          fullWidth
+        />
+      </Sheet>
       <Sheet visible={!!confirmDelist} onClose={() => setConfirmDelist(null)} title={t('stock.confirmDelistTitle')}>
         <Txt variant="body" tone="secondary">{t('stock.confirmDelistBody')}</Txt>
         <Button title={t('stock.confirmDelist')} onPress={doDelist} loading={mut.delist.isPending} fullWidth />

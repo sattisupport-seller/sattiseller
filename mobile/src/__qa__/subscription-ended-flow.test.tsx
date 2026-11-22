@@ -43,7 +43,7 @@ test('кнопка оформления ведёт на оплату, выход
 });
 
 test('ссылки на политику и условия открываются из конфигурации приложения', async () => {
-  const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+  const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
   await renderScreen();
   await fireEvent.press(screen.getByText('Политика конфиденциальности'));
   expect(open).toHaveBeenCalledWith('https://example.invalid/p');

@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 const mockBack = jest.fn();
 const mockTrial = jest.fn(async () => ({}));
 type TrialErr = { code: string; message: string } | null;
-const G = global as unknown as { __trialError?: TrialErr };
+const G = globalThis as unknown as { __trialError?: TrialErr };
 
 jest.mock('expo-haptics', () => ({ selectionAsync: jest.fn(() => Promise.resolve()) }));
 jest.mock('expo-router', () => ({
@@ -25,7 +25,7 @@ jest.mock('@/api/hooks', () => {
     useSubscription: () => m.hookResult({ data: { trial_available: true, price_text: '2 990 ₸ / мес' } }),
     useStartTrial: () => m.hookResult({
       mutateAsync: async () => {
-        const err = (global as unknown as { __trialError?: { code: string; message: string } | null }).__trialError;
+        const err = (globalThis as unknown as { __trialError?: { code: string; message: string } | null }).__trialError;
         if (err) {
           const { ApiError } = require('@/api/client');
           throw new ApiError(err.message, err.code);

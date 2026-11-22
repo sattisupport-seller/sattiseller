@@ -19,7 +19,7 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('expo-file-system', () => ({ File: jest.fn(), Paths: { cache: '/tmp' } }));
 jest.mock('expo-sharing', () => ({ shareAsync: jest.fn(), isAvailableAsync: jest.fn(async () => false) }));
-jest.mock('expo-document-picker', () => ({ getDocumentAsync: (...a: unknown[]) => (global as unknown as { __pick?: () => unknown }).__pick?.() ?? mockPick() }));
+jest.mock('expo-document-picker', () => ({ getDocumentAsync: (...a: unknown[]) => (globalThis as unknown as { __pick?: () => unknown }).__pick?.() ?? mockPick() }));
 jest.mock('@/components/ui/Overlays', () => ({ ...jest.requireActual('@/components/ui/Overlays'), useToast: () => ({ show: jest.fn() }) }));
 jest.mock('@/session/SessionProvider', () => ({ useSession: () => ({ shopId: 'shop-1', isDemo: true, locale: 'ru' }) }));
 jest.mock('@/api/hooks', () => {
@@ -41,7 +41,7 @@ beforeEach(() => {
   mockPick.mockClear();
   mockUpload.mockClear();
   mockMapping.mockClear();
-  (global as unknown as { __pick?: unknown }).__pick = undefined;
+  (globalThis as unknown as { __pick?: unknown }).__pick = undefined;
 });
 
 test('файл не XLSX и не CSV отклоняется до загрузки', async () => {
@@ -54,7 +54,7 @@ test('файл не XLSX и не CSV отклоняется до загрузк�
 });
 
 async function goToMapping() {
-  (global as unknown as { __pick?: () => unknown }).__pick = mockPickXlsx;
+  (globalThis as unknown as { __pick?: () => unknown }).__pick = mockPickXlsx;
   await renderImport();
   await fireEvent.press(screen.getByRole('button', { name: 'Выбрать файл' }));
   const pickBtns = await screen.findAllByRole('button', { name: 'Выбрать файл' });
