@@ -71,3 +71,11 @@ test('исчерпанная квота показывает понятный т
   expect(screen.queryByText('Помощник использует ИИ')).toBeNull();
   expect(mockConsent).not.toHaveBeenCalled();
 });
+
+test('шаблон вместо ИИ показывает причину в пометке', async () => {
+  mockDraft.mockResolvedValueOnce({ ...draftOk, generatedBy: 'template', warnings: ['Составлено по шаблону: ИИ сейчас недоступен. Проверьте текст перед публикацией.'] } as never);
+  await renderScreen();
+  await fireEvent.changeText(screen.getByLabelText('Факты о товаре'), 'Термокружка нержавейка 450 мл');
+  await fireEvent.press(screen.getByRole('button', { name: 'Составить описание' }));
+  expect(await screen.findByText('Составлено по шаблону: ИИ сейчас недоступен. Проверьте текст перед публикацией.')).toBeTruthy();
+});

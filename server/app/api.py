@@ -1,6 +1,7 @@
 """HTTP-маршруты Satti API /v1 (docs/spec.md, раздел 5.2)."""
 
 from __future__ import annotations
+import logging
 from decimal import Decimal, InvalidOperation
 import json
 
@@ -18,6 +19,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from . import ai as ai_service
+from . import draft_ai
 from . import audit
 from .accounts import delete_user_account
 from .auth import (
@@ -105,6 +107,7 @@ from .reports import (
 )
 from .security import hash_code, hash_device_id, new_code
 
+log = logging.getLogger(__name__)
 api = APIRouter()
 
 from . import admin as _admin  # noqa: E402  (админ-панель и поддержка, ТЗ 2.1, раздел 14)
@@ -1373,20 +1376,55 @@ async def ai_product_draft(shop_id: str = Form(...), facts: str = Form(...), lan
                            photos: list[UploadFile] = File(default=[]),
                            principal: Principal = Depends(get_principal),
                            db: DbSession = Depends(get_session)) -> dict:
+    """Карточка товара (К-14, ADR 0011): живая модель с фото; при выключателе, бюджете или сбое модели — шаблон с пометкой."""
     shop = shop_for(db, principal, shop_id)  # проверка доступа к магазину
-    require_ai(db)  # выключатель ИИ (QA-02)
     _, active = ai_consent_state(db, principal)
     if not active:
         raise ApiError(403, "ai_consent_required")
     if len(photos) > 5:
         raise ApiError(422, "validation", "Можно добавить не больше 5 фото.")
+    photo_bytes: list[bytes] = []
     for ph in photos:
-        head = await ph.read(16)
-        await ph.seek(0)
-        if not (head.startswith(b"\xff\xd8\xff") or head.startswith(b"\x89PNG") or head[:4] == b"RIFF"):
+        data = await ph.read()
+        if not (data.startswith(b"\xff\xd8\xff") or data.startswith(b"\x89PNG") or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")):
             raise ApiError(422, "validation", "Фото должно быть в формате JPG, PNG или WebP.")
-    # Фото не сохраняются: читаются только для проверки формата и удаляются вместе с запросом.
-    return await run_in_threadpool(_metered_draft, db, principal, shop, lambda: ai_service.product_draft(facts, languages, len(photos)))
+        if len(data) > draft_ai.MAX_PHOTO_BYTES:
+            raise ApiError(422, "validation", "Фото больше 5 МБ. Уменьшите размер и попробуйте снова.")
+        photo_bytes.append(data)
+    # Фото не сохраняются на сервере: они живут только в памяти этого запроса.
+    reason = None
+    if not is_enabled(db, "ai_assistant"):
+        reason = "помощник сейчас выключен"
+    elif not (settings.ai_live and settings.anthropic_api_key):
+        reason = "ИИ сейчас недоступен"
+    if reason is None:
+        # квота и бюджет — как у помощника: ai_limit (429) показываем как есть, исчерпанный бюджет — шаблоном
+        with quota_guard(principal.user_id or shop.id):
+            try:
+                ai_service.require_budget(db, _now())
+                ai_service.check_quota(db, principal.user_id, shop.id, _now())
+            except ApiError as exc:
+                if exc.code != "ai_budget_exhausted":
+                    raise
+                reason = "бюджет ИИ на сегодня исчерпан"
+    if reason is None:
+        try:
+            result = await run_in_threadpool(draft_ai.live_draft, facts, photo_bytes)
+        except draft_ai.DraftFallback as exc:
+            log.warning("product draft fallback: %s", exc)  # причина без текста фактов
+            reason = "ИИ не смог составить проверяемый черновик"
+        else:
+            cost = ai_service.live_cost_micro(result.tin, result.tout, result.tcw, result.tcr)
+            with quota_guard(principal.user_id or shop.id):
+                ai_service.record_usage(db, principal.user_id, shop.id, _now(), "draft", cost_micro=cost)
+                db.commit()
+            return {**result.draft, "generatedBy": "ai", "languages": "ru", "photosUsed": result.photos_sent,
+                    "warnings": ["Черновик ИИ — проверьте перед публикацией. Satti ничего не публикует в Kaspi."]}
+    # шаблон: тот же текст, что без ИИ, с понятной пометкой о причине
+    out = ai_service.product_draft(facts, "ru", len(photos))
+    out["generatedBy"] = "template"
+    out["warnings"] = [f"Составлено по шаблону: {reason}. Проверьте текст перед публикацией.", *out["warnings"]]
+    return out
 
 
 class ReplyDraftIn(BaseModel):

@@ -81,7 +81,7 @@ export type ImportUpload = {
 
 export type AskAnswer = {
   turnId: string;
-  generatedBy?: 'ai';  // QA-05: каждый ответ помечается
+  generatedBy?: 'ai' | 'template';  // QA-05: каждый ответ помечается; template — запасной шаблон (К-14)
   conversationId: string;
   answerTemplate: string;
   renderedAnswer: string;
