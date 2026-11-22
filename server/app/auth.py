@@ -110,16 +110,21 @@ def shop_for(db: DbSession, principal: Principal, shop_id: str, guard_access: bo
     return shop
 
 
+def _consent_active(version: str | None, revoked_at) -> bool:
+    """Согласие действует, если оно дано на ТЕКУЩУЮ версию текста и не отозвано (К-15: новая версия — новое согласие)."""
+    return bool(version) and version == settings.ai_consent_version and revoked_at is None
+
+
 def ai_consent_state(db: DbSession, principal: Principal) -> tuple[str | None, bool]:
     """Возвращает (версия согласия, активно ли оно)."""
     if principal.user_id:
         user = db.get(User, principal.user_id)
-        if user and user.ai_consent_version and user.ai_consent_revoked_at is None:
+        if user and _consent_active(user.ai_consent_version, user.ai_consent_revoked_at):
             return user.ai_consent_version, True
         return (user.ai_consent_version if user else None), False
     if principal.demo_install_id:
         inst = db.get(DemoInstallation, principal.demo_install_id)
-        if inst and inst.ai_consent_version and inst.ai_consent_revoked_at is None:
+        if inst and _consent_active(inst.ai_consent_version, inst.ai_consent_revoked_at):
             return inst.ai_consent_version, True
         return (inst.ai_consent_version if inst else None), False
     return None, False

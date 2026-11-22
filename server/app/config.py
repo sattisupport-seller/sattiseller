@@ -96,7 +96,7 @@ class Settings:
     demo_idle_days: int = 30  # устарело: демо живёт 24 часа (ADR-0005), см. demo_lifetime_hours
     demo_lifetime_hours: int = 24  # ADR-0005: демо-песочница живёт 24 часа от создания
     demo_per_device_per_day: int = 3  # ADR-0005: не больше 3 новых демо в сутки с одного устройства (и сбросов)
-    ai_consent_version: str = "2026-11-19"
+    ai_consent_version: str = "2026-11-22-2"  # К-15: текст согласия с фото; прежние согласия не действуют
     ai_service_name: str = "Satti AI (тестовый провайдер)"
     # 2.6: подключение Kaspi выключено по умолчанию; письменного разрешения Kaspi ещё нет (spec-2.1, раздел 22)
     # 3.6: почта. Без SATTI_SMTP_HOST письма пишутся в папку outbox (разработка и тесты)
