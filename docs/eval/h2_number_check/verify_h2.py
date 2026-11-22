@@ -1,3 +1,5 @@
+from pathlib import Path as _P
+REPO = _P(__file__).resolve().parents[3]  # корень репозитория (не абсолютный путь машины)
 """Независимая сверка чисел в ответах H2 с сырыми данными демо-магазина (без вызова API)."""
 import json, re, importlib.util
 from datetime import date, timedelta
@@ -111,7 +113,7 @@ def product_near(text, pos):
         return min(after, key=lambda o: o[0])[2]
     return None
 
-ROOT = "C:/Users/user/Desktop/satti-seller/server/tests/ai_eval_live_runs/claude-haiku-5-5_{}/H2.jsonl"
+ROOT = str(REPO / "server" / "tests" / "ai_eval_live_runs" / "claude-haiku-5-5_{}" / "H2.jsonl")
 total = ok_cnt = 0; unmatched = []; skipped_no_period = []; product_checked = 0; prod_ok = 0
 for run in ["h2r1", "h2r2", "h2r3"]:
     for l in open(ROOT.format(run), encoding="utf-8"):

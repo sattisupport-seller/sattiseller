@@ -317,11 +317,14 @@ class NotificationSettings(Base):
 
 
 class AuditEvent(Base):
+    """Журнал чувствительных действий. Без персональных данных: только действие и идентификаторы."""
     __tablename__ = "audit_events"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
     action: Mapped[str] = mapped_column(String(64))
     entity: Mapped[str] = mapped_column(String(64))
     result: Mapped[str] = mapped_column(String(16), default="ok")
+    actor_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    shop_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

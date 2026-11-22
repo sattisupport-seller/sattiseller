@@ -1,3 +1,5 @@
+from pathlib import Path as _P
+REPO = _P(__file__).resolve().parents[3]  # корень репозитория (не абсолютный путь машины)
 """Привязка каждого числа ответа H2 к метрике, названной рядом (ближайшее слово слева), и сверка именно с ней."""
 import json, re, importlib.util
 from datetime import date, timedelta
@@ -52,7 +54,7 @@ def attribute(text, pos, end=None):
             best = max(spec, key=lambda x: x[0])
     return (best[1], best[2])
 
-ROOT = "C:/Users/user/Desktop/satti-seller/server/tests/ai_eval_live_runs/claude-haiku-5-5_{}/H2.jsonl"
+ROOT = str(REPO / "server" / "tests" / "ai_eval_live_runs" / "claude-haiku-5-5_{}" / "H2.jsonl")
 res = {"верно": 0, "неверно": 0, "не привязано": 0, "товар/пропуск": 0}
 wrong_items = []; unbound = []; subst = []
 for run in ["h2r1", "h2r2", "h2r3"]:

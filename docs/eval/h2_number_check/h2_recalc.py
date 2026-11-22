@@ -5,7 +5,9 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from decimal import Decimal, ROUND_HALF_UP
 
-DUMP = "C:/Users/user/AppData/Local/Temp/claude/af86fe85628ce651/4b538c71-6f33-443b-b00b-30504987d818/scratchpad/h2_dump.json"
+import os as _os
+# временный дамп данных магазина: задаётся переменной SATTI_H2_DUMP (путь не хранится в репозитории)
+DUMP = _os.environ.get("SATTI_H2_DUMP", "h2_dump.json")
 d = json.load(open(DUMP, encoding="utf-8"))
 from datetime import timezone as _tz
 TZ = _tz(timedelta(hours=5))  # Asia/Almaty: постоянное UTC+5 с 2024 года

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from .admin import AdminTotp
 from .billing import RetentionEvent, Subscription
+from . import audit
 from .models import AIConversation, AIFeedback, AITurn, AIUsageEvent, AuthCode, NotificationSettings, Session, Shop, User
 from .social_auth import SocialIdentity
 
@@ -35,3 +36,5 @@ def delete_user_account(db: DbSession, user: User) -> None:
     db.execute(delete(Session).where(Session.user_id == user.id))
     db.execute(delete(User).where(User.id == user.id))
     db.commit()
+    # без идентификатора пользователя: после удаления он бы указывал в никуда
+    audit.record(db, "account_delete", "user")

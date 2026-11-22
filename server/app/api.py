@@ -16,6 +16,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from . import ai as ai_service
+from . import audit
 from .accounts import delete_user_account
 from .auth import (
     Principal,
@@ -650,6 +651,7 @@ def export_my_data(principal: Principal = Depends(get_principal), db: DbSession 
     if not allow(f"export:{user.id}", 3, 86_400, db=db):
         raise ApiError(429, "rate_limited", "Выгрузок слишком много. Попробуйте завтра.")
     content = user_export_zip(db, user)
+    audit.record(db, "user_export", "user", actor_id=user.id)
     stamp = _now().strftime("%Y%m%d")
     return Response(content=content, media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="satti-moi-dannye-{stamp}.zip"'})
@@ -1487,6 +1489,7 @@ def kaspi_connect(shop_id: str, body: KaspiConnectIn, principal: Principal = Dep
     finally:
         client.close()
     analytics_service.record(db, "kaspi_connect_succeeded", now)
+    audit.record(db, "kaspi_connect", "kaspi_connection", actor_id=principal.user_id, shop_id=shop.id)
     return _kaspi_view(shop, conn)
 
 
@@ -1527,6 +1530,7 @@ def kaspi_disconnect(shop_id: str, principal: Principal = Depends(get_principal)
     _require_kaspi(db)
     shop = shop_for(db, principal, shop_id)
     kaspi_service.disconnect(db, shop.id)
+    audit.record(db, "kaspi_disconnect", "kaspi_connection", actor_id=principal.user_id, shop_id=shop.id)
     return {"enabled": True, "status": "not_connected"}
 
 
