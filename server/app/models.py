@@ -218,6 +218,8 @@ class ProductStock(Base):
     product_id: Mapped[str] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
     qty: Mapped[int] = mapped_column(Integer)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    delisted: Mapped[bool] = mapped_column(Boolean, default=False)  # снят с продажи (XML) после подтверждения
+    last_alert_level: Mapped[str | None] = mapped_column(String(8), nullable=True)  # последний отправленный порог
 
 
 class ImportBatch(Base):

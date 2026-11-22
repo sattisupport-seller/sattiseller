@@ -25,6 +25,8 @@ def upgrade() -> None:
         sa.Column('product_id', sa.String(length=32), sa.ForeignKey('products.id', ondelete='CASCADE'), nullable=False),
         sa.Column('qty', sa.Integer(), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('delisted', sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column('last_alert_level', sa.String(length=8), nullable=True),
         sa.UniqueConstraint('product_id', name='uq_product_stock_product'),
     )
     op.create_index('ix_product_stocks_shop_id', 'product_stocks', ['shop_id'])

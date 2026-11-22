@@ -23,7 +23,8 @@ from sqlalchemy.orm import Session as DbSession
 from .config import settings
 from .errors import ApiError
 from .mailer import MailError, send_owner_alert
-from .models import AIBudgetAlert, AIConversation, AIFeedback, AITurn, AIUsageEvent, ProductStock, Shop
+from .models import AIBudgetAlert, AIConversation, AIFeedback, AITurn, AIUsageEvent, Shop
+from .stock import stock_states
 
 from .money import format_tenge, round_half_up_div
 from .periods import Period, resolve
@@ -288,6 +289,20 @@ def execute_tool(name: str, args: dict, tools: Tools, facts: list[Fact]) -> dict
             out[f"profit_{i}"] = _mk(facts, f"top_{i}_profit", "money", r.profit)
         out["count"] = len(rows)
         return out
+    if name == "get_stock_alerts":
+        tools._take()
+        rows = [st for st in tools.data.stock_info.values()
+                if st.level or (st.days_left is not None and 0 < st.days_left <= 14)]
+        rows.sort(key=lambda st: (st.current, st.days_left if st.days_left is not None else 10**6))
+        if not rows:
+            raise ValueError("нет товаров с низким остатком или скоро закончится")
+        out: dict = {"count": _mk(facts, "alerts_count", "units", len(rows))}
+        for i, st in enumerate(rows[:3], 1):
+            out[f"name_{i}"] = _mk(facts, f"alert_{i}_name", "external", st.name)
+            out[f"qty_{i}"] = _mk(facts, f"alert_{i}_qty", "units", st.current)
+            if st.days_left is not None and st.current > 0:
+                out[f"days_{i}"] = _mk(facts, f"alert_{i}_days", "units", st.days_left)
+        return out
     if name == "get_stock":
         sku = str(args.get("sku", "")).strip().lower()
         title = str(args.get("name", "")).strip().lower()
@@ -547,6 +562,34 @@ def _period_key(q: str) -> str:
     if re.search(r"недел|\b7\b|апта", q):
         return "7d"
     return "30d"
+
+
+_PERIOD_RULES: list[tuple[str, str]] = [  # порядок важен: сначала точные формы
+    (r"\b(вчера|кеше|кешке|keshe|keshke|kecha)\b", "yesterday"),
+    (r"\b(сегодня|бүгін|bugin|сегодняшн\w*)\b", "today"),
+    (r"(прошл\w* месяц|предыдущ\w* месяц|прошлом месяце|прошлого месяца|өткен ай\w*|otken ai\w*)", "previous_month"),
+    (r"(этот месяц|этом месяце|этого месяца|текущ\w* месяц|осы ай\w*|bul ai)", "this_month"),
+    (r"(прошл\w* недел\w*|предыдущ\w* недел\w*|өткен апта\w*|otken apta\w*)", "previous_week"),
+    (r"(эта неделя|эту неделю|этой неделе|текущ\w* недел\w*|осы апта\w*|osy apta\w*|bul apta\w*)", "7d"),
+    (r"(последн\w* 7 дн\w*|последн\w* семь дн\w*|7 дн\w*|7 күн\w*|жеті күн\w*|соңғы 7 күн\w*)", "7d"),
+    (r"(последн\w* 14 дн\w*|2 недел\w*|две недел\w*|14 дн\w*|14 күн\w*|екі апта\w*|соңғы 14 күн\w*)", "14d"),
+    (r"(последн\w* 30 дн\w*|30 дн\w*|30 күн\w*|соңғы 30 күн\w*)", "30d"),
+    (r"(последн\w* 90 дн\w*|90 дн\w*|3 месяц\w*|трех месяц\w*|трёх месяц\w*|90 күн\w*)", "90d"),
+]
+
+
+def resolve_period(question: str) -> str | None:
+    """Период вопроса кодом (ru, kk, транслит). None — период не назван или неясен: тогда модель уточнит."""
+    q = question.lower()
+    for rx, name in _PERIOD_RULES:
+        if re.search(rx, q):
+            return name
+    return None
+
+
+PERIOD_NOTE_RU = {"yesterday": "вчера", "today": "сегодня", "previous_month": "прошлый месяц",
+                  "this_month": "этот месяц", "previous_week": "прошлая неделя", "7d": "последние 7 дней",
+                  "14d": "последние 14 дней", "30d": "последние 30 дней", "90d": "последние 90 дней"}
 
 
 class MockProvider:
@@ -864,6 +907,10 @@ TOOL_SPECS: list[dict] = [
      "description": ("Остаток товара на складе, внесённый продавцом вручную, по артикулу (sku) или названию (name). "
                      "Если остаток не внесён — инструмент вернёт ошибку: так и скажи, что его не внесли, и где внести."),
      "input_schema": _schema({"sku": {"type": "string"}, "name": {"type": "string"}}, [])},
+    {"name": "get_stock_alerts",
+     "description": ("Товары, которые скоро закончатся: остаток ниже 10 шт. или прогноз до нуля ≤ 14 дней. "
+                     "Без аргументов; вернёт до трёх товаров с остатком и прогнозом."),
+     "input_schema": _schema({}, [])},
     {"name": "get_missing_costs", "description": "Товары без закупочной цены.",
      "input_schema": _schema({}, [])},
 ]
@@ -900,6 +947,8 @@ class LiveToolPlanner:
         self.periods_used: set[str] = set()  # пресеты периодов из вызовов инструментов (их длительность законна)
         self.tin = 0
         self.tout = 0
+        self.tcw = 0  # токены записи в кэш (системная инструкция и инструменты)
+        self.tcr = 0  # токены чтения из кэша
         self.calls = 0
         self.decline: str | None = None  # категория, если модель вызвала decline_request
         self.last_text = ""  # последний текст модели (для отладки оценки)
@@ -921,6 +970,8 @@ class LiveToolPlanner:
         usage = data.get("usage", {})
         self.tin += int(usage.get("input_tokens", 0))
         self.tout += int(usage.get("output_tokens", 0))
+        self.tcw += int(usage.get("cache_creation_input_tokens", 0) or 0)
+        self.tcr += int(usage.get("cache_read_input_tokens", 0) or 0)
         return data
 
     def run(self, question: str, tools: Tools, facts: list[Fact], lang: str = "ru", hint: str | None = None) -> str:
@@ -928,6 +979,9 @@ class LiveToolPlanner:
         hint — служебная подсказка после неудачной проверки чисел (второй заход)."""
         # Язык определяет сервер (detect_lang); модели он передаётся явно, а не только через вопрос.
         note = "(Язык ответа: казахский.)" if lang == "kk" else "(Язык ответа: русский.)"
+        period = resolve_period(question)
+        if period:  # период понятен: отвечать сразу, без уточнений (решение владельца 22.11)
+            note += f"\n(Период вопроса: {PERIOD_NOTE_RU[period]}.)"
         content = f"{question}\n{note}"
         if hint:
             content += f"\n(Служебная подсказка проверки: {hint})"
@@ -983,8 +1037,11 @@ class LiveToolPlanner:
         return ""
 
 
-def live_cost_micro(in_tokens: int, out_tokens: int) -> int:
-    usd = in_tokens * settings.ai_price_in_per_mtok / 1_000_000 + out_tokens * settings.ai_price_out_per_mtok / 1_000_000
+def live_cost_micro(in_tokens: int, out_tokens: int, cache_write: int = 0, cache_read: int = 0) -> int:
+    """Стоимость вызовов в микродолларах. Кэш: запись — 1,25 от цены входа, чтение — 0,1 от цены входа (тарифы Anthropic)."""
+    price_in = settings.ai_price_in_per_mtok / 1_000_000
+    usd = (in_tokens * price_in + cache_write * price_in * 1.25 + cache_read * price_in * 0.1
+           + out_tokens * settings.ai_price_out_per_mtok / 1_000_000)
     return int(round(usd * 1_000_000))
 
 
@@ -1162,7 +1219,8 @@ def ask(db: DbSession, shop: Shop, question: str, user_id: str | None, conversat
             raise ApiError(404, "not_found")
 
     data = load_shop(db, shop)
-    data.stock = {row.product_id: row.qty for row in db.scalars(select(ProductStock).where(ProductStock.shop_id == shop.id))}
+    data.stock = {pid: st.current for pid, st in stock_states(db, shop).items()}  # текущий остаток (склад)
+    data.stock_info = stock_states(db, shop)
     facts = build_facts(data)
     tools = Tools(data, facts, now)
     plan = (provider or MockProvider()).plan(text, tools, data)
@@ -1194,10 +1252,14 @@ def ask(db: DbSession, shop: Shop, question: str, user_id: str | None, conversat
             if debug and planner.last_text:  # только для оценки: начало текста модели, который отклонён
                 live_error = (live_error + " | ответ модели: " + planner.last_text[:300])[:600]
             log.warning("live answer not verified: %s", live_error)  # в журнал — без текста вопроса
-            plan = Plan(template=LIVE_FAILED_TEXT.get(plan.lang, LIVE_FAILED_TEXT["ru"]), facts=[], lang=plan.lang)
+            # Неверный живой ответ пользователю не уходит: ответ пересобирается из данных инструментов (мок).
+            if mock_plan.refusal or mock_plan.template == SAFE_TEXT:
+                plan = Plan(template=LIVE_FAILED_TEXT.get(plan.lang, LIVE_FAILED_TEXT["ru"]), facts=[], lang=plan.lang)
+            else:
+                plan = mock_plan
         finally:
             live_calls = planner.calls
-            live_cost = live_cost_micro(planner.tin, planner.tout)
+            live_cost = live_cost_micro(planner.tin, planner.tout, planner.tcw, planner.tcr)
     tool_calls_total = tools.calls + live_calls
     live_used = live_error is None and plan is not mock_plan
     if plan is mock_plan and mock_plan.mock_decline_category:  # отказ мока: модели не было или она не ответила

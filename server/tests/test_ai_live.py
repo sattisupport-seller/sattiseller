@@ -208,3 +208,12 @@ def test_exhausted_tools_are_announced_to_the_model(demo, live):
                 b.get("type") == "text" and "Инструментов больше нет" in b.get("text", "") for b in last["content"]):
             announced = True
     assert announced
+
+
+def test_cost_counts_prompt_cache_tokens():
+    """Стоимость вопроса включает кэш: запись (×1,25) и чтение (×0,1) от цены входа (ошибка учёта найдена 22.11)."""
+    from app.ai import live_cost_micro
+    plain = live_cost_micro(1_000_000, 0)  # 1 млн входных токенов по цене модели
+    assert plain == int(round(settings.ai_price_in_per_mtok * 1_000_000))
+    assert live_cost_micro(0, 0, cache_write=1_000_000) == int(round(plain * 1.25))
+    assert live_cost_micro(0, 0, cache_read=1_000_000) == int(round(plain * 0.1))

@@ -221,6 +221,9 @@ def price_list_xml(db: DbSession, shop: Shop, conn: KaspiConnection, today: date
         .where(Product.shop_id == shop.id)
         .order_by(Order.created_at.desc())
     ).all()
+    from .models import ProductStock  # снятые с продажи (склад) в прайс не попадают
+    delisted = set(db.scalars(select(ProductStock.product_id).where(ProductStock.shop_id == shop.id, ProductStock.delisted.is_(True))).all())
+    rows = [r for r in rows if r[0] not in delisted]
     offers: dict[str, tuple[str, int]] = {}
     for pid, sku, name, price_minor, _created in rows:
         if sku not in offers:

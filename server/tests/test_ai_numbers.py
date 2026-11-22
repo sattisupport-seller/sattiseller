@@ -92,12 +92,13 @@ def test_invented_number_gets_one_retry_with_hint(demo, live):
     assert out["liveUsed"] is True
 
 
-def test_two_invented_answers_give_honest_message_not_mock(demo, live):
+def test_two_invented_answers_are_rebuilt_from_tools_not_mock_or_failure(demo, live):
     live["script"] = [_reply("Прибыль 99 999 ₸."), _reply("Прибыль 88 888 ₸.")]
     out = _ask(demo["shop_id"], "Какая прибыль за неделю?")
-    assert out["answerTemplate"] == ai_service.LIVE_FAILED_TEXT["ru"]
+    # Решение владельца 22.11: неверный живой ответ пересобирается из данных инструментов, а не уходит текстом сбоя
+    assert out["answerTemplate"] != ai_service.LIVE_FAILED_TEXT["ru"]
     assert out["liveUsed"] is False
-    assert "99 999" not in out["renderedAnswer"]
+    assert "99 999" not in out["renderedAnswer"] and "88 888" not in out["renderedAnswer"]
 
 
 def test_tool_payload_carries_values_for_the_model(demo, live):

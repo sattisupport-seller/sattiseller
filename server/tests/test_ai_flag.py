@@ -15,7 +15,7 @@ def _set_flag(enabled: bool) -> None:
 
 def test_default_is_off_for_launch():
     from app.admin import FLAG_DEFAULTS
-    assert FLAG_DEFAULTS["ai_assistant"] is False
+    assert FLAG_DEFAULTS["ai_assistant"] is True  # по умолчанию включён (решение владельца 22.11)
 
 
 def test_question_is_refused_when_flag_is_off(client, demo):

@@ -19,15 +19,19 @@ from app.main import app  # noqa: E402
 from app.admin import FeatureFlag  # noqa: E402
 from sqlalchemy.orm import Session as DbSession  # noqa: E402
 
+from app.config import settings  # noqa: E402
+
 
 @pytest.fixture(autouse=True)
 def _fresh_db():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
-    # Помощник выключен по умолчанию (запуск); тесты помощника включают его явно, тесты выключателя — выключают
+    # Помощник включён (решение владельца 22.11). Живая модель в тестах выключена принудительно:
+    # ключ в .env есть, а платные вызовы — только в тестах с фикстурой live.
     with DbSession(engine) as s:
         s.add(FeatureFlag(key="ai_assistant", enabled=True))
         s.commit()
+    settings.ai_live = False
     ratelimit.reset()
     yield
 

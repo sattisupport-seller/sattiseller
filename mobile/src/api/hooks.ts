@@ -422,3 +422,54 @@ export function useStartTrial(shopId: string | null) {
     },
   });
 }
+
+// ---- Склад (решения владельца 22.11): остатки, приход, уведомления, снятие с продажи ----
+export type StockItem = {
+  productId: string; sku: string; name: string; current: number; baseQty: number; soldSince: number;
+  returnedSince: number; avgDaily: number; daysLeft: number | null; level: 'out' | 't3' | 't5' | 't10' | null; delisted: boolean;
+};
+
+export function useStockList(shopId: string | null) {
+  return useQuery({
+    queryKey: ['stock', shopId],
+    queryFn: () => request<{ items: StockItem[] }>(`/shops/${shopId}/stock`),
+    enabled: !!shopId,
+  });
+}
+
+export function useStockAlerts(shopId: string | null) {
+  return useQuery({
+    queryKey: ['stock-alerts', shopId],
+    queryFn: () => request<{ items: StockItem[]; endingSoon: StockItem[] }>(`/shops/${shopId}/stock/alerts`),
+    enabled: !!shopId,
+  });
+}
+
+export function useStockMutations(shopId: string | null) {
+  const qc = useQueryClient();
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['stock', shopId] });
+    qc.invalidateQueries({ queryKey: ['stock-alerts', shopId] });
+  };
+  const receipt = useMutation({
+    mutationFn: (v: { productId: string; qty: number }) =>
+      request(`/shops/${shopId}/products/${v.productId}/stock/receipt`, { method: 'POST', body: { qty: v.qty } }),
+    onSuccess: refresh,
+  });
+  const inventory = useMutation({
+    mutationFn: (v: { productId: string; qty: number }) =>
+      request(`/shops/${shopId}/products/${v.productId}/stock`, { method: 'PUT', body: { qty: v.qty } }),
+    onSuccess: refresh,
+  });
+  const delist = useMutation({
+    mutationFn: (productId: string) =>
+      request(`/shops/${shopId}/products/${productId}/stock/delist`, { method: 'POST', body: { confirm: true } }),
+    onSuccess: refresh,
+  });
+  const relist = useMutation({
+    mutationFn: (productId: string) =>
+      request(`/shops/${shopId}/products/${productId}/stock/relist`, { method: 'POST' }),
+    onSuccess: refresh,
+  });
+  return { receipt, inventory, delist, relist };
+}

@@ -31,7 +31,7 @@ from .errors import ApiError
 from .models import AIConversation, AITurn, Order, Shop, User
 
 SUPPORT_ACCESS_HOURS = 24
-FLAG_DEFAULTS = {"kaspi_connection": False, "ai_assistant": False, "subscription": False, "analytics": False}
+FLAG_DEFAULTS = {"kaspi_connection": False, "ai_assistant": True, "subscription": False, "analytics": False}
 
 
 def _now() -> datetime:
@@ -300,6 +300,24 @@ def users_list(_: User = Depends(require_admin), db: DbSession = Depends(get_ses
                                      if u.support_access_until and _aware(u.support_access_until) > _now() else None),
         })
     return {"items": items}
+
+
+@router.get("/ai-feedback")
+def ai_feedback_list(_: User = Depends(require_admin), db: DbSession = Depends(get_session)) -> dict:
+    """Жалобы («Пожаловаться») и 👎 на ответы помощника — для проверки качества на бете. Вопрос уже с маскировкой."""
+    from .models import AIFeedback
+    rows = db.scalars(select(AIFeedback).where(AIFeedback.kind.in_(("flag", "down")))
+                      .order_by(AIFeedback.created_at.desc()).limit(200)).all()
+    return {"items": [{
+        "id": r.id,
+        "created_at": _aware(r.created_at).isoformat(),
+        "kind": r.kind,
+        "reason": r.reason,
+        "question": r.question_masked,
+        "refused": r.refused,
+        "refusal_category": r.refusal_category,
+        "shop_id": r.shop_id,
+    } for r in rows]}
 
 
 @router.post("/users/{user_id}/block")

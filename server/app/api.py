@@ -46,6 +46,7 @@ from .imports import (
     validate_rows,
 )
 from .mailer import MailError, send_code_email
+from .stock import ENDING_SOON_DAYS, stock_push_mock, stock_states
 from .models import (
     AIConversation,
     AITurn,
@@ -716,6 +717,14 @@ class StockIn(BaseModel):
     qty: int = Field(ge=0, le=10_000_000)  # остаток, внесённый продавцом вручную (склад)
 
 
+class ReceiptIn(BaseModel):
+    qty: int = Field(ge=1, le=10_000_000)  # приход: сколько штук поступило
+
+
+class DelistIn(BaseModel):
+    confirm: bool  # снять с продажи через XML — только после явного подтверждения
+
+
 def _product_of_shop(db: DbSession, shop: Shop, product_id: str) -> Product:
     product = db.get(Product, product_id)
     if product is None or product.shop_id != shop.id:
@@ -723,19 +732,58 @@ def _product_of_shop(db: DbSession, shop: Shop, product_id: str) -> Product:
     return product
 
 
+def _stock_json(st) -> dict:
+    return {"productId": st.product_id, "sku": st.sku, "name": st.name, "current": st.current, "baseQty": st.base_qty,
+            "soldSince": st.sold_since, "returnedSince": st.returned_since, "avgDaily": st.avg_daily,
+            "daysLeft": st.days_left, "level": st.level, "delisted": st.delisted}
+
+
 @api.get("/shops/{shop_id}/products/{product_id}/stock", tags=["склад"])
 def get_stock_row(shop_id: str, product_id: str, principal: Principal = Depends(get_principal),
                   db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
     _product_of_shop(db, shop, product_id)
-    row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
-    return {"qty": None if row is None else row.qty,
-            "updatedAt": None if row is None else row.updated_at.isoformat()}
+    st = stock_states(db, shop).get(product_id)
+    if st is None:
+        return {"qty": None, "updatedAt": None, "current": None, "level": None, "delisted": False}
+    return {"qty": st.current, "updatedAt": st.base_at.isoformat(), **_stock_json(st)}
+
+
+@api.get("/shops/{shop_id}/stock", tags=["склад"])
+def list_stock(shop_id: str, principal: Principal = Depends(get_principal),
+               db: DbSession = Depends(get_session)) -> dict:
+    shop = shop_for(db, principal, shop_id)
+    states = stock_states(db, shop)
+    return {"items": [_stock_json(st) for st in sorted(states.values(), key=lambda x: x.name)]}
+
+
+@api.get("/shops/{shop_id}/stock/alerts", tags=["склад"])
+def stock_alerts(shop_id: str, principal: Principal = Depends(get_principal),
+                 db: DbSession = Depends(get_session)) -> dict:
+    """Уведомления 10/5/3 шт. и 0 — в приложении (этот список) и push на моке (файл в outbox). Ниже порога — один раз."""
+    shop = shop_for(db, principal, shop_id)
+    states = stock_states(db, shop)
+    rows = {r.product_id: r for r in db.scalars(select(ProductStock).where(ProductStock.shop_id == shop.id)).all()}
+    items = []
+    for st in states.values():
+        row = rows.get(st.product_id)
+        if st.level is None:
+            if row is not None:
+                row.last_alert_level = None  # выше порогов — можно снова уведомить при понижении
+            continue
+        items.append(_stock_json(st))
+        if row is not None and row.last_alert_level != st.level:
+            row.last_alert_level = st.level
+            stock_push_mock(shop, st)
+    db.commit()
+    ending = [i for i in items if i["daysLeft"] is not None and 0 < i["daysLeft"] <= ENDING_SOON_DAYS]
+    return {"items": items, "endingSoon": ending}
 
 
 @api.put("/shops/{shop_id}/products/{product_id}/stock", tags=["склад"])
 def put_stock_row(shop_id: str, product_id: str, body: StockIn, principal: Principal = Depends(get_principal),
                   db: DbSession = Depends(get_session)) -> dict:
+    """Инвентаризация: остаток на сейчас. Дальше продажи и возвраты уменьшают и увеличивают его автоматически."""
     shop = shop_for(db, principal, shop_id)
     _product_of_shop(db, shop, product_id)
     row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
@@ -746,8 +794,59 @@ def put_stock_row(shop_id: str, product_id: str, body: StockIn, principal: Princ
     else:
         row.qty = body.qty
         row.updated_at = now
+        row.last_alert_level = None
     db.commit()
     return {"qty": row.qty, "updatedAt": row.updated_at.isoformat()}
+
+
+@api.post("/shops/{shop_id}/products/{product_id}/stock/receipt", tags=["склад"])
+def stock_receipt(shop_id: str, product_id: str, body: ReceiptIn, principal: Principal = Depends(get_principal),
+                  db: DbSession = Depends(get_session)) -> dict:
+    """Приход: к текущему остатку прибавляется поступившее количество; продажи до этого момента учтены."""
+    shop = shop_for(db, principal, shop_id)
+    _product_of_shop(db, shop, product_id)
+    st = stock_states(db, shop).get(product_id)
+    row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
+    now = datetime.now(timezone.utc)
+    base = st.current if st is not None else 0
+    if row is None:
+        row = ProductStock(shop_id=shop.id, product_id=product_id, qty=base + body.qty, updated_at=now)
+        db.add(row)
+    else:
+        row.qty = base + body.qty
+        row.updated_at = now
+        row.last_alert_level = None
+    db.commit()
+    return {"qty": row.qty, "current": row.qty}
+
+
+@api.post("/shops/{shop_id}/products/{product_id}/stock/delist", tags=["склад"])
+def stock_delist(shop_id: str, product_id: str, body: DelistIn, principal: Principal = Depends(get_principal),
+                 db: DbSession = Depends(get_session)) -> dict:
+    """Снятие с продажи (XML-прайс): только при нулевом остатке и после подтверждения (confirm=true)."""
+    shop = shop_for(db, principal, shop_id)
+    _product_of_shop(db, shop, product_id)
+    st = stock_states(db, shop).get(product_id)
+    if st is None or st.current > 0:
+        raise ApiError(409, "stock_not_empty", "Снять с продажи можно только товар с нулевым остатком.")
+    if not body.confirm:
+        raise ApiError(422, "confirm_required", "Подтвердите снятие с продажи.")
+    row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
+    row.delisted = True
+    db.commit()
+    return {"delisted": True}
+
+
+@api.post("/shops/{shop_id}/products/{product_id}/stock/relist", tags=["склад"])
+def stock_relist(shop_id: str, product_id: str, principal: Principal = Depends(get_principal),
+                 db: DbSession = Depends(get_session)) -> dict:
+    shop = shop_for(db, principal, shop_id)
+    _product_of_shop(db, shop, product_id)
+    row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
+    if row is not None:
+        row.delisted = False
+        db.commit()
+    return {"delisted": False}
 
 
 @api.get("/shops/{shop_id}/products/{product_id}/cost-versions", tags=["затраты"], response_model=CostVersionsOut)
