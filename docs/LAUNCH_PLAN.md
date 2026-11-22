@@ -97,14 +97,14 @@
 
 | № | Задача | Статус |
 |---|---|---|
-| 5.1 | Продакшен-профили app.json и eas.json; bundle ID `kz.satti.seller` (без решения владельца не менять); targetSdk 36 через expo-build-properties; только нужные разрешения; манифест — `npx expo config --type introspect` или prebuild во временной папке (бывший 1.8) | ⬜ |
-| 5.2 | Тексты карточек ru и kk | ⬜ |
+| 5.1 | Продакшен-профили app.json и eas.json; bundle ID `kz.satti.seller` (без решения владельца не менять); targetSdk 36 через expo-build-properties; только нужные разрешения; манифест — `npx expo config --type introspect` или prebuild во временной папке (бывший 1.8) | ✅ Манифест проверен (`expo prebuild`, 22.11): INTERNET, VIBRATE; заблокированные разрешения удалены; `targetSdkVersion` 36; cleartext нет; bundle ID не менялся. EAS-профили `preview`/`production` с заглушками адреса — до адреса сервера. |
+| 5.2 | Тексты карточек ru и kk | 🟡 Ru: `docs/store-listing.md`. Kk: черновик (ЖОБА), нужен носитель. |
 | 5.3 | Скриншоты через Maestro | ⛔ нет Android SDK и эмулятора |
 | 5.4 | Анкеты Apple App Privacy, Google Data safety, рейтинг | 🟡 Подготовлено: docs/store-privacy-forms.md (текущее состояние: что собирается, отслеживания нет, рейтинг 4+/«Для всех»). Отправка в консоли — владелец; провайдера хостинга указать |
 | 5.5 | Сверка с правилами App Store и Google Play | 🟡 docs/store-compliance.md: удаление аккаунта, товарные знаки, разрешения, тексты на ru/kk проверены в репозитории. Открыто: export compliance и privacy manifest — при сборке EAS; аккаунт для проверки |
 | 5.6 | Инструкции: закрытый тест Google и TestFlight | 🟡 Тексты инструкций готовы: docs/beta-materials.md (разделы 1–2). Рассылка не начата: нужны аккаунты Google Play и Apple и сборка EAS (владелец) |
 | 5.7 | iOS: тексты разрешений на русском, `usesNonExemptEncryption`, `privacyManifests` | 🟡 Тексты разрешений ru и kk — в app.json (есть). `usesNonExemptEncryption: false` задан в app.json. `privacyManifests` не добавлен: манифест должен точно перечислять данные — добавить при сборке EAS и проверить |
-| 5.8 | Страница `/support` (email из переменной) и заметки для проверяющих Apple и Google (демо-вход) | ⬜ |
+| 5.8 | Страница `/support` (email из переменной) и заметки для проверяющих Apple и Google (демо-вход) | ✅ `/support` (email из переменной, тест `test_web.py`); заметки для проверяющих Apple — `docs/store-listing.md`; скриншот экрана согласия — не снят (нужно устройство). |
 | 5.9 | Графика: иконки всех размеров, Google Play 1024×500 | 🟡 Есть иконки в assets (icon, icon-dark, icon-tinted, store-icon-512, android-адаптивная). Не сделано: баннер Google Play 1024×500 — нужен дизайн владельца; проверить размеры иконок при сборке |
 | 5.10 | Maestro-сценарии основных путей — готовы к запуску | 🟡 Сценарий написан: mobile/.maestro/main-paths.yaml (демо-вход, вкладки, профиль без помощника, выход). Не запускался: ⛔ нужен эмулятор (5.3) |
 | 5.11 | `docs/DEVICE_CHECKLIST.md` — чек-лист ручной проверки по приложению Е ТЗ | ✅ `docs/DEVICE_CHECKLIST.md`: 18 пунктов приложения Е с колонками для iPhone и Android, устройство и дата; пункты, зависящие от этапа 3.1–3.4, помечены |
@@ -116,7 +116,7 @@
 |---|---|---|
 | 6.1 | Уборка по протоколу 8.4: мёртвый код, дубли функций времени, локальные импорты, таблица `audit_events` (только миграцией) | 🟡 Сделано: неиспользуемые импорты (ruff F401/F811 — чисто); шесть дублей времени свёрнуты в app/timeutil.py (utc_now). Не сделано: локальные импорты, таблица audit_events (нужна миграция — отдельный пункт). Полный прогон 502 passed |
 | 6.2 | Зависимости: pip и npm; попытка снять фиксацию Starlette/FastAPI; переход тестов на httpx2; pip-audit и npm audit | 🟡 pip-audit: известных уязвимостей нет. npm audit (prod): 18 умеренных, высоких нет (CI проходит на уровне high). Не сделано: снятие фиксации FastAPI/Starlette (версии закреплены, вероятно из-за совместимости schemathesis — нужна отдельная проверка), переход на httpx2, обновление npm |
-| 6.3 | Итоговая проверка: тесты SQLite и PostgreSQL, покрытие, фаззинг, bandit, pip-audit, gitleaks, нагрузка 10/50/100, учения восстановления; CRITICAL и HIGH исправить; обновить QA_REPORT («было / стало») (бывший 6.1) | ⬜ |
+| 6.3 | Итоговая проверка: тесты SQLite и PostgreSQL, покрытие, фаззинг, bandit, pip-audit, gitleaks, нагрузка 10/50/100, учения восстановления; CRITICAL и HIGH исправить; обновить QA_REPORT («было / стало») (бывший 6.1) | 🟡 22.11: ruff чисто; bandit (medium+) чисто; pip-audit — уязвимостей нет; покрытие `app` 92 %; тесты SQLite 563 прошли. Не сделано: PostgreSQL-прогон, gitleaks (не установлен), фаззинг, нагрузка 10/50/100, учения восстановления. |
 | 6.4 | README: команды для Windows, ссылки на OPERATIONS.md, LAUNCH.md, MASTER_PLAN.md | 🟡 README обновлён: актуальные числа тестов, статусы, переменные (`server/.env.example`), ссылки на LAUNCH.md и OPERATIONS.md; команды для Windows уже были |
 | 6.5 | `docs/FINAL_REPORT.md` по структуре раздела 10 MASTER_PLAN | ⬜ |
 | 6.6 | `docs/LAUNCH.md` — пошаговый запуск для владельца | ✅ `docs/LAUNCH.md`: 11 шагов от решений и аккаунтов до публичного запуска; у каждого — что делаете вы, что делаю я, как проверить |

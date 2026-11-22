@@ -90,7 +90,7 @@ def test_delist_only_at_zero_and_only_after_confirmation(client, demo):
     assert f'sku="{sku}"' not in xml
 
 
-def test_assistant_answers_what_is_ending(demo, live):
+def test_assistant_answers_what_is_ending(demo, live):  # noqa: F811
     pid, sku, name = _pid(demo)
     _set_baseline(demo, pid, 2, datetime.now(timezone.utc))
     live["script"] = [_reply([_tool("get_stock_alerts", {}, uid="a1")]),

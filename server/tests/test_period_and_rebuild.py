@@ -27,7 +27,7 @@ def test_unclear_period_is_not_guessed():
     assert ai_service.resolve_period("сколько продаж") is None  # период не назван — модель уточнит
 
 
-def test_known_period_is_passed_to_model_so_it_does_not_ask(demo, live):
+def test_known_period_is_passed_to_model_so_it_does_not_ask(demo, live):  # noqa: F811
     live["script"] = [_reply([_tool("get_profit_summary", {"period": "yesterday"}, uid="p1")]),
                       _reply([_text("Кеше {F1} кезеңінде пайда {F2}.")])]  # вопрос на казахском — ответ на казахском
     out, _ = _ask(demo["shop_id"], "кеше жеткізуге қанша шығын кетті")
@@ -36,7 +36,7 @@ def test_known_period_is_passed_to_model_so_it_does_not_ask(demo, live):
     assert out["liveUsed"] is True
 
 
-def test_invalid_live_answer_is_rebuilt_from_tools_not_failure_text(demo, live):
+def test_invalid_live_answer_is_rebuilt_from_tools_not_failure_text(demo, live):  # noqa: F811
     """Шаблон с подстановкой без вызова инструментов: пользователю уходит пересобранный из данных ответ."""
     bad = _reply([_text("Ответ: {F1} рублей.")])  # подстановка без вызова инструментов; повтор тоже неверный
     live["script"] = [bad, bad]

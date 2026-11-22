@@ -3,7 +3,6 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
-from app.config import settings
 from app.db import engine
 from app.models import Product, ProductStock, Shop
 from tests.test_ai_live import _ask, _reply, _text, _tool, live  # noqa: F401  (фикстура live)
@@ -26,7 +25,6 @@ def test_stock_put_then_get(client, demo):
 
 
 def test_stock_of_other_shop_product_is_not_found(client, demo):
-    shop = demo["shop_id"]
     pid, _, _ = _sku_and_id(demo)
     with DbSession(engine) as db:
         other = Shop(name="Другой", timezone="Asia/Almaty")
@@ -37,7 +35,7 @@ def test_stock_of_other_shop_product_is_not_found(client, demo):
     assert r.status_code in (403, 404)
 
 
-def test_assistant_reads_stock_when_entered(demo, live):
+def test_assistant_reads_stock_when_entered(demo, live):  # noqa: F811
     pid, sku, name = _sku_and_id(demo)
     with DbSession(engine) as db:
         db.add(ProductStock(shop_id=demo["shop_id"], product_id=pid, qty=7))
@@ -49,7 +47,7 @@ def test_assistant_reads_stock_when_entered(demo, live):
     assert "7" in out["renderedAnswer"] and name in out["renderedAnswer"]
 
 
-def test_assistant_says_stock_not_entered(demo, live):
+def test_assistant_says_stock_not_entered(demo, live):  # noqa: F811
     _, sku, _ = _sku_and_id(demo)
     live["script"] = [_reply([_tool("get_stock", {"sku": sku}, uid="s2")]),
                       _reply([_text("Остаток по товару не внесён: внесите его в карточке товара.")])]
