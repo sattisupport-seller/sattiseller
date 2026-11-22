@@ -16,7 +16,6 @@
         "tinted": "./assets/icon-tinted.png"
       },
       "infoPlist": {},
-      "usesNonExemptEncryption": false,
       "privacyManifests": {
         "NSPrivacyTracking": false,
         "NSPrivacyTrackingDomains": [],
@@ -63,6 +62,9 @@
           }
         ],
         "NSPrivacyAccessedAPITypes": []
+      },
+      "config": {
+        "usesNonExemptEncryption": false
       }
     },
     "android": {
