@@ -896,10 +896,14 @@ class LiveToolPlanner:
     def run(self, question: str, tools: Tools, facts: list[Fact], lang: str = "ru", hint: str | None = None) -> str:
         """Возвращает текст ответа. Использованные инструменты и токены — в self.calls, self.tin, self.tout.
         hint — служебная подсказка после неудачной проверки чисел (второй заход)."""
-        content = question if not hint else f"{question}\n(Служебная подсказка проверки: {hint})"
+        # Язык определяет сервер (detect_lang); модели он передаётся явно, а не только через вопрос.
+        note = "(Язык ответа: казахский.)" if lang == "kk" else "(Язык ответа: русский.)"
+        content = f"{question}\n{note}"
+        if hint:
+            content += f"\n(Служебная подсказка проверки: {hint})"
         messages: list[dict] = [{"role": "user", "content": content}]
         nudged = False  # один повтор, если модель после инструментов вернула пустой текст
-        for _ in range(TOOL_LIMIT + 3):
+        for _ in range(TOOL_LIMIT + 2):  # верхняя граница запросов к API (бюджет), повтор не добавляет шагов
             data = self._post(messages, with_tools=self.calls < TOOL_LIMIT)
             blocks = data.get("content", [])
             uses = [b for b in blocks if b.get("type") == "tool_use"]

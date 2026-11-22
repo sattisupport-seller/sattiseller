@@ -169,3 +169,28 @@ def test_thinking_blocks_are_not_echoed_back(demo, live):
     _ask(demo["shop_id"], QUESTION)
     assistant = [m for m in live["requests"][1]["messages"] if m["role"] == "assistant"][0]["content"]
     assert all(b["type"] != "thinking" for b in assistant)
+
+
+KK_QUESTION = "Соңғы 7 күнде қанша тапсырыс болды?"
+
+
+def test_kazakh_question_states_language_and_retries_once_when_answer_is_russian(demo, live):
+    """3.8 (решение владельца 1): язык определяет сервер, модели передаётся явно; ответ не на казахском — один повтор."""
+    live["script"] = [_reply([_text("За последние семь дней было заказы.")]),
+                      _reply([_text("Соңғы жеті күнде тапсырыстар болды.")])]
+    out, _ = _ask(demo["shop_id"], KK_QUESTION)
+    assert len(live["requests"]) == 2
+    first_user = live["requests"][0]["messages"][0]["content"]
+    assert "(Язык ответа: казахский.)" in first_user
+    second_user = live["requests"][1]["messages"][0]["content"]
+    assert "по-казахски" in second_user
+    assert out["lang"] == "kk" and out["liveUsed"] is True
+    assert "Соңғы" in out["renderedAnswer"]
+
+
+def test_russian_question_states_russian_language_without_retry(demo, live):
+    live["script"] = [_reply([_text("Ответ по данным магазина.")])]
+    out, _ = _ask(demo["shop_id"], QUESTION)
+    assert len(live["requests"]) == 1
+    assert "(Язык ответа: русский.)" in live["requests"][0]["messages"][0]["content"]
+    assert out["liveUsed"] is True

@@ -31,9 +31,10 @@ pytestmark = pytest.mark.skipif(os.environ.get("SATTI_AI_EVAL_LIVE") != "1",
 
 HERE = Path(__file__).parent
 SETS = [("A", "ai_eval_set.json"), ("B", "ai_eval_set_b.json"), ("C", "ai_eval_set_c.json"),
-        ("D", "ai_eval_set_d.json"), ("E", "ai_eval_set_e.json"), ("F", "ai_eval_set_f.json")]
+        ("D", "ai_eval_set_d.json"), ("E", "ai_eval_set_e.json"), ("F", "ai_eval_set_f.json"),
+        ("G", "ai_eval_set_g.json")]  # G — слепая выборка (решение владельца 3.8: три прогона после заморозки проверки)
 OFFICIAL = "F"  # слепая выборка до исправлений круга 4; E — для сравнения (открыта, не слепая)
-BLIND = {"F"}   # выборки, которые на момент прогона не открывались для настройки
+BLIND = {"F", "G"}   # выборки, которые на момент прогона не открывались для настройки
 _ONLY = {s for s in os.environ.get("SATTI_AI_EVAL_ONLY", "").split(",") if s}
 SETS = [(k, f) for k, f in SETS if not _ONLY or k in _ONLY]
 _IDS_FILE = os.environ.get("SATTI_AI_EVAL_IDS_FILE", "")  # только перечисленные id (контрольные точки)
