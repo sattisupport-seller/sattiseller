@@ -49,14 +49,39 @@ def _is_sqlite() -> bool:
     return engine.dialect.name == "sqlite"
 
 
-def allow(key: str, limit: int, window: int = WINDOW_SECONDS) -> bool:
+def _allow_in_session(db, key: str, limit: int, window: int) -> bool:
+    """Счётчик в переданной сессии запроса (без второго соединения). Коммит — сразу, как и в отдельной сессии."""
+    now = datetime.now(timezone.utc)
+    row = db.get(RateLimit, key, with_for_update=True)
+    if row is None:
+        row = RateLimit(key=key, window_start=now, count=0)
+        db.add(row)
+    elif (now - _aware(row.window_start)).total_seconds() >= window:
+        row.window_start = now
+        row.count = 0
+    if row.count >= limit:
+        db.commit()
+        return False
+    row.count += 1
+    db.commit()
+    return True
+
+
+def allow(key: str, limit: int, window: int = WINDOW_SECONDS, db=None) -> bool:
     """True — попадание засчитано; False — лимит исчерпан (счётчик не растёт).
 
     PostgreSQL: счётчик в таблице rate_limits — общий для всех процессов (ADR-0005).
+    db — сессия запроса: счётчик ведётся в ней, второе соединение с базой не открывается (К-2 п.4, риск 1.16).
+    При конфликте вставки сессия откатывается и счётчик ведётся отдельно (как раньше).
     SQLite: счётчик в памяти процесса (одна база на один процесс; общая запись по SQLite ломает транзакции запроса).
     """
     if _is_sqlite():
         return _memory_allow(key, limit, window)
+    if db is not None:
+        try:
+            return _allow_in_session(db, key, limit, window)
+        except IntegrityError:
+            db.rollback()  # конфликт вставки нового ключа: дальше — отдельная сессия, как раньше
     for attempt in range(2):  # второй заход — если две вставки нового ключа столкнулись
         now = datetime.now(timezone.utc)
         db = SessionLocal()

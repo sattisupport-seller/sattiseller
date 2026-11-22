@@ -182,7 +182,7 @@ def auth_email_start(body: EmailIn, request: Request, db: DbSession = Depends(ge
         raise ApiError(404, "not_found")
     email = _norm_email(body.email)
     ip = client_ip(request)
-    if not allow(f"code:{email}", settings.code_requests_per_hour) or not allow(f"codeip:{ip}", 20):
+    if not allow(f"code:{email}", settings.code_requests_per_hour, db=db) or not allow(f"codeip:{ip}", 20, db=db):
         raise ApiError(429, "rate_limited", "Слишком много попыток, подождите 10 минут.")
     code = new_code()
     db.add(AuthCode(email=email, purpose="login", code_hash=hash_code(email, code),
@@ -647,7 +647,7 @@ def export_my_data(principal: Principal = Depends(get_principal), db: DbSession 
     if principal.user_id is None:
         raise ApiError(403, "account_required", "Выгрузка доступна после входа по почте или через Apple/Google.")
     user = current_user(principal, db)
-    if not allow(f"export:{user.id}", 3, 86_400):
+    if not allow(f"export:{user.id}", 3, 86_400, db=db):
         raise ApiError(429, "rate_limited", "Выгрузок слишком много. Попробуйте завтра.")
     content = user_export_zip(db, user)
     stamp = _now().strftime("%Y%m%d")
@@ -1095,7 +1095,7 @@ async def import_upload(shop_id: str, file: UploadFile = File(...),
     shop = shop_for(db, principal, shop_id)
     # AUD-07: лимит на аккаунт (или демо-установку), а не на сессию: обновление токена создаёт новую сессию
     key = f"imp:{principal.user_id or principal.demo_install_id or principal.session_id}"
-    if not allow(key, settings.import_requests_per_hour):
+    if not allow(key, settings.import_requests_per_hour, db=db):
         raise ApiError(429, "rate_limited")
     content = await file.read(settings.import_max_bytes + 1)
     # AUD-06: разбор файла — в пуле потоков, чтобы не занимать цикл событий сервера
@@ -1506,7 +1506,7 @@ def kaspi_sync_now(shop_id: str, principal: Principal = Depends(get_principal), 
     if conn is None:
         raise ApiError(404, "not_found", "Магазин Kaspi не подключён.")
     db.commit()  # соединение — лимиту ниже (см. demo_session)
-    if not allow(f"kaspi-sync:{shop.id}", 12, 3600):
+    if not allow(f"kaspi-sync:{shop.id}", 12, 3600, db=db):
         raise ApiError(429, "rate_limited", "Слишком часто. Синхронизация доступна не чаще 12 раз в час.")
     client = None
     try:
