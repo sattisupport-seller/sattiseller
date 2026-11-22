@@ -221,3 +221,33 @@ def test_periodic_sync_picks_only_due_active_connections(client, demo, kaspi_on,
         conn.status = "token_invalid"
         db.commit()
         assert kaspi_service.sync_due(db, later + timedelta(hours=1)) == []
+
+
+def test_kaspi_orders_feed_the_profit_figures_exactly(client, demo, kaspi_on, mock):
+    """К-2 п.1: заказы Kaspi на моке → цифры обзора. Прирост выручки = сумма позиций выполненных заказов Kaspi
+    за период; отменённые не входят. Сравниваем дельту: демо-заказы магазина лежат за пределами 30 дней."""
+    def _net_sales():
+        ov = client.get(f"/v1/shops/{demo['shop_id']}/overview?period=30d", headers=demo["headers"])
+        assert ov.status_code == 200, ov.text
+        return ov.json()["kpi"]
+
+    before = _net_sales()["net_sales_minor"]
+    _connect(client, demo)
+    mock.generate(6, now=datetime.now(timezone.utc), days=5, state_cycle=["COMPLETED", "CANCELLED"], products=2)
+    r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    assert r.status_code == 200, r.text
+    from app.models import OrderItem
+
+    with DbSession(engine) as db:
+        kaspi_completed = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number.like("KC%"),
+                                                 Order.status == "completed").all()
+        kaspi_cancelled = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number.like("KC%"),
+                                                 Order.status == "cancelled").all()
+        assert kaspi_completed and kaspi_cancelled, "в моке должны быть и выполненные, и отменённые заказы Kaspi"
+        expected = 0
+        for o in kaspi_completed:
+            for it in db.query(OrderItem).filter(OrderItem.order_id == o.id):
+                expected += int(it.unit_price_minor) * int(it.qty)
+    after = _net_sales()
+    assert after["net_sales_minor"] - before == expected, (after["net_sales_minor"] - before, expected)
+    assert isinstance(after["profit_minor"], int) and 0 <= after["coverage_bp"] <= 10000
