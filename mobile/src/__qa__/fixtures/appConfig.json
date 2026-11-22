@@ -1,0 +1,13 @@
+{
+ "min_supported_version_ios": "1.0.0",
+ "min_supported_version_android": "1.0.0",
+ "maintenance_message": null,
+ "ai_service_name": "Satti AI (тестовый провайдер)",
+ "privacy_url": "https://example.invalid/privacy",
+ "terms_url": "https://example.invalid/terms",
+ "flags": {
+  "kaspi_connection": false,
+  "ai_assistant": true,
+  "subscription": false
+ }
+}

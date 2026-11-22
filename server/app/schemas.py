@@ -274,6 +274,7 @@ class MeOut(BaseModel):
     name: str | None = None
     locale: str = "ru"
     age_confirmed: bool | None = None
+    terms_consent_required: bool = False  # 1.19: нужно принять обновлённые условия
 
 
 class AgeConfirmOut(BaseModel):

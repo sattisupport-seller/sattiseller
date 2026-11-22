@@ -1,14 +1,11 @@
 """Сбор ошибок на сервере (ТЗ 2.1, 14.4): группировка, маскировка, приём из приложения, просмотр в админке."""
 
-import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
-from app import admin
 from app.config import settings
 from app.db import engine
 from app.errorlog import AppError, record_error, unhandled_error_response
-from tests.conftest import login
 from tests.test_admin import ADMIN, _admin_headers, _enable_2fa, _headers
 
 

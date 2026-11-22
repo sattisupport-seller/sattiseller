@@ -1,4 +1,5 @@
 import { useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import { Linking, ScrollView, View } from 'react-native';
 
 import { useAppConfig, useSubscription } from '@/api/hooks';
@@ -7,6 +8,7 @@ import { Card, GroupCard, ListRow } from '@/components/ui/Surfaces';
 import { Txt } from '@/components/ui/Text';
 import { ErrorState, Skeleton, useToast } from '@/components/ui/Overlays';
 import { SUPPORT_EMAIL } from '@/config';
+import { trackEvent } from '@/lib/analytics';
 import { downloadAndShare } from '@/lib/download';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
@@ -14,6 +16,7 @@ import { useTheme } from '@/theme/useTheme';
 
 // Экран «Подписка закончилась» (ТЗ 2.1, 9.2): данные сохранены до даты, оформить подписку, выгрузка, поддержка.
 export default function SubscriptionEndedScreen() {
+  useEffect(() => { trackEvent('lock_screen_shown'); }, []);  // 3.9
   const { t, locale } = useI18n();
   const { colors, spacing } = useTheme();
   const router = useRouter();

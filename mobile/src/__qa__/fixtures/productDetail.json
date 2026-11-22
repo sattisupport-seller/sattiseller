@@ -1,0 +1,174 @@
+{
+ "product": {
+  "product_id": "23919766d9944399892ca17708974cf0",
+  "sku": "D007",
+  "name": "Термокружка 450 мл, нержавейка",
+  "category": "Посуда",
+  "sold_qty": 31,
+  "returned_qty": 1,
+  "net_sales_minor": 16470000,
+  "profit_minor": 4373000,
+  "margin_bp": 2655,
+  "badges": []
+ },
+ "period": {
+  "from": "2026-10-22",
+  "to": "2026-11-20"
+ },
+ "daily_units": [
+  {
+   "day": "2026-10-22",
+   "qty": 0
+  },
+  {
+   "day": "2026-10-23",
+   "qty": 0
+  },
+  {
+   "day": "2026-10-24",
+   "qty": 0
+  },
+  {
+   "day": "2026-10-25",
+   "qty": 0
+  },
+  {
+   "day": "2026-10-26",
+   "qty": 0
+  },
+  {
+   "day": "2026-10-27",
+   "qty": 4
+  },
+  {
+   "day": "2026-10-28",
+   "qty": 0
+  },
+  {
+   "day": "2026-10-29",
+   "qty": 0
+  },
+  {
+   "day": "2026-10-30",
+   "qty": 5
+  },
+  {
+   "day": "2026-10-31",
+   "qty": 3
+  },
+  {
+   "day": "2026-11-01",
+   "qty": 3
+  },
+  {
+   "day": "2026-11-02",
+   "qty": 1
+  },
+  {
+   "day": "2026-11-03",
+   "qty": 1
+  },
+  {
+   "day": "2026-11-04",
+   "qty": 1
+  },
+  {
+   "day": "2026-11-05",
+   "qty": 0
+  },
+  {
+   "day": "2026-11-06",
+   "qty": 5
+  },
+  {
+   "day": "2026-11-07",
+   "qty": 2
+  },
+  {
+   "day": "2026-11-08",
+   "qty": 6
+  },
+  {
+   "day": "2026-11-09",
+   "qty": 0
+  },
+  {
+   "day": "2026-11-10",
+   "qty": 0
+  },
+  {
+   "day": "2026-11-11",
+   "qty": 0
+  },
+  {
+   "day": "2026-11-12",
+   "qty": 0
+  },
+  {
+   "day": "2026-11-13",
+   "qty": 0
+  },
+  {
+   "day": "2026-11-14",
+   "qty": 0
+  },
+  {
+   "day": "2026-11-15",
+   "qty": 0
+  },
+  {
+   "day": "2026-11-16",
+   "qty": 0
+  },
+  {
+   "day": "2026-11-17",
+   "qty": 0
+  },
+  {
+   "day": "2026-11-18",
+   "qty": 0
+  },
+  {
+   "day": "2026-11-19",
+   "qty": 0
+  },
+  {
+   "day": "2026-11-20",
+   "qty": 0
+  }
+ ],
+ "economics": {
+  "avg_price_minor": 549000,
+  "landed_minor": 310000,
+  "commission_bp": 1000,
+  "commission_minor": 54900,
+  "delivery_minor": 37097,
+  "tax_minor": null,
+  "profit_per_unit_minor": 147003
+ },
+ "current_cost": {
+  "purchase_minor": 280000,
+  "delivery_to_warehouse_minor": 30000,
+  "packaging_minor": 0,
+  "other_minor": 0,
+  "effective_from": null,
+  "source": "демо"
+ },
+ "cost_history": [
+  {
+   "id": "2f0f905978084b69a68869fa6c9e35f1",
+   "effective_from": null,
+   "landed_unit_minor": 310000,
+   "source": "демо"
+  }
+ ],
+ "returns": [
+  {
+   "day": "2026-11-08",
+   "qty": 1,
+   "refund_minor": 549000,
+   "known": true
+  }
+ ],
+ "data_complete": true
+}

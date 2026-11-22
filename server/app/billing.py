@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
+from .timeutil import utc_now
 
 from sqlalchemy import DateTime, String, UniqueConstraint, delete, select
 from sqlalchemy.exc import IntegrityError
@@ -45,7 +46,7 @@ NOTICE_DAYS = {"letter_0": 0, "letter_60": 60, "letter_83": 83}  # письма 
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 def _uid() -> str:

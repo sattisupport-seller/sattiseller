@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 
 from .api import api
+from .logsetup import configure_logging
 from .db import init_db
 from .errors import ApiError, api_error_handler
 
@@ -19,12 +20,29 @@ async def lifespan(_: FastAPI):
     if problems:
         raise RuntimeError("Запуск отменён, конфигурация небезопасна: " + "; ".join(problems))
     init_db()
+    # 1.16: шаблон демо создаётся при запуске, а не при первом наплыве запросов (иначе все они генерируют его сразу)
+    from .db import SessionLocal
+    from .demo_template import ensure_template
+
+    with SessionLocal() as template_db:
+        ensure_template(template_db)
+    # 1.17: прогрев отчётов — только если включён (SATTI_REPORT_WARM=1); в тестах выключен
+    if os.environ.get("SATTI_REPORT_WARM", "0") == "1":
+        import threading
+
+        from . import reportcache
+        from .reports import schedule_warm_after_write, warm_recent
+
+        reportcache.set_warm_hook(lambda shop_id: schedule_warm_after_write(shop_id))
+        threading.Thread(target=warm_recent, name="satti-warm", daemon=True).start()
     from .scheduler import start_builtin_scheduler, stop_builtin_scheduler
 
     start_builtin_scheduler()
     yield
     stop_builtin_scheduler()
 
+
+configure_logging()  # 4.2: журнал с ротацией (SATTI_LOG_FILE)
 
 app = FastAPI(
     title="Satti Seller API",

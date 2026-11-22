@@ -1,0 +1,529 @@
+{
+ "items": [
+  {
+   "product_id": "23919766d9944399892ca17708974cf0",
+   "sku": "D007",
+   "name": "Термокружка 450 мл, нержавейка",
+   "category": "Посуда",
+   "sold_qty": 31,
+   "returned_qty": 1,
+   "net_sales_minor": 16470000,
+   "profit_minor": 4373000,
+   "margin_bp": 2655,
+   "badges": []
+  },
+  {
+   "product_id": "296ca301327d46f19f1f36ad9a6fb6f1",
+   "sku": "D002",
+   "name": "Органайзер для ванной",
+   "category": "Дом",
+   "sold_qty": 6,
+   "returned_qty": 0,
+   "net_sales_minor": 3840000,
+   "profit_minor": 1134000,
+   "margin_bp": 2953,
+   "badges": []
+  },
+  {
+   "product_id": "e21835128be447d6ad5bfc8848325c82",
+   "sku": "D017",
+   "name": "Увлажнитель воздуха 2,5 л",
+   "category": "Дом",
+   "sold_qty": 4,
+   "returned_qty": 2,
+   "net_sales_minor": 3198000,
+   "profit_minor": 498200,
+   "margin_bp": 1558,
+   "badges": [
+    "many_returns"
+   ]
+  },
+  {
+   "product_id": "d4edf3079cfe49b6b0dc21103edba0f2",
+   "sku": "D004",
+   "name": "Светильник ночной с датчиком",
+   "category": "Дом",
+   "sold_qty": 3,
+   "returned_qty": 0,
+   "net_sales_minor": 1920000,
+   "profit_minor": 477000,
+   "margin_bp": 2484,
+   "badges": []
+  },
+  {
+   "product_id": "a10a7f0e26ff4faa8af92de338fe0026",
+   "sku": "D008",
+   "name": "Коврик для йоги 6 мм",
+   "category": "Спорт",
+   "sold_qty": 4,
+   "returned_qty": 0,
+   "net_sales_minor": 1680000,
+   "profit_minor": 472000,
+   "margin_bp": 2810,
+   "badges": []
+  },
+  {
+   "product_id": "e9dfabbdd3424731a98d1be743cf70b3",
+   "sku": "D015",
+   "name": "Power bank 10000 мАч",
+   "category": "Электроника",
+   "sold_qty": 3,
+   "returned_qty": 0,
+   "net_sales_minor": 1560000,
+   "profit_minor": 351000,
+   "margin_bp": 2250,
+   "badges": []
+  },
+  {
+   "product_id": "009bf20a45de4af0a907259d7d78d1ec",
+   "sku": "D016",
+   "name": "Зарядка USB-C 20 Вт",
+   "category": "Электроника",
+   "sold_qty": 3,
+   "returned_qty": 0,
+   "net_sales_minor": 1560000,
+   "profit_minor": 351000,
+   "margin_bp": 2250,
+   "badges": []
+  },
+  {
+   "product_id": "ebdb7982e5b04c71ba14c304fd9b3f8c",
+   "sku": "D009",
+   "name": "Бутылка для воды 1 л",
+   "category": "Спорт",
+   "sold_qty": 3,
+   "returned_qty": 0,
+   "net_sales_minor": 930000,
+   "profit_minor": 220500,
+   "margin_bp": 2371,
+   "badges": []
+  },
+  {
+   "product_id": "a18ca5e204f14651a3223b27cc75e2dc",
+   "sku": "D003",
+   "name": "Набор контейнеров для еды, 5 шт.",
+   "category": "Посуда",
+   "sold_qty": 3,
+   "returned_qty": 0,
+   "net_sales_minor": 990000,
+   "profit_minor": 216000,
+   "margin_bp": 2182,
+   "badges": []
+  },
+  {
+   "product_id": "0bbcb388199d463297fc2e3d53e2726f",
+   "sku": "D012",
+   "name": "Беспроводные наушники TWS",
+   "category": "Электроника",
+   "sold_qty": 1,
+   "returned_qty": 0,
+   "net_sales_minor": 740000,
+   "profit_minor": 201000,
+   "margin_bp": 2716,
+   "badges": []
+  },
+  {
+   "product_id": "1cd115e736ce46beaee8499756d1689f",
+   "sku": "D020",
+   "name": "Разделочная доска бамбук",
+   "category": "Посуда",
+   "sold_qty": 4,
+   "returned_qty": 0,
+   "net_sales_minor": 960000,
+   "profit_minor": 166000,
+   "margin_bp": 1729,
+   "badges": []
+  },
+  {
+   "product_id": "8b03f9c31c8140029fb1234819a07e97",
+   "sku": "D030",
+   "name": "Сушилка для овощей",
+   "category": "Дом",
+   "sold_qty": 1,
+   "returned_qty": 0,
+   "net_sales_minor": 640000,
+   "profit_minor": 159000,
+   "margin_bp": 2484,
+   "badges": []
+  },
+  {
+   "product_id": "4bba93ade56345919a71385325446e7d",
+   "sku": "D013",
+   "name": "Расчёска массажная",
+   "category": "Красота",
+   "sold_qty": 2,
+   "returned_qty": 0,
+   "net_sales_minor": 760000,
+   "profit_minor": 136000,
+   "margin_bp": 1789,
+   "badges": []
+  },
+  {
+   "product_id": "000df902276540109ce501039e12a8bf",
+   "sku": "D014",
+   "name": "Маска для лица набор",
+   "category": "Красота",
+   "sold_qty": 2,
+   "returned_qty": 0,
+   "net_sales_minor": 760000,
+   "profit_minor": 136000,
+   "margin_bp": 1789,
+   "badges": []
+  },
+  {
+   "product_id": "b387430a91494b71bd49632801f58c99",
+   "sku": "D005",
+   "name": "Скакалка со счётчиком",
+   "category": "Спорт",
+   "sold_qty": 3,
+   "returned_qty": 0,
+   "net_sales_minor": 930000,
+   "profit_minor": 130500,
+   "margin_bp": 1403,
+   "badges": []
+  },
+  {
+   "product_id": "0bcd24efad54441b87ec23ecea81ab72",
+   "sku": "D026",
+   "name": "Фонарь налобный",
+   "category": "Спорт",
+   "sold_qty": 3,
+   "returned_qty": 0,
+   "net_sales_minor": 930000,
+   "profit_minor": 130500,
+   "margin_bp": 1403,
+   "badges": []
+  },
+  {
+   "product_id": "71597e27025f4610a7b973945eec4b0d",
+   "sku": "D019",
+   "name": "Кружка с термоиндикатором",
+   "category": "Посуда",
+   "sold_qty": 4,
+   "returned_qty": 0,
+   "net_sales_minor": 960000,
+   "profit_minor": 121000,
+   "margin_bp": 1260,
+   "badges": []
+  },
+  {
+   "product_id": "e61121bfcdc84f49a1d0a87b6760c37a",
+   "sku": "D021",
+   "name": "Контейнер для круп 1,5 л",
+   "category": "Посуда",
+   "sold_qty": 4,
+   "returned_qty": 0,
+   "net_sales_minor": 960000,
+   "profit_minor": 121000,
+   "margin_bp": 1260,
+   "badges": []
+  },
+  {
+   "product_id": "aaaaaac2ef2643a7b48de71bd22cfb6c",
+   "sku": "D018",
+   "name": "Чехол для телефона силиконовый",
+   "category": "Электроника",
+   "sold_qty": 1,
+   "returned_qty": 0,
+   "net_sales_minor": 520000,
+   "profit_minor": 117000,
+   "margin_bp": 2250,
+   "badges": []
+  },
+  {
+   "product_id": "debfbb3e7e5c452e8261010ecfcda30b",
+   "sku": "D025",
+   "name": "Коврик для мыши большой",
+   "category": "Электроника",
+   "sold_qty": 1,
+   "returned_qty": 0,
+   "net_sales_minor": 520000,
+   "profit_minor": 117000,
+   "margin_bp": 2250,
+   "badges": []
+  },
+  {
+   "product_id": "a86f334c9ee943aca46d8620495a730f",
+   "sku": "D029",
+   "name": "Блокнот с ручкой A5",
+   "category": "Детям",
+   "sold_qty": 5,
+   "returned_qty": 0,
+   "net_sales_minor": 950000,
+   "profit_minor": 52500,
+   "margin_bp": 553,
+   "badges": []
+  },
+  {
+   "product_id": "544f9da097d7483baf5f3aa76a756faa",
+   "sku": "D010",
+   "name": "Пазлы 500 деталей",
+   "category": "Детям",
+   "sold_qty": 3,
+   "returned_qty": 0,
+   "net_sales_minor": 570000,
+   "profit_minor": 4500,
+   "margin_bp": 79,
+   "badges": []
+  },
+  {
+   "product_id": "262ab8aa515f4b76a78c4983d016b74e",
+   "sku": "D011",
+   "name": "Конструктор 120 деталей",
+   "category": "Детям",
+   "sold_qty": 2,
+   "returned_qty": 0,
+   "net_sales_minor": 380000,
+   "profit_minor": 3000,
+   "margin_bp": 79,
+   "badges": []
+  },
+  {
+   "product_id": "8b19b036ee634b3b98978242a6146f04",
+   "sku": "D028",
+   "name": "Игрушка антистресс набор",
+   "category": "Детям",
+   "sold_qty": 2,
+   "returned_qty": 0,
+   "net_sales_minor": 380000,
+   "profit_minor": 3000,
+   "margin_bp": 79,
+   "badges": []
+  },
+  {
+   "product_id": "a068f46ec004451ab26847320ef06201",
+   "sku": "D023",
+   "name": "Детский рюкзак с подсветкой",
+   "category": "Детям",
+   "sold_qty": 3,
+   "returned_qty": 0,
+   "net_sales_minor": 540000,
+   "profit_minor": -184000,
+   "margin_bp": -3407,
+   "badges": [
+    "in_minus"
+   ]
+  },
+  {
+   "product_id": "88c0d53f56aa4d4983df74bbc9489563",
+   "sku": "D001",
+   "name": "Мини-вентилятор настольный",
+   "category": "Дом",
+   "sold_qty": 0,
+   "returned_qty": 0,
+   "net_sales_minor": 0,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_sales"
+   ]
+  },
+  {
+   "product_id": "fc77f13482034d71ad3bce4914562d6d",
+   "sku": "D006",
+   "name": "Гантели неопреновые 2 кг",
+   "category": "Спорт",
+   "sold_qty": 0,
+   "returned_qty": 0,
+   "net_sales_minor": 0,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_sales"
+   ]
+  },
+  {
+   "product_id": "d320cc96529c4d20b7cdd1c8fa7d0ffa",
+   "sku": "D022",
+   "name": "Плед флисовый 150х200",
+   "category": "Дом",
+   "sold_qty": 0,
+   "returned_qty": 0,
+   "net_sales_minor": 0,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_sales"
+   ]
+  },
+  {
+   "product_id": "7ce4a1ac262e4dbcaec1e50778bc8242",
+   "sku": "D024",
+   "name": "Аромадиффузор 200 мл",
+   "category": "Дом",
+   "sold_qty": 0,
+   "returned_qty": 0,
+   "net_sales_minor": 0,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_sales"
+   ]
+  },
+  {
+   "product_id": "560af085debf49e58a847389b2c85c12",
+   "sku": "D027",
+   "name": "Очки для плавания",
+   "category": "Спорт",
+   "sold_qty": 0,
+   "returned_qty": 0,
+   "net_sales_minor": 0,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_sales"
+   ]
+  },
+  {
+   "product_id": "f8cc37209123477e9f9f817c6293abf4",
+   "sku": "D031",
+   "name": "Фен-щётка для волос 1200 Вт",
+   "category": "Красота",
+   "sold_qty": 3,
+   "returned_qty": 1,
+   "net_sales_minor": 1980000,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_cost"
+   ]
+  },
+  {
+   "product_id": "01db88c8060542b8a8542d9045b73024",
+   "sku": "D032",
+   "name": "Набор ножей 5 предметов",
+   "category": "Посуда",
+   "sold_qty": 7,
+   "returned_qty": 0,
+   "net_sales_minor": 1680000,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_cost"
+   ]
+  },
+  {
+   "product_id": "321e080d825e4861b5d36c271363089d",
+   "sku": "D033",
+   "name": "Гель для душа 1 л",
+   "category": "Красота",
+   "sold_qty": 0,
+   "returned_qty": 0,
+   "net_sales_minor": 0,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_cost",
+    "no_sales"
+   ]
+  },
+  {
+   "product_id": "32715546cd3a4c7caf366540347d63de",
+   "sku": "D034",
+   "name": "Пилка для ногтей электрическая",
+   "category": "Красота",
+   "sold_qty": 0,
+   "returned_qty": 0,
+   "net_sales_minor": 0,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_cost",
+    "no_sales"
+   ]
+  },
+  {
+   "product_id": "3a341fbaa7ce45c49f7eb91f5685b9df",
+   "sku": "D035",
+   "name": "Тонометр автоматический",
+   "category": "Дом",
+   "sold_qty": 5,
+   "returned_qty": 0,
+   "net_sales_minor": 3200000,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_cost"
+   ]
+  },
+  {
+   "product_id": "dec9661753b4415faa0e7ce8ebff8201",
+   "sku": "D036",
+   "name": "Весы кухонные электронные",
+   "category": "Дом",
+   "sold_qty": 0,
+   "returned_qty": 0,
+   "net_sales_minor": 0,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_cost",
+    "no_sales"
+   ]
+  },
+  {
+   "product_id": "9180b8893def4a71824310651374b094",
+   "sku": "D037",
+   "name": "Термос 500 мл",
+   "category": "Посуда",
+   "sold_qty": 0,
+   "returned_qty": 0,
+   "net_sales_minor": 0,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_cost",
+    "no_sales"
+   ]
+  },
+  {
+   "product_id": "675090286312405296f5fa0c8153a3cc",
+   "sku": "D038",
+   "name": "Наушники проводные с микрофоном",
+   "category": "Электроника",
+   "sold_qty": 0,
+   "returned_qty": 0,
+   "net_sales_minor": 0,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_cost",
+    "no_sales"
+   ]
+  },
+  {
+   "product_id": "7dc997d1e6b7405a84ed1a40774e59b1",
+   "sku": "D039",
+   "name": "Держатель для телефона на руль",
+   "category": "Электроника",
+   "sold_qty": 7,
+   "returned_qty": 0,
+   "net_sales_minor": 3640000,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_cost"
+   ]
+  },
+  {
+   "product_id": "74526fb9d4ae435cb21ff63b31134538",
+   "sku": "D040",
+   "name": "Сумка для йоги",
+   "category": "Спорт",
+   "sold_qty": 3,
+   "returned_qty": 0,
+   "net_sales_minor": 930000,
+   "profit_minor": null,
+   "margin_bp": null,
+   "badges": [
+    "no_cost"
+   ]
+  }
+ ],
+ "total": 40,
+ "coverage": {
+  "complete": 25,
+  "total": 40
+ },
+ "next_cursor": null
+}

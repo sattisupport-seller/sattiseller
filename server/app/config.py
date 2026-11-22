@@ -6,6 +6,24 @@ from pathlib import Path
 from pydantic import BaseModel
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _load_env_file(path: Path) -> None:
+    """Читает server/.env (если файл есть) до чтения настроек. Уже заданные в окружении значения не перезаписываются.
+    Пустые значения пропускаются: пустой секрет в шаблоне не должен затирать значение по умолчанию."""
+    if not path.exists():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key, value = key.strip(), value.split(" #", 1)[0].strip()  # комментарий в конце строки отбрасывается
+        if key and value and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_env_file(BASE_DIR / ".env")
 def production_config_problems() -> list[str]:
     """Что нельзя оставлять по умолчанию при SATTI_ENV=production (QA, риск R5). Пустой список — всё в порядке."""
     if os.environ.get("SATTI_ENV", "").lower() != "production":
@@ -15,9 +33,17 @@ def production_config_problems() -> list[str]:
         problems.append("SATTI_BILLING_PEPPER не задан: используется значение разработки")
     if settings.admin_totp_key == "dev-only-change-me":
         problems.append("SATTI_TOTP_KEY не задан: секрет 2FA администратора шифруется ключом разработки")
+    if not settings.owner_name:
+        problems.append("SATTI_OWNER_NAME не задан: в юридических текстах будет общий оператор без имени")
+    if not settings.smtp_host:
+        problems.append("SATTI_SMTP_HOST не задан: письма с кодами пишутся в папку outbox и не доходят до людей")
+    if settings.kaspi_connection_enabled and not settings.kaspi_key:
+        problems.append("KASPI_ENABLED=1, но SATTI_KASPI_KEY не задан: токены Kaspi нечем шифровать")
     if any("localhost" in o or "127.0.0.1" in o for o in os.environ.get(
             "SATTI_CORS_ORIGINS", "http://localhost:8081,http://127.0.0.1:8081").split(",")):
         problems.append("SATTI_CORS_ORIGINS содержит localhost")
+    if not settings.public_base_url.startswith("https://"):
+        problems.append("SATTI_PUBLIC_BASE_URL должен быть https:// (адреса политики и условий для магазинов)")
     if settings.email_login_enabled:
         problems.append("SATTI_EMAIL_LOGIN=1 в продакшене: вход по коду должен быть выключен")
     # AUD-10: критичные флаги не должны молча оставаться в состоянии разработки
@@ -47,15 +73,54 @@ class Settings:
     code_max_attempts: int = 5
     code_requests_per_hour: int = 5
     import_requests_per_hour: int = 10
-    ai_daily_limit: int = 30  # ТЗ 2.1, раздел 11.2: вопросы и черновики вместе
+    ai_daily_limit: int = 30  # ТЗ 2.1, раздел 11.2: вопросы и черновики вместе (ADR-0005)
+    # Бюджет ИИ на весь сервис (ТЗ 2.1, 11.2): месячный, дневной — 1/20 месячного; стоимость одного вызова
+    ai_budget_monthly_usd: float = float(os.environ.get("SATTI_AI_BUDGET_MONTHLY_USD", "20"))
+    # дневной лимит ИИ (ТЗ 2.1, 11.2): по умолчанию — 1/20 месячного; в тестах можно задать явно
+    ai_budget_daily_usd: float | None = (float(os.environ["SATTI_AI_BUDGET_DAILY_USD"])
+                                         if os.environ.get("SATTI_AI_BUDGET_DAILY_USD") else None)
+    # 3.5: живая модель. Включается только при SATTI_AI_LIVE=1 и заданном ANTHROPIC_API_KEY; иначе — мок.
+    ai_live: bool = os.environ.get("SATTI_AI_LIVE", "0") == "1"
+    anthropic_api_key: str = os.environ.get("ANTHROPIC_API_KEY", "")
+    ai_model: str = os.environ.get("SATTI_AI_MODEL", "claude-haiku-5-5")
+    # цены за миллион токенов для учёта бюджета (проверить по актуальному прайсу провайдера)
+    # Claude Haiku 5.5: 0,10 $ за миллион входных токенов (документация); другие модели — через переменную окружения
+    ai_price_in_per_mtok: float = float(os.environ.get("SATTI_AI_PRICE_IN_PER_MTOK", "0.10"))
+    # Claude Haiku 5.5: 0,50 $ за миллион выходных токенов
+    ai_price_out_per_mtok: float = float(os.environ.get("SATTI_AI_PRICE_OUT_PER_MTOK", "0.50"))
+    ai_cost_per_call_micro_usd: int = int(float(os.environ.get("SATTI_AI_COST_PER_CALL_USD", "0")) * 1_000_000)
     ai_max_question_length: int = 500
     import_max_bytes: int = 5 * 1024 * 1024
     import_max_rows: int = 5000
     import_max_unzipped_bytes: int = 50 * 1024 * 1024
-    demo_idle_days: int = 30
+    demo_idle_days: int = 30  # устарело: демо живёт 24 часа (ADR-0005), см. demo_lifetime_hours
+    demo_lifetime_hours: int = 24  # ADR-0005: демо-песочница живёт 24 часа от создания
+    demo_per_device_per_day: int = 3  # ADR-0005: не больше 3 новых демо в сутки с одного устройства (и сбросов)
     ai_consent_version: str = "2026-11-19"
     ai_service_name: str = "Satti AI (тестовый провайдер)"
-    kaspi_connection_enabled: bool = False
+    # 2.6: подключение Kaspi выключено по умолчанию; письменного разрешения Kaspi ещё нет (spec-2.1, раздел 22)
+    # 3.6: почта. Без SATTI_SMTP_HOST письма пишутся в папку outbox (разработка и тесты)
+    smtp_host: str = os.environ.get("SATTI_SMTP_HOST", "")
+    smtp_port: int = int(os.environ.get("SATTI_SMTP_PORT", "587"))
+    smtp_user: str = os.environ.get("SATTI_SMTP_USER", "")
+    smtp_password: str = os.environ.get("SATTI_SMTP_PASSWORD", "")
+    smtp_from: str = os.environ.get("SATTI_SMTP_FROM", "Satti Seller <no-reply@example.invalid>")
+    smtp_starttls: bool = os.environ.get("SATTI_SMTP_STARTTLS", "1") == "1"
+    smtp_timeout: float = float(os.environ.get("SATTI_SMTP_TIMEOUT", "20"))
+    # 1.4: адрес владельца для оповещений о бюджете ИИ (80% и 100%)
+    owner_alert_email: str = os.environ.get("SATTI_OWNER_ALERT_EMAIL", "").strip().lower()
+    analytics_enabled: bool = os.environ.get("ANALYTICS_ENABLED", "0") == "1"  # 3.9: за флагом, по умолчанию выключено
+    # адрес поддержки (страница /support, тексты магазинов и бета-материалов; пункт 5.8)
+    support_email: str = os.environ.get("SATTI_SUPPORT_EMAIL", "").strip()
+    # имя оператора для юридических текстов (подставляется вместо {OWNER_NAME}); до регистрации ИП — из переменной
+    owner_name: str = os.environ.get("SATTI_OWNER_NAME", "").strip()
+    kaspi_connection_enabled: bool = os.environ.get("KASPI_ENABLED", "0") == "1"
+    # 2.4: ключ шифрования токенов Kaspi (Fernet, 32 байта в base64). В продакшене обязателен.
+    kaspi_key: str = os.environ.get("SATTI_KASPI_KEY", "")
+    # QA-15: публичный адрес сайта (политика и условия по путям /privacy и /terms)
+    public_base_url: str = os.environ.get("SATTI_PUBLIC_BASE_URL", "").rstrip("/")
+    # 1.19: версия условий и политики; при смене — повторное согласие всех пользователей
+    legal_version: str = os.environ.get("SATTI_LEGAL_VERSION", "2026-11-20-1")
     # Подписка (ТЗ 2.1, раздел 8–9). В разработке и до подключения магазинов приложения выключено.
     billing_enforced: bool = os.environ.get("SATTI_BILLING_ENFORCED", "0") == "1"
     # AUD-10: бесплатная бета осознанно, а не по умолчанию (блокировка выключена, пока нет оплаты)
@@ -82,19 +147,28 @@ settings = Settings()
 
 class FeatureFlags(BaseModel):
     kaspi_connection: bool = False
-    ai_assistant: bool = True
+    ai_assistant: bool = True  # включён по умолчанию (решение владельца 22.11); выключатель в админке главнее
     subscription: bool = False
+    analytics: bool = False  # 3.9: отправка событий из приложения (ANALYTICS_ENABLED и флаг в админке)
 
 
 class AppConfig(BaseModel):
+    legal_version: str = ""  # 1.19: версия условий и политики
     min_supported_version_ios: str = "1.0.0"
     min_supported_version_android: str = "1.0.0"
     maintenance_message: str | None = None
     ai_service_name: str = settings.ai_service_name
-    privacy_url: str = "https://example.invalid/privacy"
-    terms_url: str = "https://example.invalid/terms"
+    # QA-15: адреса политики и условий — из одной переменной SATTI_PUBLIC_BASE_URL (без неё — заглушка для разработки)
+    privacy_url: str = f"{settings.public_base_url}/privacy" if settings.public_base_url else "https://example.invalid/privacy"
+    terms_url: str = f"{settings.public_base_url}/terms" if settings.public_base_url else "https://example.invalid/terms"
     flags: FeatureFlags = FeatureFlags(kaspi_connection=settings.kaspi_connection_enabled)
 
 
 def get_app_config() -> AppConfig:
-    return AppConfig()
+    cfg = AppConfig()
+    cfg.legal_version = settings.legal_version
+    # адреса берутся на момент запроса: переменная может измениться без перезапуска модуля (QA-15)
+    if settings.public_base_url:
+        cfg.privacy_url = f"{settings.public_base_url}/privacy"
+        cfg.terms_url = f"{settings.public_base_url}/terms"
+    return cfg

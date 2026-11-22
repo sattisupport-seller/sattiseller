@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session as DbSession
 
 from .admin import AdminTotp
 from .billing import RetentionEvent, Subscription
-from .models import AIConversation, AITurn, AIUsageEvent, AuthCode, NotificationSettings, Session, Shop, User
+from . import audit
+from .models import AIConversation, AIFeedback, AITurn, AIUsageEvent, AuthCode, NotificationSettings, Session, Shop, User
 from .social_auth import SocialIdentity
 
 
@@ -22,6 +23,7 @@ def delete_user_account(db: DbSession, user: User) -> None:
         # подписка и отметки хранения относятся к магазину; сами магазины и их данные удаляются каскадно
         db.execute(delete(Subscription).where(Subscription.shop_id.in_(shop_ids)))
         db.execute(delete(RetentionEvent).where(RetentionEvent.shop_id.in_(shop_ids)))
+        db.execute(delete(AIFeedback).where(AIFeedback.shop_id.in_(shop_ids)))  # оценки и жалобы — сразу при удалении аккаунта (решение владельца 22.11)
         db.execute(delete(Shop).where(Shop.id.in_(shop_ids)))
     db.execute(delete(AIConversation).where(AIConversation.user_id == user.id))
     db.execute(delete(AITurn).where(AITurn.user_id == user.id))
@@ -34,3 +36,5 @@ def delete_user_account(db: DbSession, user: User) -> None:
     db.execute(delete(Session).where(Session.user_id == user.id))
     db.execute(delete(User).where(User.id == user.id))
     db.commit()
+    # без идентификатора пользователя: после удаления он бы указывал в никуда
+    audit.record(db, "account_delete", "user")

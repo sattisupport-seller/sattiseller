@@ -7,6 +7,7 @@
 """
 
 from __future__ import annotations
+from datetime import datetime as _dt, timedelta as _td, timezone as _tz
 
 import base64
 import hashlib
@@ -16,6 +17,7 @@ import struct
 import time
 
 from datetime import datetime, timedelta, timezone
+from .timeutil import utc_now
 
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, Header
@@ -30,11 +32,11 @@ from .errors import ApiError
 from .models import AIConversation, AITurn, Order, Shop, User
 
 SUPPORT_ACCESS_HOURS = 24
-FLAG_DEFAULTS = {"kaspi_connection": False, "ai_assistant": True, "subscription": False}
+FLAG_DEFAULTS = {"kaspi_connection": False, "ai_assistant": True, "subscription": False, "analytics": False}
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -230,6 +232,11 @@ def open_session(body: CodeIn, principal: Principal = Depends(get_principal),
     return {"admin_session": _session_token(user.id, expires), "expires_in": SESSION_TTL_SECONDS}
 
 
+def _ai_budget(db: DbSession) -> dict:
+    from .ai import budget_state  # локально: ai импортирует модели, admin — лёгкий модуль
+    return budget_state(db, _now())
+
+
 @router.get("/stats")
 def stats(_: User = Depends(require_admin), db: DbSession = Depends(get_session)) -> dict:
     """Счётчики без персональных данных (раздел 14.1)."""
@@ -241,7 +248,19 @@ def stats(_: User = Depends(require_admin), db: DbSession = Depends(get_session)
         "ai_conversations": db.scalar(select(func.count()).select_from(AIConversation)) or 0,
         "ai_questions": db.scalar(select(func.count()).select_from(AITurn)) or 0,
         "blocked_users": db.scalar(select(func.count()).select_from(User).where(User.blocked_at.is_not(None))) or 0,
+        "ai_budget": _ai_budget(db),  # расходы ИИ и уровень бюджета: ok | warn (80%) | exhausted (100%)
     }
+
+
+@router.get("/analytics")
+def analytics_summary(days: int = 30, _: User = Depends(require_admin), db: DbSession = Depends(get_session)) -> dict:
+    """3.9: счётчики событий за последние дни (без пользователей и адресов)."""
+
+    from .analytics import summary
+
+    days = max(1, min(days, 365))
+    since = (_dt.now(_tz.utc) - _td(days=days)).strftime("%Y-%m-%d")
+    return {"sinceDay": since, "rows": summary(db, since)}
 
 
 @router.get("/flags")
@@ -281,6 +300,24 @@ def users_list(_: User = Depends(require_admin), db: DbSession = Depends(get_ses
                                      if u.support_access_until and _aware(u.support_access_until) > _now() else None),
         })
     return {"items": items}
+
+
+@router.get("/ai-feedback")
+def ai_feedback_list(_: User = Depends(require_admin), db: DbSession = Depends(get_session)) -> dict:
+    """Жалобы («Пожаловаться») и 👎 на ответы помощника — для проверки качества на бете. Вопрос уже с маскировкой."""
+    from .models import AIFeedback
+    rows = db.scalars(select(AIFeedback).where(AIFeedback.kind.in_(("flag", "down")))
+                      .order_by(AIFeedback.created_at.desc()).limit(200)).all()
+    return {"items": [{
+        "id": r.id,
+        "created_at": _aware(r.created_at).isoformat(),
+        "kind": r.kind,
+        "reason": r.reason,
+        "question": r.question_masked,
+        "refused": r.refused,
+        "refusal_category": r.refusal_category,
+        "shop_id": r.shop_id,
+    } for r in rows]}
 
 
 @router.post("/users/{user_id}/block")

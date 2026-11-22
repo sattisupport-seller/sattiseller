@@ -6,7 +6,8 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime
+from .timeutil import utc_now
 
 from sqlalchemy import (
     BigInteger,
@@ -29,7 +30,7 @@ def _uid() -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 class User(Base):
@@ -39,6 +40,8 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     locale: Mapped[str] = mapped_column(String(8), default="ru")
     age_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # 18+ (ADR-0004)
+    terms_version: Mapped[str | None] = mapped_column(String(32), nullable=True)  # версия условий и политики, которую согласился пользователь (1.19)
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # блокировка администратором
     support_access_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # доступ поддержки, 24 ч
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -76,6 +79,7 @@ class DemoInstallation(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # хеш id установки
     shop_id: Mapped[str] = mapped_column(String(32))
     last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=_now)  # ADR-0005: демо живёт 24 часа от создания
     ai_consent_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     ai_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ai_consent_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -205,6 +209,31 @@ class ExpenseEntry(Base):
     source: Mapped[str] = mapped_column(String(16), default="manual")
 
 
+class ProductStock(Base):
+    """Остаток товара, внесённый продавцом вручную (склад, ТЗ/PROPOSALS пункт 18). Не меняет данные Kaspi."""
+    __tablename__ = "product_stocks"
+    __table_args__ = (UniqueConstraint("product_id", name="uq_product_stock_product"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id", ondelete="CASCADE"), index=True)
+    product_id: Mapped[str] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    qty: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    delisted: Mapped[bool] = mapped_column(Boolean, default=False)  # снят с продажи (XML) после подтверждения
+    last_alert_level: Mapped[str | None] = mapped_column(String(8), nullable=True)  # последний отправленный порог
+
+
+class StockMovement(Base):
+    """Журнал движений склада (К-1 от 22.11): инвентаризация (остаток на момент) и приход. Дата — дата события, не ввода."""
+    __tablename__ = "stock_movements"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id", ondelete="CASCADE"), index=True)
+    product_id: Mapped[str] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # inventory | receipt
+    qty: Mapped[int] = mapped_column(Integer)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class ImportBatch(Base):
     __tablename__ = "import_batches"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
@@ -251,6 +280,10 @@ class AIFeedback(Base):
     kind: Mapped[str] = mapped_column(String(16))  # up | down | flag
     reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Контекст для измерения качества на бете: вопрос с маскировкой (телефоны, почта, адреса), признак отказа
+    question_masked: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refused: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    refusal_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -262,6 +295,8 @@ class AIUsageEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
     model: Mapped[str] = mapped_column(String(64), default="mock")
     tool_calls: Mapped[int] = mapped_column(Integer, default=0)
+    kind: Mapped[str] = mapped_column(String(16), default="question")  # question | draft (QA-04)
+    cost_micro_usd: Mapped[int] = mapped_column(Integer, default=0)  # стоимость вызова, миллионные доли доллара (QA-03)
 
 
 class ProductDraft(Base):
@@ -282,9 +317,57 @@ class NotificationSettings(Base):
 
 
 class AuditEvent(Base):
+    """Журнал чувствительных действий. Без персональных данных: только действие и идентификаторы."""
     __tablename__ = "audit_events"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
     action: Mapped[str] = mapped_column(String(64))
     entity: Mapped[str] = mapped_column(String(64))
     result: Mapped[str] = mapped_column(String(16), default="ok")
+    actor_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    shop_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class KaspiConnection(Base):
+    """Подключение магазина Kaspi (этап 2). Токен хранится только в зашифрованном виде (Fernet)."""
+    __tablename__ = "kaspi_connections"
+    shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id", ondelete="CASCADE"), primary_key=True)
+    seller_id: Mapped[str] = mapped_column(String(64))
+    token_enc: Mapped[str] = mapped_column(Text)
+    price_key: Mapped[str] = mapped_column(String(64))  # секрет в адресе прайс-листа; меняется при каждом подключении
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active | token_invalid
+    cursor_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # время создания самого свежего обработанного заказа
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AIBudgetAlert(Base):
+    """Оповещение владельцу о бюджете ИИ: один раз на уровень (warn 80%, exhausted 100%) в месяц (1.4)."""
+    __tablename__ = "ai_budget_alerts"
+    month: Mapped[str] = mapped_column(String(7), primary_key=True)  # YYYY-MM
+    level: Mapped[str] = mapped_column(String(16), primary_key=True)  # warn | exhausted
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AnalyticsDaily(Base):
+    """Счётчики событий использования по дням (3.9). Без пользователей, устройств и адресов: только имя события и дата."""
+    __tablename__ = "analytics_daily"
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)  # YYYY-MM-DD, UTC
+    event: Mapped[str] = mapped_column(String(64), primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class OwnerAlertLog(Base):
+    """Отметка отправленного оповещения владельцу (3.10): одно письмо на ключ (день, час или событие)."""
+    __tablename__ = "owner_alert_log"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AppErrorEvent(Base):
+    """Каждое появление ошибки сервера (для правила всплеска, 3.10). Хранится 2 суток; без текста и адреса."""
+    __tablename__ = "app_error_events"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    fingerprint: Mapped[str] = mapped_column(String(32), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)

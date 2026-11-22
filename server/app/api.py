@@ -1,9 +1,12 @@
 """HTTP-маршруты Satti API /v1 (docs/spec.md, раздел 5.2)."""
 
 from __future__ import annotations
+from decimal import Decimal, InvalidOperation
+import json
 
 import io
 from datetime import date, datetime, timedelta, timezone
+from .timeutil import utc_now
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, Response, UploadFile
@@ -11,10 +14,11 @@ from fastapi.responses import PlainTextResponse
 from openpyxl import Workbook
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session as DbSession
 
 from . import ai as ai_service
+from . import audit
 from .accounts import delete_user_account
 from .auth import (
     Principal,
@@ -28,8 +32,12 @@ from .auth import (
 )
 from .config import AppConfig, get_app_config, settings
 from .db import get_session
-from .demo import generate_demo
-from .errors import ApiError
+from .demo_template import copy_template, create_demo_from_template, ensure_template
+from .flags import is_enabled, require_ai
+from . import analytics as analytics_service
+from . import kaspi as kaspi_service
+from .kaspi_client import KaspiAuthError, KaspiClient, KaspiUnavailable
+from .errors import ApiError, pick_lang
 from .imports import (
     FIELDS,
     auto_mapping,
@@ -40,11 +48,13 @@ from .imports import (
     parse_file,
     validate_rows,
 )
-from .mailer import send_code_email
+from .mailer import MailError, send_code_email
+from .stock import ENDING_SOON_DAYS, stock_push_mock, stock_states
 from .models import (
     AIConversation,
     AITurn,
     AuthCode,
+    ProductStock,
     CommissionPreset,
     DemoInstallation,
     ExpenseEntry,
@@ -54,6 +64,7 @@ from .models import (
     Product,
     ProductCostVersion,
     Session,
+    KaspiConnection,
     Shop,
     User,
 )
@@ -83,8 +94,7 @@ from .schemas import (
     TaxOut,
 )
 from .reports import (
-    build_facts,
-    load_shop,
+    base_for,
     order_detail,
     orders_list,
     overview,
@@ -125,7 +135,7 @@ def _cursor(cursor: str | None) -> int:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 def _minute() -> str:
@@ -136,8 +146,14 @@ def _minute() -> str:
 # ---------- служебное ----------
 
 @api.get("/app/config", response_model=AppConfig, tags=["служебное"])
-def app_config() -> AppConfig:
-    return get_app_config()
+def app_config(db: DbSession = Depends(get_session)) -> AppConfig:
+    cfg = get_app_config()
+    # флаги берутся из админки (выключатель ИИ, подписка, Kaspi), а не из констант
+    cfg.flags.ai_assistant = is_enabled(db, "ai_assistant")
+    cfg.flags.kaspi_connection = kaspi_enabled(db)
+    cfg.flags.analytics = settings.analytics_enabled and is_enabled(db, "analytics")  # 3.9
+    cfg.flags.subscription = is_enabled(db, "subscription")
+    return cfg
 
 
 # ---------- вход ----------
@@ -149,6 +165,7 @@ class EmailIn(BaseModel):
 class VerifyIn(BaseModel):
     email: str = Field(min_length=5, max_length=255)
     code: str = Field(min_length=6, max_length=6)
+    accept_terms: bool = False  # 1.19: галочка на экране входа
 
 
 class RefreshIn(BaseModel):
@@ -168,13 +185,16 @@ def auth_email_start(body: EmailIn, request: Request, db: DbSession = Depends(ge
         raise ApiError(404, "not_found")
     email = _norm_email(body.email)
     ip = client_ip(request)
-    if not allow(f"code:{email}", settings.code_requests_per_hour) or not allow(f"codeip:{ip}", 20):
+    if not allow(f"code:{email}", settings.code_requests_per_hour, db=db) or not allow(f"codeip:{ip}", 20, db=db):
         raise ApiError(429, "rate_limited", "Слишком много попыток, подождите 10 минут.")
     code = new_code()
     db.add(AuthCode(email=email, purpose="login", code_hash=hash_code(email, code),
                     expires_at=utcnow() + timedelta(minutes=settings.code_ttl_minutes)))
     db.commit()
-    send_code_email(email, code, "login")
+    try:
+        send_code_email(email, code, "login", pick_lang(request.headers.get("accept-language")))
+    except MailError as exc:
+        raise ApiError(503, "mail_unavailable", "Не удалось отправить код. Попробуйте позже.") from exc
     return {"status": "sent", "expires_in": settings.code_ttl_minutes * 60}
 
 
@@ -207,7 +227,10 @@ def auth_email_verify(body: VerifyIn, db: DbSession = Depends(get_session)) -> d
         created = True
     tokens = issue_tokens(db, user_id=user.id)
     db.commit()
-    return {**tokens, "user": {"id": user.id, "email": user.email}, "needs_shop_setup": created or
+    if body.accept_terms:
+        _record_terms(user)
+    db.commit()
+    return {**tokens, "user": {"id": user.id, "email": user.email}, "terms_consent_required": user.terms_version != settings.legal_version, "needs_shop_setup": created or
             db.scalar(select(Shop.id).where(Shop.owner_user_id == user.id).limit(1)) is None}
 
 
@@ -241,24 +264,34 @@ def demo_session(request: Request, x_device_id: str = Header(..., alias="X-Devic
                  db: DbSession = Depends(get_session)) -> dict:
     if not (8 <= len(x_device_id) <= 128):
         raise ApiError(422, "validation")
+    ensure_template(db)  # 1.16: шаблон создаётся до других записей запроса (он коммитит транзакцию)
     _purge_idle_demos(db)
     install_id = hash_device_id(x_device_id)
     inst = db.get(DemoInstallation, install_id)
+    # Лимиты (allow) открывают своё соединение. Если запрос держит своё, при наплыве пул исчерпывается
+    # и запросы ждут друг друга до таймаута (нагрузка 1.16: 41 из 50 отказов). Поэтому перед каждым лимитом — commit.
+    db.commit()
     if inst is None:
         # AUD-05: новая демо-установка создаёт магазин с данными — ограничиваем такие создания
         if not allow(f"demo:{client_ip(request)}", settings.demo_new_per_ip_per_hour):
             raise ApiError(429, "rate_limited", "Слишком много новых демо-сессий с этого адреса. Попробуйте позже.")
         total = db.scalar(select(func.count()).select_from(DemoInstallation)) or 0
+        db.commit()
         if total >= settings.demo_max_installations:
             raise ApiError(503, "demo_full", "Демо-режим временно недоступен. Попробуйте позже.")
-        shop = generate_demo(db, today_in(settings.default_timezone))
-        inst = DemoInstallation(id=install_id, shop_id=shop.id)
+        _check_device_demo_limit(install_id)
+        shop = create_demo_from_template(db, today_in(settings.default_timezone))
+        inst = DemoInstallation(id=install_id, shop_id=shop.id, created_at=utcnow())
         db.add(inst)
     else:
         inst.last_active_at = utcnow()
-        if db.get(Shop, inst.shop_id) is None:
-            shop = generate_demo(db, today_in(settings.default_timezone))
+        shop_missing = db.get(Shop, inst.shop_id) is None
+        db.commit()
+        if shop_missing:
+            _check_device_demo_limit(install_id)
+            shop = create_demo_from_template(db, today_in(settings.default_timezone))
             inst.shop_id = shop.id
+            inst.created_at = utcnow()
     db.flush()
     tokens = issue_tokens(db, demo_shop_id=inst.shop_id)
     db.commit()
@@ -269,9 +302,13 @@ def demo_session(request: Request, x_device_id: str = Header(..., alias="X-Devic
 def demo_reset(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     if not principal.demo_shop_id:
         raise ApiError(403, "forbidden")
+    ensure_template(db)
+    db.commit()  # соединение — лимиту (см. demo_session)
+    if principal.demo_install_id:
+        _check_device_demo_limit(principal.demo_install_id)  # сброс тоже считается в лимит 3 в сутки
     shop = db.get(Shop, principal.demo_shop_id)
     _wipe_shop_data(db, shop.id)
-    generate_demo(db, today_in(settings.default_timezone), shop=shop)
+    copy_template(db, shop.id, today_in(settings.default_timezone))
     db.commit()
     reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return {"shop_id": shop.id, "status": "reset"}
@@ -303,9 +340,25 @@ def costs_template() -> Response:
                     "spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=costs-template.xlsx"})
 
 
+def _check_device_demo_limit(install_id: str) -> None:
+    """ADR-0005: не больше demo_per_device_per_day новых демо и сбросов в сутки с одного устройства.
+    Счётчик в памяти процесса; при нескольких процессах его заменит общее хранилище лимитов (этап 1.15)."""
+    if not allow(f"demo-dev:{install_id}", settings.demo_per_device_per_day, window=86400):
+        raise ApiError(429, "rate_limited", "За сутки с этого устройства создано максимум демо-магазинов. Попробуйте завтра.")
+
+
+def _record_terms(user) -> None:
+    """1.19: фиксирует согласие с текущей версией условий и политики (версия и время)."""
+    user.terms_version = settings.legal_version
+    user.terms_accepted_at = utcnow()
+
+
 def _purge_idle_demos(db: DbSession) -> None:
-    cutoff = utcnow() - timedelta(days=settings.demo_idle_days)
-    for inst in db.scalars(select(DemoInstallation).where(DemoInstallation.last_active_at < cutoff)).all():
+    # ADR-0005: демо живёт demo_lifetime_hours от создания (для записей без created_at — от последней активности)
+    cutoff = utcnow() - timedelta(hours=settings.demo_lifetime_hours)
+    expired = or_(DemoInstallation.created_at < cutoff,
+                  and_(DemoInstallation.created_at.is_(None), DemoInstallation.last_active_at < cutoff))
+    for inst in db.scalars(select(DemoInstallation).where(expired)).all():
         shop = db.get(Shop, inst.shop_id)
         if shop is not None:
             db.delete(shop)
@@ -331,7 +384,19 @@ def me(principal: Principal = Depends(get_principal), db: DbSession = Depends(ge
         return {"demo": True, "email": None, "name": None, "locale": "ru"}
     user = current_user(principal, db)
     return {"demo": False, "id": user.id, "email": user.email, "name": user.name, "locale": user.locale,
-            "age_confirmed": user.age_confirmed_at is not None}
+            "age_confirmed": user.age_confirmed_at is not None,
+            "terms_consent_required": user.terms_version != settings.legal_version}
+
+
+@api.post("/me/terms", tags=["пользователь"])
+def me_terms(body: TermsIn, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+    """1.19: согласие с текущей версией условий и политики. Без accepted=true — отказ."""
+    user = current_user(principal, db)
+    if body.accepted is not True:
+        raise ApiError(422, "validation", "Нужно принять условия и политику конфиденциальности.")
+    _record_terms(user)
+    db.commit()
+    return {"terms_version": user.terms_version, "accepted_at": user.terms_accepted_at.isoformat()}
 
 
 @api.post("/me/age-confirm", tags=["пользователь"], response_model=AgeConfirmOut)
@@ -355,14 +420,22 @@ def me_update(body: MeIn, principal: Principal = Depends(get_principal), db: DbS
 
 
 @api.post("/me/deletion/start", status_code=202, tags=["пользователь"])
-def deletion_start(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+def deletion_start(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session),
+                   accept_language: str | None = Header(default=None)) -> dict:
     user = current_user(principal, db)
     code = new_code()
     db.add(AuthCode(email=user.email, purpose="delete", user_id=user.id, code_hash=hash_code(user.email, code),
                     expires_at=utcnow() + timedelta(minutes=settings.code_ttl_minutes)))
     db.commit()
-    send_code_email(user.email, code, "delete")
+    try:
+        send_code_email(user.email, code, "delete", pick_lang(accept_language))
+    except MailError as exc:
+        raise ApiError(503, "mail_unavailable", "Не удалось отправить код. Попробуйте позже.") from exc
     return {"status": "sent"}
+
+
+class TermsIn(BaseModel):
+    accepted: bool
 
 
 class ConfirmIn(BaseModel):
@@ -405,6 +478,8 @@ def shops_create(body: ShopIn, principal: Principal = Depends(get_principal), db
     user = current_user(principal, db)
     if user.age_confirmed_at is None:
         raise ApiError(403, "age_required", "Подтвердите, что вам 18 лет или больше.")
+    if user.terms_version != settings.legal_version:
+        raise ApiError(403, "terms_consent_required", "Примите обновлённые условия и политику конфиденциальности.")
     try:
         resolve("7d", body.timezone)
     except Exception as exc:  # noqa: BLE001
@@ -447,8 +522,8 @@ def get_overview(shop_id: str, period: str = Query("7d"), principal: Principal =
     shop = shop_for(db, principal, shop_id)
 
     def compute() -> dict:
-        data = load_shop(db, shop)
-        return overview(data, build_facts(data), _period(period, shop), _now())
+        data, facts = base_for(db, shop)
+        return overview(data, facts, _period(period, shop), _now())
 
     return reportcache.memo(shop.id, f"overview|{period}|{_minute()}", compute)
 
@@ -459,8 +534,8 @@ def get_profit_breakdown(shop_id: str, period: str = Query("7d"), principal: Pri
     shop = shop_for(db, principal, shop_id)
 
     def compute() -> dict:
-        data = load_shop(db, shop)
-        return profit_breakdown(data, build_facts(data), _period(period, shop))
+        data, facts = base_for(db, shop)
+        return profit_breakdown(data, facts, _period(period, shop))
 
     return reportcache.memo(shop.id, f"profit|{period}|{_minute()}", compute)
 
@@ -472,7 +547,7 @@ def get_orders(shop_id: str, period: str = Query("7d"), status: str | None = Non
     shop = shop_for(db, principal, shop_id)
 
     def compute() -> dict:
-        data = load_shop(db, shop)
+        data, _facts = base_for(db, shop)
         return orders_list(data, _period(period, shop), status, q, _cursor(cursor), _limit(limit))
 
     key = f"orders|{period}|{status}|{q}|{cursor}|{limit}|{_minute()}"
@@ -486,8 +561,8 @@ def get_order(shop_id: str, order_id: str, principal: Principal = Depends(get_pr
     order = db.get(Order, order_id)
     if order is None or order.shop_id != shop.id:
         raise ApiError(404, "not_found")
-    data = load_shop(db, shop)
-    return order_detail(data, build_facts(data), order)
+    data, facts = base_for(db, shop)
+    return order_detail(data, facts, order)
 
 
 @api.get("/shops/{shop_id}/products/missing-costs", tags=["товары"], response_model=MissingCostsOut)
@@ -495,7 +570,7 @@ def get_missing_costs(shop_id: str, principal: Principal = Depends(get_principal
                       db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
     return reportcache.memo(shop.id, f"missing|{_minute()}",
-                            lambda: {"items": missing_costs_list(load_shop(db, shop))})
+                            lambda: {"items": missing_costs_list(base_for(db, shop)[0])})
 
 
 @api.get("/shops/{shop_id}/products", tags=["товары"], response_model=ProductsPageOut)
@@ -505,8 +580,8 @@ def get_products(shop_id: str, period: str = Query("30d"), filter: str | None = 
     shop = shop_for(db, principal, shop_id)
 
     def compute() -> dict:
-        data = load_shop(db, shop)
-        return products_list(data, build_facts(data), _period(period, shop), filter, sort, q,
+        data, facts = base_for(db, shop)
+        return products_list(data, facts, _period(period, shop), filter, sort, q,
                              _cursor(cursor), _limit(limit))
 
     key = f"products|{period}|{filter}|{sort}|{q}|{cursor}|{limit}|{_minute()}"
@@ -562,9 +637,9 @@ def export_profit_xlsx(shop_id: str, period: str = Query("30d"), principal: Prin
                        db: DbSession = Depends(get_session)) -> Response:
     """Отчёт о прибыли в Excel (ТЗ 2.1, 9.5). Итоги совпадают с экраном: те же функции расчёта."""
     shop = shop_for(db, principal, shop_id)
-    data = load_shop(db, shop)
+    data, facts = base_for(db, shop)
     p = _period(period, shop)
-    content = profit_workbook(data, build_facts(data), p, _now())
+    content = profit_workbook(data, facts, p, _now())
     return Response(content=content, media_type=XLSX_MEDIA,
                     headers={"Content-Disposition": f'attachment; filename="{profit_filename(p)}"'})
 
@@ -575,9 +650,10 @@ def export_my_data(principal: Principal = Depends(get_principal), db: DbSession 
     if principal.user_id is None:
         raise ApiError(403, "account_required", "Выгрузка доступна после входа по почте или через Apple/Google.")
     user = current_user(principal, db)
-    if not allow(f"export:{user.id}", 3, 86_400):
+    if not allow(f"export:{user.id}", 3, 86_400, db=db):
         raise ApiError(429, "rate_limited", "Выгрузок слишком много. Попробуйте завтра.")
     content = user_export_zip(db, user)
+    audit.record(db, "user_export", "user", actor_id=user.id)
     stamp = _now().strftime("%Y%m%d")
     return Response(content=content, media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="satti-moi-dannye-{stamp}.zip"'})
@@ -590,8 +666,8 @@ def get_product(shop_id: str, product_id: str, period: str = Query("30d"),
     product = db.get(Product, product_id)
     if product is None or product.shop_id != shop.id:
         raise ApiError(404, "not_found")
-    data = load_shop(db, shop)
-    return product_detail(data, build_facts(data), product, _period(period, shop), _now())
+    data, facts = base_for(db, shop)
+    return product_detail(data, facts, product, _period(period, shop), _now())
 
 
 # ---------- затраты ----------
@@ -641,6 +717,149 @@ def _add_cost(db: DbSession, shop: Shop, product: Product, body: CostIn, source:
     return v
 
 
+class StockIn(BaseModel):
+    qty: int = Field(ge=0, le=10_000_000)  # остаток, внесённый продавцом вручную (склад)
+
+
+class ReceiptIn(BaseModel):
+    qty: int = Field(ge=1, le=10_000_000)  # приход: сколько штук поступило
+    occurred_at: datetime | None = None  # дата прихода (событие), по умолчанию сейчас
+
+
+class DelistIn(BaseModel):
+    confirm: bool  # снять с продажи через XML — только после явного подтверждения
+
+
+def _product_of_shop(db: DbSession, shop: Shop, product_id: str) -> Product:
+    product = db.get(Product, product_id)
+    if product is None or product.shop_id != shop.id:
+        raise ApiError(404, "not_found")
+    return product
+
+
+def _stock_json(st) -> dict:
+    return {"productId": st.product_id, "sku": st.sku, "name": st.name, "current": st.current, "baseQty": st.base_qty,
+            "soldSince": st.sold_since, "returnedSince": st.returned_since, "avgDaily": st.avg_daily,
+            "daysLeft": st.days_left, "level": st.level, "delisted": st.delisted}
+
+
+@api.get("/shops/{shop_id}/products/{product_id}/stock", tags=["склад"])
+def get_stock_row(shop_id: str, product_id: str, principal: Principal = Depends(get_principal),
+                  db: DbSession = Depends(get_session)) -> dict:
+    shop = shop_for(db, principal, shop_id)
+    _product_of_shop(db, shop, product_id)
+    st = stock_states(db, shop).get(product_id)
+    if st is None:
+        return {"qty": None, "updatedAt": None, "current": None, "level": None, "delisted": False}
+    return {"qty": st.current, "updatedAt": st.base_at.isoformat(), **_stock_json(st)}
+
+
+@api.get("/shops/{shop_id}/stock", tags=["склад"])
+def list_stock(shop_id: str, principal: Principal = Depends(get_principal),
+               db: DbSession = Depends(get_session)) -> dict:
+    shop = shop_for(db, principal, shop_id)
+    states = stock_states(db, shop)
+    return {"items": [_stock_json(st) for st in sorted(states.values(), key=lambda x: x.name)]}
+
+
+@api.get("/shops/{shop_id}/stock/alerts", tags=["склад"])
+def stock_alerts(shop_id: str, principal: Principal = Depends(get_principal),
+                 db: DbSession = Depends(get_session)) -> dict:
+    """Уведомления 10/5/3 шт. и 0 — в приложении (этот список) и push на моке (файл в outbox). Ниже порога — один раз."""
+    shop = shop_for(db, principal, shop_id)
+    states = stock_states(db, shop)
+    rows = {r.product_id: r for r in db.scalars(select(ProductStock).where(ProductStock.shop_id == shop.id)).all()}
+    items = []
+    for st in states.values():
+        row = rows.get(st.product_id)
+        if st.level is None:
+            if row is not None:
+                row.last_alert_level = None  # выше порогов — можно снова уведомить при понижении
+            continue
+        items.append(_stock_json(st))
+        if row is not None and row.last_alert_level != st.level:
+            row.last_alert_level = st.level
+            stock_push_mock(shop, st)
+    db.commit()
+    ending = [i for i in items if i["daysLeft"] is not None and 0 < i["daysLeft"] <= ENDING_SOON_DAYS]
+    return {"items": items, "endingSoon": ending}
+
+
+@api.put("/shops/{shop_id}/products/{product_id}/stock", tags=["склад"])
+def put_stock_row(shop_id: str, product_id: str, body: StockIn, principal: Principal = Depends(get_principal),
+                  db: DbSession = Depends(get_session)) -> dict:
+    """Инвентаризация: остаток на сейчас (событие журнала). Продажи и возвраты после неё уменьшают и увеличивают остаток."""
+    from .models import StockMovement
+    shop = shop_for(db, principal, shop_id)
+    _product_of_shop(db, shop, product_id)
+    row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
+    now = datetime.now(timezone.utc)
+    if row is None:
+        row = ProductStock(shop_id=shop.id, product_id=product_id, qty=body.qty, updated_at=now)
+        db.add(row)
+    else:
+        row.qty = body.qty
+        row.updated_at = now
+        row.last_alert_level = None
+    db.add(StockMovement(shop_id=shop.id, product_id=product_id, kind="inventory", qty=body.qty,
+                         occurred_at=now, created_at=now))
+    db.commit()
+    return {"qty": row.qty, "updatedAt": row.updated_at.isoformat()}
+
+
+@api.post("/shops/{shop_id}/products/{product_id}/stock/receipt", tags=["склад"])
+def stock_receipt(shop_id: str, product_id: str, body: ReceiptIn, principal: Principal = Depends(get_principal),
+                  db: DbSession = Depends(get_session)) -> dict:
+    """Приход. Дата события — occurred_at (по умолчанию сейчас); приход учитывается, если он позже последней инвентаризации.
+    Без инвентаризации остаток не ведётся: сначала пересчитайте товар."""
+    from .models import StockMovement
+    shop = shop_for(db, principal, shop_id)
+    _product_of_shop(db, shop, product_id)
+    now = datetime.now(timezone.utc)
+    occurred = body.occurred_at or now
+    if occurred.tzinfo is None:
+        occurred = occurred.replace(tzinfo=timezone.utc)
+    if occurred > now + timedelta(minutes=1):
+        raise ApiError(422, "validation", "Дата прихода не может быть в будущем.")
+    st = stock_states(db, shop).get(product_id)
+    if st is None:
+        raise ApiError(409, "stock_not_counted", "Сначала пересчитайте товар (инвентаризация), потом вносите приход.")
+    db.add(StockMovement(shop_id=shop.id, product_id=product_id, kind="receipt", qty=body.qty,
+                         occurred_at=occurred, created_at=now))
+    db.commit()
+    current = stock_states(db, shop)[product_id].current
+    return {"qty": current, "current": current}
+
+
+@api.post("/shops/{shop_id}/products/{product_id}/stock/delist", tags=["склад"])
+def stock_delist(shop_id: str, product_id: str, body: DelistIn, principal: Principal = Depends(get_principal),
+                 db: DbSession = Depends(get_session)) -> dict:
+    """Снятие с продажи (XML-прайс): только при нулевом остатке и после подтверждения (confirm=true)."""
+    shop = shop_for(db, principal, shop_id)
+    _product_of_shop(db, shop, product_id)
+    st = stock_states(db, shop).get(product_id)
+    if st is None or st.current > 0:
+        raise ApiError(409, "stock_not_empty", "Снять с продажи можно только товар с нулевым остатком.")
+    if not body.confirm:
+        raise ApiError(422, "confirm_required", "Подтвердите снятие с продажи.")
+    row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
+    row.delisted = True
+    db.commit()
+    return {"delisted": True}
+
+
+@api.post("/shops/{shop_id}/products/{product_id}/stock/relist", tags=["склад"])
+def stock_relist(shop_id: str, product_id: str, principal: Principal = Depends(get_principal),
+                 db: DbSession = Depends(get_session)) -> dict:
+    shop = shop_for(db, principal, shop_id)
+    _product_of_shop(db, shop, product_id)
+    row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
+    if row is not None:
+        row.delisted = False
+        db.commit()
+    return {"delisted": False}
+
+
 @api.get("/shops/{shop_id}/products/{product_id}/cost-versions", tags=["затраты"], response_model=CostVersionsOut)
 def cost_versions(shop_id: str, product_id: str, principal: Principal = Depends(get_principal),
                   db: DbSession = Depends(get_session)) -> dict:
@@ -658,6 +877,17 @@ def cost_version_create(shop_id: str, product_id: str, body: CostIn,
     product = db.get(Product, product_id)
     if product is None or product.shop_id != shop.id:
         raise ApiError(404, "not_found")
+    # QA-06: повтор той же отправки в течение минуты (двойной тап, повтор сети) не создаёт вторую версию
+    values = (_minor(body.purchase), _minor(body.delivery_to_warehouse), _minor(body.packaging), _minor(body.other))
+    recent = db.scalar(select(ProductCostVersion).where(
+        ProductCostVersion.shop_id == shop.id, ProductCostVersion.product_id == product.id,
+        ProductCostVersion.cancelled.is_(False),
+        ProductCostVersion.created_at >= datetime.now(timezone.utc) - timedelta(seconds=60),
+    ).order_by(ProductCostVersion.created_at.desc()).limit(1))
+    if recent is not None and (recent.purchase_minor, recent.delivery_to_warehouse_minor,
+                               recent.packaging_minor, recent.other_minor) == values \
+            and (body.effective_from is None or recent.effective_from == body.effective_from):
+        return _version_json(recent)
     v = _add_cost(db, shop, product, body, "manual")
     db.commit()
     reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
@@ -743,7 +973,6 @@ def commissions_list(shop_id: str, principal: Principal = Depends(get_principal)
 @api.post("/shops/{shop_id}/commissions", status_code=201, tags=["комиссии"], response_model=CommissionCreatedOut)
 def commissions_create(shop_id: str, body: CommissionIn, principal: Principal = Depends(get_principal),
                        db: DbSession = Depends(get_session)) -> dict:
-    from decimal import Decimal, InvalidOperation
 
     shop = shop_for(db, principal, shop_id)
     try:
@@ -789,7 +1018,6 @@ def tax_get(shop_id: str, principal: Principal = Depends(get_principal),
 @api.post("/shops/{shop_id}/tax", status_code=201, tags=["налог"])
 def tax_set(shop_id: str, body: TaxIn, principal: Principal = Depends(get_principal),
             db: DbSession = Depends(get_session)) -> dict:
-    from decimal import Decimal, InvalidOperation
 
     from .models import TaxRate
 
@@ -869,7 +1097,7 @@ async def import_upload(shop_id: str, file: UploadFile = File(...),
     shop = shop_for(db, principal, shop_id)
     # AUD-07: лимит на аккаунт (или демо-установку), а не на сессию: обновление токена создаёт новую сессию
     key = f"imp:{principal.user_id or principal.demo_install_id or principal.session_id}"
-    if not allow(key, settings.import_requests_per_hour):
+    if not allow(key, settings.import_requests_per_hour, db=db):
         raise ApiError(429, "rate_limited")
     content = await file.read(settings.import_max_bytes + 1)
     # AUD-06: разбор файла — в пуле потоков, чтобы не занимать цикл событий сервера
@@ -904,7 +1132,6 @@ def import_mapping(shop_id: str, import_id: str, body: MappingIn, principal: Pri
     payload = load_payload(batch.payload)
     if any(v and v not in payload.columns for v in body.mapping.values()):
         raise ApiError(422, "validation", "В файле нет такой колонки.")
-    import json
 
     batch.payload = json.dumps({**json.loads(batch.payload), "mapping": body.mapping,
                                 "duplicates": body.duplicates}, ensure_ascii=False)
@@ -915,7 +1142,6 @@ def import_mapping(shop_id: str, import_id: str, body: MappingIn, principal: Pri
 
 
 def _preview_data(db: DbSession, shop: Shop, batch: ImportBatch) -> dict:
-    import json
 
     stored = json.loads(batch.payload)
     parsed = load_payload(batch.payload)
@@ -1066,11 +1292,13 @@ class AskIn(BaseModel):
 def ai_ask(shop_id: str, body: AskIn, principal: Principal = Depends(get_principal),
            db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
+    require_ai(db)  # выключатель ИИ (QA-02)
     _, active = ai_consent_state(db, principal)
     if not active:
         raise ApiError(403, "ai_consent_required")
     # AUD-17: проверка квоты и запись вопроса — под одной блокировкой на субъекта квоты
     with quota_guard(principal.user_id or shop.id):
+        ai_service.require_budget(db, _now())  # бюджет ИИ (QA-03)
         ai_service.check_quota(db, principal.user_id, shop.id, _now())
         result = ai_service.ask(db, shop, body.question, principal.user_id, body.conversation_id)
         db.commit()
@@ -1094,7 +1322,6 @@ def ai_conversation(conversation_id: str, principal: Principal = Depends(get_pri
         raise ApiError(404, "not_found")
     shop_for(db, principal, conv.shop_id)
     turns = db.scalars(select(AITurn).where(AITurn.conversation_id == conv.id).order_by(AITurn.created_at)).all()
-    import json
 
     return {"id": conv.id, "title": conv.title, "turns": [
         {"id": t.id, "question": t.question, "answer": json.loads(t.answer_json)} for t in turns]}
@@ -1129,12 +1356,25 @@ def ai_feedback(body: FeedbackIn, principal: Principal = Depends(get_principal),
     return {"id": fb.id}
 
 
+def _metered_draft(db: DbSession, principal: Principal, shop: Shop, make) -> dict:
+    """Черновик ИИ: та же квота и бюджет, что у вопросов (QA-04). Списывается только успешный черновик."""
+    with quota_guard(principal.user_id or shop.id):
+        ai_service.require_budget(db, _now())
+        ai_service.check_quota(db, principal.user_id, shop.id, _now())
+        result = make()  # при ошибке ввода (422) квота не тратится
+        ai_service.record_usage(db, principal.user_id, shop.id, _now(), "draft")
+        db.commit()
+    result["generatedBy"] = "ai"  # QA-05
+    return result
+
+
 @api.post("/ai/product-drafts", status_code=201, tags=["ИИ"])
 async def ai_product_draft(shop_id: str = Form(...), facts: str = Form(...), languages: str = Form("ru"),
                            photos: list[UploadFile] = File(default=[]),
                            principal: Principal = Depends(get_principal),
                            db: DbSession = Depends(get_session)) -> dict:
-    shop_for(db, principal, shop_id)  # проверка доступа к магазину
+    shop = shop_for(db, principal, shop_id)  # проверка доступа к магазину
+    require_ai(db)  # выключатель ИИ (QA-02)
     _, active = ai_consent_state(db, principal)
     if not active:
         raise ApiError(403, "ai_consent_required")
@@ -1146,7 +1386,7 @@ async def ai_product_draft(shop_id: str = Form(...), facts: str = Form(...), lan
         if not (head.startswith(b"\xff\xd8\xff") or head.startswith(b"\x89PNG") or head[:4] == b"RIFF"):
             raise ApiError(422, "validation", "Фото должно быть в формате JPG, PNG или WebP.")
     # Фото не сохраняются: читаются только для проверки формата и удаляются вместе с запросом.
-    return ai_service.product_draft(facts, languages, len(photos))
+    return await run_in_threadpool(_metered_draft, db, principal, shop, lambda: ai_service.product_draft(facts, languages, len(photos)))
 
 
 class ReplyDraftIn(BaseModel):
@@ -1157,11 +1397,12 @@ class ReplyDraftIn(BaseModel):
 @api.post("/ai/reply-drafts", status_code=201, tags=["ИИ"])
 def ai_reply_draft(body: ReplyDraftIn, shop_id: str = Query(...), principal: Principal = Depends(get_principal),
                    db: DbSession = Depends(get_session)) -> dict:
-    shop_for(db, principal, shop_id)
+    shop = shop_for(db, principal, shop_id)
+    require_ai(db)  # выключатель ИИ (QA-02)
     _, active = ai_consent_state(db, principal)
     if not active:
         raise ApiError(403, "ai_consent_required")
-    return ai_service.reply_draft(body.question, body.tone)
+    return _metered_draft(db, principal, shop, lambda: ai_service.reply_draft(body.question, body.tone))
 
 
 # ---------- уведомления и Kaspi (за флагом) ----------
@@ -1200,18 +1441,143 @@ def _kaspi_disabled() -> ApiError:
     return ApiError(404, "not_found", "Подключение Kaspi будет доступно позже.")
 
 
-@api.post("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"])
-def kaspi_connect(shop_id: str, principal: Principal = Depends(get_principal)) -> dict:
-    raise _kaspi_disabled()
+def kaspi_enabled(db: DbSession) -> bool:
+    """2.6: нужны и KASPI_ENABLED на сервере (по умолчанию выключен), и флаг в админке. Так приложение и сервер согласованы."""
+    return settings.kaspi_connection_enabled and is_enabled(db, "kaspi_connection")
+
+
+def _require_kaspi(db: DbSession) -> None:
+    if not kaspi_enabled(db):
+        raise _kaspi_disabled()
+
+
+class KaspiConnectIn(BaseModel):
+    seller_id: str = Field(min_length=1, max_length=64)
+    token: str = Field(min_length=8, max_length=256)
+
+
+def _kaspi_view(shop: Shop, conn: KaspiConnection | None) -> dict:
+    if conn is None:
+        return {"enabled": True, "status": "not_connected"}
+    price_path = f"/v1/kaspi/price/{shop.id}/{conn.price_key}"
+    return {"enabled": True, "status": conn.status, "seller_id": conn.seller_id,
+            "connected_at": conn.connected_at.isoformat(),
+            "last_sync_at": conn.last_sync_at.isoformat() if conn.last_sync_at else None,
+            "last_error": conn.last_error,
+            "price_url": (settings.public_base_url + price_path) if settings.public_base_url else price_path}
+
+
+@api.post("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"], status_code=201)
+def kaspi_connect(shop_id: str, body: KaspiConnectIn, principal: Principal = Depends(get_principal),
+                  db: DbSession = Depends(get_session)) -> dict:
+    _require_kaspi(db)
+    shop = shop_for(db, principal, shop_id)
+    now = utcnow()
+    client = KaspiClient(body.token)
+    analytics_service.record(db, "kaspi_connect_started", now)
+    try:
+        conn = kaspi_service.connect(db, shop, body.seller_id, body.token, client, now)
+    except KaspiAuthError as exc:
+        analytics_service.record(db, "kaspi_connect_failed", now)
+        raise ApiError(422, "kaspi_token_rejected", "Kaspi не принял этот ключ. Проверьте ключ и ID продавца.") from exc
+    except KaspiUnavailable as exc:
+        analytics_service.record(db, "kaspi_connect_failed", now)
+        raise ApiError(503, "kaspi_unavailable", "Kaspi сейчас недоступен. Попробуйте позже.") from exc
+    finally:
+        client.close()
+    analytics_service.record(db, "kaspi_connect_succeeded", now)
+    audit.record(db, "kaspi_connect", "kaspi_connection", actor_id=principal.user_id, shop_id=shop.id)
+    return _kaspi_view(shop, conn)
 
 
 @api.get("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"])
-def kaspi_status(shop_id: str, principal: Principal = Depends(get_principal)) -> dict:
-    if not settings.kaspi_connection_enabled:
+def kaspi_status(shop_id: str, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+    if not kaspi_enabled(db):
         return {"enabled": False, "status": "not_connected"}
-    raise _kaspi_disabled()
+    shop = shop_for(db, principal, shop_id)
+    return _kaspi_view(shop, db.get(KaspiConnection, shop.id))
+
+
+@api.post("/shops/{shop_id}/kaspi/sync", tags=["Kaspi"])
+def kaspi_sync_now(shop_id: str, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+    _require_kaspi(db)
+    shop = shop_for(db, principal, shop_id)
+    conn = db.get(KaspiConnection, shop.id)
+    if conn is None:
+        raise ApiError(404, "not_found", "Магазин Kaspi не подключён.")
+    db.commit()  # соединение — лимиту ниже (см. demo_session)
+    if not allow(f"kaspi-sync:{shop.id}", 12, 3600, db=db):
+        raise ApiError(429, "rate_limited", "Слишком часто. Синхронизация доступна не чаще 12 раз в час.")
+    client = None
+    try:
+        client = kaspi_service.client_for(conn)
+        stats = kaspi_service.sync(db, conn, client, utcnow())
+    except KaspiAuthError as exc:
+        raise ApiError(422, "kaspi_token_rejected", "Kaspi не принимает ключ. Подключите магазин заново.") from exc
+    except KaspiUnavailable as exc:
+        raise ApiError(503, "kaspi_unavailable", "Kaspi сейчас недоступен. Попробуйте позже.") from exc
+    finally:
+        if client is not None:
+            client.close()
+    return {**stats, "status": "synced"}
 
 
 @api.delete("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"])
-def kaspi_disconnect(shop_id: str, principal: Principal = Depends(get_principal)) -> dict:
-    raise _kaspi_disabled()
+def kaspi_disconnect(shop_id: str, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+    _require_kaspi(db)
+    shop = shop_for(db, principal, shop_id)
+    kaspi_service.disconnect(db, shop.id)
+    audit.record(db, "kaspi_disconnect", "kaspi_connection", actor_id=principal.user_id, shop_id=shop.id)
+    return {"enabled": True, "status": "not_connected"}
+
+
+class EventIn(BaseModel):
+    event: str = Field(min_length=1, max_length=64)
+
+
+class EventsIn(BaseModel):
+    events: list[str] = Field(min_length=1, max_length=50)
+
+
+@api.post("/analytics/batch", status_code=204, tags=["аналитика"], include_in_schema=False)
+def analytics_batch(body: EventsIn, request: Request) -> Response:
+    """3.9: пакет событий из приложения (до 50 за раз). Только при ANALYTICS_ENABLED=1 и флаге в админке."""
+    from .db import SessionLocal
+
+    if not settings.analytics_enabled:
+        raise ApiError(404, "not_found")
+    if any(e not in analytics_service.ALLOWED_EVENTS for e in body.events):
+        raise ApiError(422, "validation", "Неизвестное событие.")
+    if not allow(f"analytics-batch:{client_ip(request)}", 120):
+        raise ApiError(429, "rate_limited", "Слишком много пакетов. Попробуйте позже.")
+    with SessionLocal() as db:
+        if not is_enabled(db, "analytics"):
+            raise ApiError(404, "not_found")
+        for event in body.events:
+            analytics_service.record(db, event, utcnow())
+    return Response(status_code=204)
+
+
+@api.post("/analytics/events", status_code=204, tags=["аналитика"])
+def analytics_event(body: EventIn, request: Request) -> Response:
+    """3.9: счётчик события за день. Без входа, без адреса и устройства; не чаще 600 раз в час с одного адреса."""
+    if body.event not in analytics_service.ALLOWED_EVENTS:
+        raise ApiError(422, "validation", "Неизвестное событие.")
+    if not allow(f"analytics:{client_ip(request)}", 600):
+        raise ApiError(429, "rate_limited", "Слишком много событий. Попробуйте позже.")
+    from .db import SessionLocal
+
+    with SessionLocal() as db:
+        analytics_service.record(db, body.event, utcnow())
+    return Response(status_code=204)
+
+
+@api.get("/kaspi/price/{shop_id}/{price_key}", tags=["Kaspi"], include_in_schema=False)
+def kaspi_price_list(shop_id: str, price_key: str, db: DbSession = Depends(get_session)) -> Response:
+    """Прайс-лист для кабинета Kaspi. Доступ — по секрету в адресе (price_key), без входа в приложение."""
+    _require_kaspi(db)
+    shop = db.get(Shop, shop_id)
+    conn = kaspi_service.find_by_price_key(db, shop_id, price_key) if shop else None
+    if conn is None:
+        raise ApiError(404, "not_found")
+    return Response(content=kaspi_service.price_list_xml(db, shop, conn), media_type="application/xml")

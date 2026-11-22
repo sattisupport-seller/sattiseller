@@ -12,14 +12,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import markdown
-from fastapi import APIRouter, Depends, Form
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from .config import settings
 from .db import get_session
-from .mailer import send_code_email
+from .mailer import MailError, send_code_email
+from .errors import pick_lang
 from .accounts import delete_user_account
 from .models import AuthCode, User
 from .ratelimit import allow
@@ -67,7 +68,30 @@ def _legal(slug: str) -> HTMLResponse:
     if not path.exists():
         return _page(title, "<h1>Текст готовится</h1>")
     text = path.read_text(encoding="utf-8")
+    # имя оператора — из SATTI_OWNER_NAME (до регистрации ИП); в продакшене без него сервер не стартует
+    text = text.replace("{OWNER_NAME}", settings.owner_name or "Владелец приложения Satti Seller")
     return _page(title, markdown.markdown(text, extensions=["tables"]))
+
+
+@router.get("/support", response_class=HTMLResponse)
+def support_page() -> HTMLResponse:
+    """Страница поддержки (5.8). Адрес — из SATTI_SUPPORT_EMAIL; без адреса письмо не показывается."""
+    if settings.support_email:
+        email = html.escape(settings.support_email)
+        contact = f'<p>Напишите нам: <a href="mailto:{email}">{email}</a>. Отвечаем в рабочие дни.</p>'
+    else:
+        contact = "<p>Адрес поддержки будет указан здесь перед публикацией приложения.</p>"
+    faq = """
+<h2>Частые вопросы</h2>
+<p><b>Что делает Satti?</b> Считает прибыль по каждому товару после закупки, комиссии, доставки и налога, показывает товары в минус и объясняет, почему изменилась прибыль.</p>
+<p><b>Это приложение Kaspi?</b> Нет. Satti — независимый сервис и не связан с Kaspi.kz.</p>
+<p><b>Почему прибыль — «оценка»?</b> Она зависит от данных, которые вы ввели: закупки, ставок комиссии, налога. Если чего-то не хватает, Satti показывает это и не выдаёт оценку за точное число.</p>
+<p><b>Как отменить подписку?</b> iPhone: Настройки → [ваше имя] → Подписки → Satti Seller → Отменить. Android: Google Play → Профиль → Платежи и подписки → Подписки → Satti Seller → Отменить.</p>
+<p><b>Как удалить аккаунт?</b> В приложении: Профиль → Удалить аккаунт. Понадобится код из письма.</p>
+"""
+    links = '<p><a href="/privacy">Политика конфиденциальности</a> · <a href="/terms">Условия использования</a></p>'
+    body = f"<h1>Поддержка</h1>{contact}{faq}{links}"
+    return _page("Поддержка Satti Seller", body)
 
 
 @router.get("/admin", response_class=HTMLResponse)
@@ -117,7 +141,7 @@ def delete_account_page() -> HTMLResponse:
 
 
 @router.post("/delete-account/start", response_class=HTMLResponse)
-def delete_account_start(email: str = Form(...), db: DbSession = Depends(get_session)) -> HTMLResponse:
+def delete_account_start(request: Request, email: str = Form(...), db: DbSession = Depends(get_session)) -> HTMLResponse:
     address = email.strip().lower()
     if allow(f"webdelete:{address}", 5):
         user = db.scalar(select(User).where(User.email == address))
@@ -126,7 +150,10 @@ def delete_account_start(email: str = Form(...), db: DbSession = Depends(get_ses
             db.add(AuthCode(email=user.email, purpose="delete", user_id=user.id, code_hash=hash_code(user.email, code),
                             expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.code_ttl_minutes)))
             db.commit()
-            send_code_email(user.email, code, "delete")
+            try:
+                send_code_email(user.email, code, "delete", pick_lang(request.headers.get("accept-language")))
+            except MailError:
+                pass  # та же страница, что и без ошибки: не показываем, есть ли аккаунт
     return _page("Введите код", _code_form(address))
 
 

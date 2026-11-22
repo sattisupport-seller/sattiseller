@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from .timeutil import utc_now
 
 from fastapi import Depends, Header
 from sqlalchemy import select
@@ -22,7 +23,7 @@ from .security import hash_token, new_token
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 def aware(dt: datetime | None) -> datetime | None:
@@ -57,7 +58,7 @@ def issue_tokens(db: DbSession, *, user_id: str | None = None, demo_install_id: 
     return {
         "access_token": access,
         "refresh_token": refresh,
-        "token_type": "bearer",
+        "token_type": "bearer",  # nosec B105 — это тип токена по RFC 6750 («bearer»), не пароль
         "expires_in": settings.access_ttl_minutes * 60,
     }
 

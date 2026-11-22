@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.admin import AdminTotp, _open, totp_code
 from app.config import production_config_problems, settings
 from app.db import engine
-from tests.test_admin import ADMIN, _admin_headers, _enable_2fa, _headers, admin_email  # noqa: F401 (фикстура)
+from tests.test_admin import ADMIN, _admin_headers, _enable_2fa, _headers
 
 
 def test_secret_is_not_stored_in_plain_text(client, admin_email):

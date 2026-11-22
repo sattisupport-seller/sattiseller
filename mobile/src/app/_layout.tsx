@@ -10,6 +10,8 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { useAppConfig } from '@/api/hooks';
+import { setAnalyticsEnabled } from '@/lib/analytics';
 import { ActivityIndicator, View } from 'react-native';
 
 // Нативный экран запуска (spec-2.1, раздел 15.2) держим, пока не загружены шрифты.
@@ -69,7 +71,10 @@ function Splash() {
 
 function Shell() {
   const { colors, mode } = useTheme();
-  const { status } = useSession();
+  const { status, termsRequired } = useSession();
+  const appConfig = useAppConfig();
+  // 3.9: отправка событий — только когда сервер включил флаг analytics
+  useEffect(() => { setAnalyticsEnabled(appConfig.data?.flags.analytics ?? false); }, [appConfig.data?.flags.analytics]);
   const router = useRouter();
   const segments = useSegments();
   const { t } = useI18n();
@@ -86,7 +91,11 @@ function Shell() {
     if (status === 'signedOut' && first !== 'welcome' && first !== 'login' && first !== 'code') {
       router.replace('/welcome');
     }
-  }, [status, router, segments]);
+    // 1.19: версия условий изменилась — до согласия остальные экраны недоступны.
+    if (status !== 'signedOut' && termsRequired && first !== 'terms-consent') {
+      router.replace('/terms-consent');
+    }
+  }, [status, termsRequired, router, segments]);
 
   return (
     <>
@@ -107,6 +116,7 @@ function Shell() {
         <Stack.Screen name="code" options={{ headerShown: true, title: t('code.title'), headerBackTitle: t('common.back') }} />
         <Stack.Screen name="shop-setup" options={{ headerShown: true, title: t('shopSetup.title'), headerBackVisible: false }} />
         <Stack.Screen name="update-required" options={{ headerShown: false }} />
+        <Stack.Screen name="terms-consent" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="profit" options={{ headerShown: true, title: t('profit.title'), headerBackTitle: t('common.back') }} />
         <Stack.Screen name="order/[id]" options={{ headerShown: true, title: t('orderDetail.title', { number: '' }), headerBackTitle: t('common.back') }} />

@@ -308,6 +308,7 @@ function AnswerCard({ answer, onFlag, onUp, onDown }: { answer: AskAnswer; onFla
   const action = answer.suggestedActions[0];
   return (
     <View style={{ alignSelf: 'stretch', backgroundColor: colors.surface, borderRadius: radii.xl, borderBottomLeftRadius: 6, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, gap: spacing.md }}>
+      <Txt variant="footnote" tone="secondary">{t('assistant.aiLabel')}</Txt>
       <Txt variant="body">{answer.renderedAnswer}</Txt>
 
       {answer.evidence.length > 0 ? (
@@ -349,8 +350,8 @@ function AnswerCard({ answer, onFlag, onUp, onDown }: { answer: AskAnswer; onFla
 
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: spacing.md }}>
         <Txt variant="footnote" tone="tertiary" style={{ flex: 1 }}>{t('assistant.helpful')}</Txt>
-        <IconButton label={t('assistant.helpful')} onPress={onUp}><ThumbsUp size={20} color={colors.textTertiary} /></IconButton>
-        <IconButton label={t('assistant.helpful')} onPress={onDown}><ThumbsDown size={20} color={colors.textTertiary} /></IconButton>
+        <IconButton label={t('assistant.helpfulYes')} onPress={onUp}><ThumbsUp size={20} color={colors.textTertiary} /></IconButton>
+        <IconButton label={t('assistant.helpfulNo')} onPress={onDown}><ThumbsDown size={20} color={colors.textTertiary} /></IconButton>
         <IconButton label={t('assistant.flag')} onPress={onFlag}><Flag size={20} color={colors.textTertiary} /></IconButton>
       </View>
     </View>

@@ -11,7 +11,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
+from .timeutil import utc_now
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -20,6 +21,7 @@ from sqlalchemy import DateTime, Integer, String, func, select
 from sqlalchemy.orm import Mapped, Session as DbSession, mapped_column
 
 from .admin import require_admin
+from .models import AppErrorEvent
 from .db import Base, get_session
 from .models import User
 from .privacy import mask_text
@@ -30,7 +32,7 @@ MAX_MESSAGE = 300
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return utc_now()
 
 
 class AppError(Base):
@@ -74,6 +76,8 @@ def record_error(db: DbSession, *, kind: str, exc_type: str, where: str, message
     row.count += 1
     row.last_seen = now
     row.message = safe_message
+    if kind == "server":
+        db.add(AppErrorEvent(fingerprint=fp, created_at=now))  # 3.10: появление ошибки для правила всплеска
     db.commit()
     return fp
 

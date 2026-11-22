@@ -9,11 +9,15 @@
 """
 
 from __future__ import annotations
+from decimal import Decimal
 
+import logging
+import threading
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from fractions import Fraction
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -28,9 +32,11 @@ from .models import (
     OrderItem,
     Product,
     ProductCostVersion,
+    ReturnEvent,
     Shop,
     TaxRate,
 )
+from . import reportcache
 from .money import apply_bp, round_half_up_div
 from .periods import Period
 
@@ -51,6 +57,8 @@ class ShopData:
     orders: list[Order]
     expenses: list[ExpenseEntry]
     tax_rates: list[TaxRate] = field(default_factory=list)
+    stock: dict[str, int] = field(default_factory=dict)  # текущий остаток по товару (склад); нет записи — не знаем
+    stock_info: dict = field(default_factory=dict)  # состояние склада (для уведомлений и помощника)
 
 
 def load_shop(db: DbSession, shop: Shop) -> ShopData:
@@ -79,6 +87,70 @@ def load_shop(db: DbSession, shop: Shop) -> ShopData:
     )
     return ShopData(shop, ZoneInfo(shop.timezone), products, dict(versions), dict(presets), orders, expenses,
                     tax_rates)
+
+
+def _plain(obj, extra: tuple[str, ...] = ()) -> SimpleNamespace:
+    """Простая копия строки базы: без связи с сессией, с теми же именами полей (и вычисляемыми полями)."""
+    values = {c.key: getattr(obj, c.key) for c in type(obj).__table__.columns}
+    for name in extra:
+        values[name] = getattr(obj, name)
+    return SimpleNamespace(**values)
+
+
+def load_plain(db: DbSession, shop: Shop) -> ShopData:
+    """То же, что load_shop, но сразу простые копии строк: без ORM и без отдельной копии (1.17).
+
+    Заказы, строки и возвраты читаются колонками; объекты ORM для них не создаются.
+    """
+    products = {p.id: _plain(p) for p in db.scalars(select(Product).where(Product.shop_id == shop.id)).all()}
+    versions: dict[str, list] = defaultdict(list)
+    for v in db.scalars(
+        select(ProductCostVersion).where(ProductCostVersion.shop_id == shop.id, ProductCostVersion.cancelled.is_(False))
+    ).all():
+        versions[v.product_id].append(_plain(v, ("landed_unit_minor",)))
+    for lst in versions.values():
+        lst.sort(key=lambda v: (v.effective_from or date.min, v.created_at))
+    presets: dict[str, list] = defaultdict(list)
+    for pr in db.scalars(select(CommissionPreset).where(CommissionPreset.shop_id == shop.id)).all():
+        presets[pr.category].append(_plain(pr))
+    for lst in presets.values():
+        lst.sort(key=lambda p: p.effective_from or date.min)
+
+    orders: list[SimpleNamespace] = []
+    by_id: dict[str, SimpleNamespace] = {}
+    for row in db.execute(select(*Order.__table__.columns).where(Order.shop_id == shop.id)
+                          .order_by(Order.created_at)).all():
+        o = SimpleNamespace(items=[], **row._mapping)
+        orders.append(o)
+        by_id[o.id] = o
+    items_by_id: dict[str, SimpleNamespace] = {}
+    for row in db.execute(select(*OrderItem.__table__.columns).where(OrderItem.shop_id == shop.id)).all():
+        if row.order_id not in by_id:
+            continue
+        it = SimpleNamespace(returns=[], **row._mapping)
+        by_id[row.order_id].items.append(it)
+        items_by_id[it.id] = it
+    for row in db.execute(select(*ReturnEvent.__table__.columns).where(ReturnEvent.shop_id == shop.id)).all():
+        it = items_by_id.get(row.item_id)
+        if it is not None:
+            it.returns.append(SimpleNamespace(**row._mapping))
+
+    expenses = [_plain(e) for e in db.scalars(select(ExpenseEntry).where(ExpenseEntry.shop_id == shop.id)).all()]
+    tax_rates = sorted(
+        (_plain(t) for t in db.scalars(select(TaxRate).where(TaxRate.shop_id == shop.id)).all()),
+        key=lambda t: (t.effective_from or date.min, t.created_at),
+    )
+    return ShopData(_plain(shop), ZoneInfo(shop.timezone), products, dict(versions), dict(presets), orders,
+                    expenses, tax_rates)
+
+
+def base_for(db: DbSession, shop: Shop) -> tuple[ShopData, list[ItemFact]]:
+    """Данные магазина и факты по строкам. Тяжёлый расчёт кэшируется до записи в магазин (1.17)."""
+    def compute() -> tuple[ShopData, list[ItemFact]]:
+        data = load_plain(db, shop)
+        return data, build_facts(data)
+
+    return reportcache.snapshot(shop.id, compute)
 
 
 def local_day(dt: datetime, tz: ZoneInfo) -> date:
@@ -514,7 +586,6 @@ def profit_breakdown(data: ShopData, facts: list[ItemFact], period: Period) -> d
 
 def _pct_label(bp: int) -> str:
     """Ставка в базисных пунктах → проценты для подписи: 400 → «4», 150 → «1,5»."""
-    from decimal import Decimal
 
     text = format((Decimal(bp) / Decimal(100)).normalize(), "f")
     return text.replace(".", ",")
@@ -891,3 +962,44 @@ def _round_fraction(x: Fraction) -> int:
     n, d = x.numerator, x.denominator
     sign = -1 if n < 0 else 1
     return sign * ((abs(n) * 2 + d) // (2 * d))
+
+
+# ---------- прогрев кэша (1.17) ----------
+
+def warm_shop(shop_id: str) -> None:
+    """Загружает исходные данные магазина в кэш (в фоне). Ошибки не выходят за пределы потока."""
+    from .db import SessionLocal
+    from .models import Shop as _Shop
+
+    try:
+        with SessionLocal() as db:
+            shop = db.get(_Shop, shop_id)
+            if shop is not None:
+                base_for(db, shop)
+    except Exception:  # noqa: BLE001 — прогрев не должен валить сервер
+        logging.getLogger("satti.reports").exception("warm failed for shop")
+
+
+def warm_recent(limit: int | None = None) -> None:
+    """Прогрев при запуске: демо-магазины с недавней активностью, не больше размера кэша."""
+    from .db import SessionLocal
+    from .models import DemoInstallation
+
+    limit = limit or reportcache.MAX_SNAPSHOTS
+
+    try:
+        with SessionLocal() as db:
+            ids = [row.shop_id for row in db.scalars(
+                select(DemoInstallation).order_by(DemoInstallation.last_active_at.desc()).limit(limit)).all()]
+    except Exception:  # noqa: BLE001
+        logging.getLogger("satti.reports").exception("warm list failed")
+        return
+    for shop_id in ids:
+        warm_shop(shop_id)
+
+
+def schedule_warm_after_write(shop_id: str, delay_seconds: float = 2.0) -> None:
+    """После записи — прогрев через паузу: запись в обработчике может зафиксироваться чуть позже сброса кэша."""
+    t = threading.Timer(delay_seconds, warm_shop, args=(shop_id,))
+    t.daemon = True
+    t.start()

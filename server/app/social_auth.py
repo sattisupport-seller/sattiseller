@@ -55,7 +55,7 @@ def fetch_jwks(provider: str) -> dict:
     if cached and now - cached[0] < _JWKS_TTL:
         return cached[1]
     try:
-        with urllib.request.urlopen(PROVIDERS[provider]["keys_url"], timeout=10) as resp:  # noqa: S310 — фиксированные адреса
+        with urllib.request.urlopen(PROVIDERS[provider]["keys_url"], timeout=10) as resp:  # noqa: S310 — фиксированные адреса  # nosec B310 — адрес фиксированный https-адрес ключей Apple/Google, не из пользовательского ввода
             data = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001
         raise ApiError(503, "provider_unavailable", "Не удалось проверить вход. Попробуйте позже.") from exc
@@ -130,6 +130,7 @@ def user_for_identity(db: DbSession, provider: str, claims: dict) -> User:
 class SocialIn(BaseModel):
     id_token: str
     nonce: str | None = None
+    accept_terms: bool = False  # 1.19: галочка на экране входа (без неё — согласие не фиксируется)
 
 
 router = APIRouter(tags=["вход"])
@@ -138,10 +139,13 @@ router = APIRouter(tags=["вход"])
 def _login_response(db: DbSession, provider: str, body: SocialIn) -> dict:
     claims = verify_identity_token(provider, body.id_token, nonce=body.nonce)
     user = user_for_identity(db, provider, claims)
+    if body.accept_terms:
+        user.terms_version = settings.legal_version
+        user.terms_accepted_at = datetime.now(timezone.utc)
     tokens = issue_tokens(db, user_id=user.id)
     db.commit()
     has_shop = db.scalar(select(Shop.id).where(Shop.owner_user_id == user.id).limit(1)) is not None
-    return {**tokens, "user": {"id": user.id, "email": user.email}, "needs_shop_setup": not has_shop}
+    return {**tokens, "user": {"id": user.id, "email": user.email}, "terms_consent_required": user.terms_version != settings.legal_version, "needs_shop_setup": not has_shop}
 
 
 @router.post("/auth/apple")

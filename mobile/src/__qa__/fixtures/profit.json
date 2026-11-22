@@ -1,0 +1,73 @@
+{
+ "period": {
+  "from": "2026-11-14",
+  "to": "2026-11-20"
+ },
+ "steps": [
+  {
+   "key": "net_sales",
+   "minor": 5010000,
+   "label": "Чистые продажи (полный набор)",
+   "rate_bp": null
+  },
+  {
+   "key": "cost",
+   "minor": -3112500,
+   "label": "Себестоимость",
+   "rate_bp": null
+  },
+  {
+   "key": "commission",
+   "minor": -501000,
+   "label": "Комиссия",
+   "rate_bp": null
+  },
+  {
+   "key": "delivery",
+   "minor": -310000,
+   "label": "Доставка покупателю",
+   "rate_bp": null
+  },
+  {
+   "key": "product_profit",
+   "minor": 1086500,
+   "label": "Прибыль по товарам",
+   "rate_bp": null
+  },
+  {
+   "key": "ads",
+   "minor": -1050000,
+   "label": "Реклама",
+   "rate_bp": null
+  },
+  {
+   "key": "other_expenses",
+   "minor": 0,
+   "label": "Прочие расходы магазина",
+   "rate_bp": null
+  },
+  {
+   "key": "store_profit",
+   "minor": 36500,
+   "label": "Прибыль магазина",
+   "rate_bp": null
+  }
+ ],
+ "coverage_bp": 8579,
+ "net_sales_all_minor": 5840000,
+ "missing": [
+  {
+   "product_id": "7dc997d1e6b7405a84ed1a40774e59b1",
+   "sku": "D039",
+   "name": "Держатель для телефона на руль",
+   "reason": "no_cost"
+  },
+  {
+   "product_id": "74526fb9d4ae435cb21ff63b31134538",
+   "sku": "D040",
+   "name": "Сумка для йоги",
+   "reason": "no_cost"
+  }
+ ],
+ "note": "Расчётная прибыль до налогов. Не является бухгалтерской отчётностью."
+}

@@ -2,11 +2,9 @@
 
 from types import SimpleNamespace
 
-import pytest
 
 from app import ai
 from app.privacy import MASK_BUYER, buyer_values, mask_known, mask_text
-from tests.conftest import login
 
 FAKE_ORDERS = [
     SimpleNamespace(buyer_name="Айжан Нурланова", buyer_phone="+7 700 111 22 33", buyer_address="Астана, Мангилик Ел 10"),

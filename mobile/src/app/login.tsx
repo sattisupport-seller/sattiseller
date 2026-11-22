@@ -4,9 +4,10 @@ import { useRouter } from 'expo-router';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { Platform, View } from 'react-native';
+import { Linking, Platform, Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAppConfig } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/Inputs';
 import { Txt } from '@/components/ui/Text';
@@ -61,6 +62,9 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
+  // 1.19: галочка условий и политики — по умолчанию не отмечена; без неё вход не выполняется
+  const [accepted, setAccepted] = useState(false);
+  const config = useAppConfig();
 
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
@@ -71,7 +75,7 @@ export default function Login() {
     setError(null);
     setBusy(true);
     try {
-      await signInWithIdToken(provider, idToken, nonce);
+      await signInWithIdToken(provider, idToken, nonce, accepted);
       router.replace('/');
     } catch (e) {
       setError(e instanceof ApiError ? e.message : t('login.socialFailed'));
@@ -81,6 +85,10 @@ export default function Login() {
   };
 
   const signInApple = async () => {
+    if (!accepted) {
+      setError(t('login.acceptFirst'));
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
@@ -92,7 +100,7 @@ export default function Login() {
         nonce: hashed,
       });
       if (!cred.identityToken) throw new Error('no-token');
-      await signInWithIdToken('apple', cred.identityToken, raw);
+      await signInWithIdToken('apple', cred.identityToken, raw, accepted);
       router.replace('/');
     } catch (e) {
       // Отмена пользователем — не ошибка.
@@ -104,6 +112,10 @@ export default function Login() {
   };
 
   const submit = async () => {
+    if (!accepted) {
+      setError(t('login.acceptFirst'));
+      return;
+    }
     const value = email.trim().toLowerCase();
     if (!EMAIL_RE.test(value)) {
       setError(t('login.errEmail'));
@@ -113,7 +125,7 @@ export default function Login() {
     setError(null);
     try {
       await requestCode(value);
-      router.push({ pathname: '/code', params: { email: value } });
+      router.push({ pathname: '/code', params: { email: value, accepted: '1' } });
     } catch (e) {
       if (e instanceof ApiError && e.status === 429) setError(t('login.tooMany'));
       else setError(e instanceof ApiError ? e.message : t('common.networkError'));
@@ -128,6 +140,25 @@ export default function Login() {
         {error ? <Txt variant="footnote" tone="danger">{error}</Txt> : null}
 
         <View style={{ marginTop: 'auto', gap: spacing.md }}>
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: accepted }}
+            accessibilityLabel={t('login.acceptLabel')}
+            onPress={() => { setAccepted((v) => !v); setError(null); }}
+            style={{ flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' }}
+          >
+            <Txt variant="footnote">{accepted ? '☑' : '☐'}</Txt>
+            <Txt variant="footnote" style={{ flex: 1 }}>{t('login.acceptLabel')}</Txt>
+          </Pressable>
+          <View style={{ flexDirection: 'row', gap: spacing.md, flexWrap: 'wrap' }}>
+            <Pressable accessibilityRole="link" onPress={() => config.data && Linking.openURL(config.data.privacy_url)}>
+              <Txt variant="footnote" tone="secondary">{t('login.privacyLink')}</Txt>
+            </Pressable>
+            <Pressable accessibilityRole="link" onPress={() => config.data && Linking.openURL(config.data.terms_url)}>
+              <Txt variant="footnote" tone="secondary">{t('login.termsLink')}</Txt>
+            </Pressable>
+          </View>
+
           {appleAvailable ? (
             <AppleAuthentication.AppleAuthenticationButton
               buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
@@ -140,7 +171,7 @@ export default function Login() {
 
           {GOOGLE_CONFIGURED ? (
             <GoogleSignInButton
-              disabled={busy}
+              disabled={busy || !accepted}
               onIdToken={(token) => { void finishSocial('google', token); }}
             />
           ) : (

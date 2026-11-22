@@ -19,3 +19,14 @@ server/data/
 
 # Секреты (ТЗ 2.1)
 secrets/
+
+# Отчёты покрытия (QA)
+mobile/coverage/
+server/.coverage
+server/htmlcov/
+
+# Отчёт оценки помощника (3.8), создаётся тестами
+server/tests/ai_eval_report.json
+server/tests/ai_eval_report*.json
+server/tests/ai_eval_live*.json
+server/tests/ai_eval_live_runs/

@@ -9,6 +9,7 @@
 """
 
 from __future__ import annotations
+from sqlalchemy import select
 
 import re
 from typing import Any
@@ -142,7 +143,6 @@ def mask_known(text: str, values) -> str:
 
 
 def buyer_values_for_shop(db, shop_id: str) -> list[str]:
-    from sqlalchemy import select
 
     from .models import Order
 

@@ -11,6 +11,7 @@ def good_production(monkeypatch):
     monkeypatch.setenv("SATTI_ENV", "production")
     monkeypatch.setenv("SATTI_CORS_ORIGINS", "https://seller.example.invalid")
     monkeypatch.setenv("SATTI_SCHEDULER", "1")
+    monkeypatch.setattr(settings, "public_base_url", "https://satti.example.invalid")  # QA-15
     monkeypatch.setenv("SATTI_APPLE_CLIENT_ID", "kz.satti.seller")
     monkeypatch.setattr(settings, "billing_pepper", "настоящий-перец")
     monkeypatch.setattr(settings, "admin_totp_key", "настоящий-ключ")
@@ -19,6 +20,8 @@ def good_production(monkeypatch):
     monkeypatch.setattr(settings, "billing_enforced", True)
     monkeypatch.setattr(settings, "free_access", False)
     monkeypatch.setattr(settings, "google_client_ids", "")
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.invalid")  # 3.6: письма с кодами идут по SMTP
+    monkeypatch.setattr(settings, "owner_name", "Имя оператора")  # юридические тексты
     return monkeypatch
 
 
@@ -49,3 +52,13 @@ def test_some_login_method_required(good_production):
     assert any("способ входа" in p for p in production_config_problems())
     good_production.setattr(settings, "google_client_ids", "client-1.apps.googleusercontent.com")
     assert not any("способ входа" in p for p in production_config_problems())
+
+
+def test_smtp_host_required(good_production):
+    good_production.setattr(settings, "smtp_host", "")
+    assert any("SATTI_SMTP_HOST" in p for p in production_config_problems())
+
+
+def test_owner_name_required(good_production):
+    good_production.setattr(settings, "owner_name", "")
+    assert any("SATTI_OWNER_NAME" in p for p in production_config_problems())

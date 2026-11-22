@@ -1,0 +1,18 @@
+{
+ "items": [
+  {
+   "id": "04c355ad3c1d469985bae862a0eb0da3",
+   "kind": "ads",
+   "amount_minor": 4500000,
+   "period_start": "2026-10-22",
+   "period_end": "2026-11-20"
+  },
+  {
+   "id": "d422e91c75774b3cbc95d205a4698680",
+   "kind": "other",
+   "amount_minor": 1200000,
+   "period_start": "2026-09-22",
+   "period_end": "2026-10-21"
+  }
+ ]
+}

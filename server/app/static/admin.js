@@ -94,6 +94,15 @@ async function loadFlags() {
 }
 
 async function loadUsers() {
+  const fb = await api("/admin/ai-feedback", { admin: true });
+  $("ai-feedback").replaceChildren(...fb.items.map((x) => {
+    const tr = document.createElement("tr");
+    [new Date(x.created_at).toLocaleString("ru-RU"), x.kind === "flag" ? "жалоба" : "👎", x.reason || "—", x.question || "—",
+     x.refused ? (x.refusal_category || "да") : "нет"].forEach((v) => {
+      const td = document.createElement("td"); td.textContent = v; tr.appendChild(td);
+    });
+    return tr;
+  }));
   const r = await api("/admin/users", { admin: true });
   $("users").innerHTML = r.items.map((u) =>
     `<tr><td>${esc(u.email)}</td><td>${esc(u.shops_count)}</td><td>${u.blocked ? "заблокирован" : "активен"}</td>` +

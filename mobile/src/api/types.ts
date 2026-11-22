@@ -81,6 +81,7 @@ export type ImportUpload = {
 
 export type AskAnswer = {
   turnId: string;
+  generatedBy?: 'ai';  // QA-05: каждый ответ помечается
   conversationId: string;
   answerTemplate: string;
   renderedAnswer: string;
@@ -121,7 +122,7 @@ export type AppConfig = {
   ai_service_name: string;
   privacy_url: string;
   terms_url: string;
-  flags: { kaspi_connection: boolean; ai_assistant: boolean; subscription: boolean };
+  flags: { kaspi_connection: boolean; ai_assistant: boolean; subscription: boolean; analytics?: boolean };
 };
 
 export type ApiErrorBody = { error: { code: string; message: string; error_id: string } };

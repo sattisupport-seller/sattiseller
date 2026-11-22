@@ -1,15 +1,21 @@
 name: CI
 
-# Проверки на каждое изменение: тесты сервера, миграции, аудит зависимостей, тесты и типы приложения.
-# Пушить и запускать может только владелец репозитория; секреты здесь не нужны.
+# Все проверки QA (qa/full-check): тесты и покрытие, фаззинг API, безопасность, миграции, приложение.
+# Нагрузочные тесты (tests/load) сюда не входят: их запускают вручную на тестовом сервере.
 
 on:
   push:
   pull_request:
 
+# Новый запуск той же ветки отменяет предыдущий (экономия минут).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   server:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: server
@@ -21,11 +27,15 @@ jobs:
       - name: Установка зависимостей
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      - name: Тесты сервера
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Тесты сервера с покрытием (порог 90%)
         env:
           PYTHONIOENCODING: utf-8
-        run: python -m pytest -q
+        run: python -m pytest -q --cov=app --cov-report=term --cov-fail-under=90
+      - name: Фаззинг API по OpenAPI (schemathesis, 60 примеров на операцию)
+        env:
+          SATTI_FUZZ_EXAMPLES: "60"
+        run: python -m pytest -q tests/test_api_fuzz.py
       - name: Миграции на чистой базе (upgrade, проверка моделей, downgrade)
         env:
           DATABASE_URL: sqlite:///./ci-migrations.db
@@ -33,14 +43,38 @@ jobs:
         run: |
           python -m alembic upgrade head
           python -m alembic check
-          python -m alembic downgrade base
+          SATTI_ALLOW_DOWNGRADE=1 python -m alembic downgrade base  # тестовая база CI; в продакшене откат без флага запрещён (QA-12)
+      - name: Статический анализ безопасности (bandit, medium и выше), блокирующий
+        run: python -m bandit -r app -ll
       - name: Аудит зависимостей сервера
+        run: pip-audit -r requirements.txt
+
+  semgrep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep (правила Python, OWASP, секреты)
+        run: semgrep scan --config p/python --config p/owasp-top-ten --config p/secrets --error --severity ERROR --severity WARNING server/app
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks по всей истории (версия 8.30.1)
         run: |
-          pip install pip-audit
-          pip-audit -r requirements.txt
+          curl -sSL -o gl.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gl.tgz gitleaks
+          ./gitleaks detect --source . --log-opts="--all" --redact --no-banner
 
   mobile:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: mobile
@@ -53,7 +87,9 @@ jobs:
           cache-dependency-path: mobile/package-lock.json
       - name: Установка зависимостей
         run: npm ci
-      - name: Тесты приложения
-        run: npm test
+      - name: Тесты приложения с покрытием
+        run: npx jest --coverage --coverageReporters=text-summary
       - name: Проверка типов
         run: npm run typecheck
+      - name: Аудит зависимостей приложения (продакшен)
+        run: npm audit --omit=dev --audit-level=high
