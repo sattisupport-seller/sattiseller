@@ -120,7 +120,7 @@ class Settings:
     # QA-15: публичный адрес сайта (политика и условия по путям /privacy и /terms)
     public_base_url: str = os.environ.get("SATTI_PUBLIC_BASE_URL", "").rstrip("/")
     # 1.19: версия условий и политики; при смене — повторное согласие всех пользователей
-    legal_version: str = os.environ.get("SATTI_LEGAL_VERSION", "2026-11-20-1")
+    legal_version: str = os.environ.get("SATTI_LEGAL_VERSION", "2026-11-22-1")  # К-15: обновлена политика (раздел 5, фото); всем нужно принять заново
     # Подписка (ТЗ 2.1, раздел 8–9). В разработке и до подключения магазинов приложения выключено.
     billing_enforced: bool = os.environ.get("SATTI_BILLING_ENFORCED", "0") == "1"
     # AUD-10: бесплатная бета осознанно, а не по умолчанию (блокировка выключена, пока нет оплаты)
