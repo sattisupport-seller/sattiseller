@@ -222,6 +222,18 @@ class ProductStock(Base):
     last_alert_level: Mapped[str | None] = mapped_column(String(8), nullable=True)  # последний отправленный порог
 
 
+class StockMovement(Base):
+    """Журнал движений склада (К-1 от 22.11): инвентаризация (остаток на момент) и приход. Дата — дата события, не ввода."""
+    __tablename__ = "stock_movements"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id", ondelete="CASCADE"), index=True)
+    product_id: Mapped[str] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # inventory | receipt
+    qty: Mapped[int] = mapped_column(Integer)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class ImportBatch(Base):
     __tablename__ = "import_batches"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)

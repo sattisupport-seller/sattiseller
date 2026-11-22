@@ -53,11 +53,12 @@ def test_receipt_adds_to_current_and_resets_sales_count(client, demo):
     shop = demo["shop_id"]
     pid, _, _ = _pid(demo)
     _set_baseline(demo, pid, 0, datetime(2026, 10, 1, tzinfo=timezone.utc))
-    before = client.get(f"/v1/shops/{shop}/products/{pid}/stock", headers=demo["headers"]).json()["current"]
+    before = client.get(f"/v1/shops/{shop}/products/{pid}/stock", headers=demo["headers"]).json()
     r = client.post(f"/v1/shops/{shop}/products/{pid}/stock/receipt", headers=demo["headers"], json={"qty": 5})
-    assert r.status_code == 200 and r.json()["current"] == before + 5
+    assert r.status_code == 200 and r.json()["current"] == before["current"] + 5
     after = client.get(f"/v1/shops/{shop}/products/{pid}/stock", headers=demo["headers"]).json()
-    assert after["current"] == before + 5 and after["soldSince"] == 0  # продажи до прихода учтены
+    assert after["current"] == before["current"] + 5
+    assert after["soldSince"] == before["soldSince"]  # приход не сбрасывает учёт продаж (журнал, К-1)
 
 
 def test_alerts_fire_once_per_threshold(client, demo):

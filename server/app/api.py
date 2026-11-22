@@ -719,6 +719,7 @@ class StockIn(BaseModel):
 
 class ReceiptIn(BaseModel):
     qty: int = Field(ge=1, le=10_000_000)  # приход: сколько штук поступило
+    occurred_at: datetime | None = None  # дата прихода (событие), по умолчанию сейчас
 
 
 class DelistIn(BaseModel):
@@ -783,7 +784,8 @@ def stock_alerts(shop_id: str, principal: Principal = Depends(get_principal),
 @api.put("/shops/{shop_id}/products/{product_id}/stock", tags=["склад"])
 def put_stock_row(shop_id: str, product_id: str, body: StockIn, principal: Principal = Depends(get_principal),
                   db: DbSession = Depends(get_session)) -> dict:
-    """Инвентаризация: остаток на сейчас. Дальше продажи и возвраты уменьшают и увеличивают его автоматически."""
+    """Инвентаризация: остаток на сейчас (событие журнала). Продажи и возвраты после неё уменьшают и увеличивают остаток."""
+    from .models import StockMovement
     shop = shop_for(db, principal, shop_id)
     _product_of_shop(db, shop, product_id)
     row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
@@ -795,6 +797,8 @@ def put_stock_row(shop_id: str, product_id: str, body: StockIn, principal: Princ
         row.qty = body.qty
         row.updated_at = now
         row.last_alert_level = None
+    db.add(StockMovement(shop_id=shop.id, product_id=product_id, kind="inventory", qty=body.qty,
+                         occurred_at=now, created_at=now))
     db.commit()
     return {"qty": row.qty, "updatedAt": row.updated_at.isoformat()}
 
@@ -802,22 +806,25 @@ def put_stock_row(shop_id: str, product_id: str, body: StockIn, principal: Princ
 @api.post("/shops/{shop_id}/products/{product_id}/stock/receipt", tags=["склад"])
 def stock_receipt(shop_id: str, product_id: str, body: ReceiptIn, principal: Principal = Depends(get_principal),
                   db: DbSession = Depends(get_session)) -> dict:
-    """Приход: к текущему остатку прибавляется поступившее количество; продажи до этого момента учтены."""
+    """Приход. Дата события — occurred_at (по умолчанию сейчас); приход учитывается, если он позже последней инвентаризации.
+    Без инвентаризации остаток не ведётся: сначала пересчитайте товар."""
+    from .models import StockMovement
     shop = shop_for(db, principal, shop_id)
     _product_of_shop(db, shop, product_id)
-    st = stock_states(db, shop).get(product_id)
-    row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
     now = datetime.now(timezone.utc)
-    base = st.current if st is not None else 0
-    if row is None:
-        row = ProductStock(shop_id=shop.id, product_id=product_id, qty=base + body.qty, updated_at=now)
-        db.add(row)
-    else:
-        row.qty = base + body.qty
-        row.updated_at = now
-        row.last_alert_level = None
+    occurred = body.occurred_at or now
+    if occurred.tzinfo is None:
+        occurred = occurred.replace(tzinfo=timezone.utc)
+    if occurred > now + timedelta(minutes=1):
+        raise ApiError(422, "validation", "Дата прихода не может быть в будущем.")
+    st = stock_states(db, shop).get(product_id)
+    if st is None:
+        raise ApiError(409, "stock_not_counted", "Сначала пересчитайте товар (инвентаризация), потом вносите приход.")
+    db.add(StockMovement(shop_id=shop.id, product_id=product_id, kind="receipt", qty=body.qty,
+                         occurred_at=occurred, created_at=now))
     db.commit()
-    return {"qty": row.qty, "current": row.qty}
+    current = stock_states(db, shop)[product_id].current
+    return {"qty": current, "current": current}
 
 
 @api.post("/shops/{shop_id}/products/{product_id}/stock/delist", tags=["склад"])

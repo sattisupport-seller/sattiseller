@@ -43,12 +43,26 @@ def _level(current: int) -> str | None:
 
 
 def stock_states(db: DbSession, shop: Shop, now: datetime | None = None) -> dict[str, StockState]:
+    """Текущий остаток по товарам (К-1 от 22.11, журнал движений).
+    База — последняя инвентаризация по дате события (журнал `stock_movements`); если её нет — старая запись `product_stocks`.
+    Остаток = база + приходы с датой позже базы − продажи с даты базы (кроме отмен) + годные возвраты с даты базы.
+    Дата ввода прихода значения не имеет: важна дата события."""
+    from .models import StockMovement
     now = now or datetime.now(timezone.utc)
-    rows = db.scalars(select(ProductStock).where(ProductStock.shop_id == shop.id)).all()
-    out: dict[str, StockState] = {}
-    if not rows:
-        return out
     products = {p.id: p for p in db.scalars(select(Product).where(Product.shop_id == shop.id)).all()}
+    legacy = {r.product_id: r for r in db.scalars(select(ProductStock).where(ProductStock.shop_id == shop.id)).all()}
+    moves = db.scalars(select(StockMovement).where(StockMovement.shop_id == shop.id)
+                       .order_by(StockMovement.occurred_at)).all()
+    # база по товару: последняя инвентаризация; иначе — старая запись
+    base: dict[str, tuple[int, datetime]] = {}
+    for m in moves:
+        if m.kind == "inventory":
+            base[m.product_id] = (m.qty, _aware(m.occurred_at))
+    for pid, row in legacy.items():
+        if pid not in base:
+            base[pid] = (row.qty, _aware(row.updated_at))
+    if not base:
+        return {}
     items = db.execute(
         select(OrderItem.product_id, OrderItem.qty, Order.created_at, Order.status)
         .join(Order, Order.id == OrderItem.order_id)
@@ -60,22 +74,25 @@ def stock_states(db: DbSession, shop: Shop, now: datetime | None = None) -> dict
         .where(ReturnEvent.shop_id == shop.id)
     ).all()
     recent_cut = now - timedelta(days=SALE_WINDOW_DAYS)
-    for r in rows:
-        p = products.get(r.product_id)
+    out: dict[str, StockState] = {}
+    for pid, (base_qty, base_at) in base.items():
+        p = products.get(pid)
         if p is None:
             continue
-        base = r.updated_at if r.updated_at.tzinfo else r.updated_at.replace(tzinfo=timezone.utc)
-        sold = sum(q for pid, q, created, status in items
-                   if pid == r.product_id and status not in CANCEL and _aware(created) >= base)
-        returned = sum(q for pid, q, confirmed, sellable in returns
-                       if pid == r.product_id and sellable and _aware(confirmed) >= base)
-        current = r.qty - sold + returned
-        recent = sum(q for pid, q, created, status in items
-                     if pid == r.product_id and status not in CANCEL and _aware(created) >= recent_cut)
+        receipts = sum(m.qty for m in moves if m.kind == "receipt" and m.product_id == pid
+                       and _aware(m.occurred_at) > base_at)
+        sold = sum(q for ipid, q, created, status in items
+                   if ipid == pid and status not in CANCEL and _aware(created) >= base_at)
+        returned = sum(q for rpid, q, confirmed, sellable in returns
+                       if rpid == pid and sellable and _aware(confirmed) >= base_at)
+        current = base_qty + receipts - sold + returned
+        recent = sum(q for ipid, q, created, status in items
+                     if ipid == pid and status not in CANCEL and _aware(created) >= recent_cut)
         avg = recent / SALE_WINDOW_DAYS
         days = int(current / avg) if avg > 0 and current > 0 else (0 if current <= 0 else None)
-        out[r.product_id] = StockState(r.product_id, p.sku, p.name, r.qty, base, sold, returned, current,
-                                       round(avg, 2), days, _level(current), bool(r.delisted))
+        row = legacy.get(pid)
+        out[pid] = StockState(pid, p.sku, p.name, base_qty, base_at, sold, returned, current,
+                              round(avg, 2), days, _level(current), bool(row.delisted) if row else False)
     return out
 
 
