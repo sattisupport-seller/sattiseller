@@ -19,11 +19,26 @@ log = logging.getLogger("satti.scheduler")
 INTERVAL_SECONDS = 24 * 3600
 
 
+AI_FEEDBACK_KEEP_DAYS = 365  # оценки и жалобы на ответы помощника — 12 месяцев (решение владельца 22.11)
+
+
+def purge_old_ai_feedback(db, now: datetime) -> int:
+    """Удаляет оценки и жалобы старше 12 месяцев. Возвращает число удалённых."""
+    from datetime import timedelta
+    from sqlalchemy import delete
+    from .models import AIFeedback
+    cut = now - timedelta(days=AI_FEEDBACK_KEEP_DAYS)
+    res = db.execute(delete(AIFeedback).where(AIFeedback.created_at < cut))
+    db.commit()
+    return res.rowcount or 0
+
+
 def run_daily_jobs(now: datetime | None = None) -> list[tuple[str, str]]:
     """Одна итерация: возвращает пары (магазин, действие), которые сделаны."""
     now = now or datetime.now(timezone.utc)
     db = SessionLocal()
     try:
+        purge_old_ai_feedback(db, now)
         done = run_retention(db, now)
     finally:
         db.close()

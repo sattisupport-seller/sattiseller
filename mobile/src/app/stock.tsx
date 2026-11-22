@@ -34,8 +34,11 @@ export default function StockScreen() {
   const allProducts = (products.data?.pages ?? []).flatMap((p) => p.items);
 
   const submitQty = async () => {
-    const n = Number(qty.replace(',', '.'));
-    if (!mode || !Number.isInteger(n) || n <= 0 || (mode.kind === 'inventory' && n < 0)) return setError(t('stock.invalid'));
+    // Инвентаризация: 0 допустим (товар закончился). Приход: только больше нуля.
+    const raw = qty.trim();
+    const n = Number(raw.replace(',', '.'));
+    const min = mode?.kind === 'receipt' ? 1 : 0;
+    if (!mode || raw === '' || !Number.isInteger(n) || n < min) return setError(t('stock.invalid'));
     setError(null);
     try {
       if (mode.kind === 'receipt') await mut.receipt.mutateAsync({ productId: mode.productId, qty: n });
@@ -97,7 +100,7 @@ export default function StockScreen() {
             </View>
             {mode?.productId === p.product_id && (
               <View style={{ gap: spacing.sm }}>
-                <TextField label={t('stock.qtyLabel')} value={qty} onChangeText={setQty} keyboardType="number-pad" error={error ?? undefined} />
+                <TextField label={t('stock.qtyLabel')} accessibilityLabel={t('stock.qtyLabel')} value={qty} onChangeText={setQty} keyboardType="number-pad" error={error ?? undefined} />
                 <Button title={t('stock.save')} onPress={submitQty} loading={mut.inventory.isPending || mut.receipt.isPending} fullWidth />
               </View>
             )}
