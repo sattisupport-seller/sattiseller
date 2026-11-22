@@ -150,14 +150,22 @@ class KaspiClient:
         assert last is not None
         raise last
 
-    def list_orders(self, since_ms: int, page: int) -> list[KaspiOrder]:
-        """Заказы, созданные не раньше since_ms, страница page (с нуля). Пустой список — конец."""
-        body = self._get(ORDERS_PATH, {
+    def list_orders(self, since_ms: int, page: int, until_ms: int | None = None) -> list[KaspiOrder]:
+        """Заказы, созданные не раньше since_ms (и не позже until_ms), страница page (с нуля). Пустой список — конец."""
+        return self.list_orders_page(since_ms, page, until_ms)[0]
+
+    def list_orders_page(self, since_ms: int, page: int, until_ms: int | None = None) -> tuple[list[KaspiOrder], int | None]:
+        """Как list_orders, плюс общее число заказов из meta.totalCount (для прогресса загрузки, К-18.3)."""
+        params = {
             "page[number]": page,
             "page[size]": PAGE_SIZE,
             "filter[orders][creationDate][$ge]": since_ms,  # документация Kaspi: [$ge], в миллисекундах
-        })
-        return [parse_order(item) for item in body.get("data", [])]
+        }
+        if until_ms is not None:
+            params["filter[orders][creationDate][$le]"] = until_ms  # документация Kaspi: [$le]
+        body = self._get(ORDERS_PATH, params)
+        total = (body.get("meta") or {}).get("totalCount")
+        return [parse_order(item) for item in body.get("data", [])], (int(total) if total is not None else None)
 
     def order_entries(self, order_code: str) -> list[OrderEntry]:
         """Позиции заказа: GET /orders/{code}/entries (документация: раздел «Состав заказа», q3203)."""
@@ -194,6 +202,14 @@ class KaspiClient:
             sku, name = self._sku_by_master[master_id]
         self._sku_by_entry[entry_id] = (sku, name)
         return sku, name
+
+    def order_by_code(self, code: str) -> KaspiOrder | None:
+        """Один заказ по номеру: фильтр filter[orders][code] (раздел «Заказы», q3202). Нужен для открытых заказов (К-19)."""
+        body = self._get(ORDERS_PATH, {"filter[orders][code]": code})
+        for item in body.get("data", []):
+            if str(item.get("id")) == code:
+                return parse_order(item)
+        return None
 
     def ping(self, now_ms: int) -> None:
         """Проверка токена: короткий запрос за последние сутки."""

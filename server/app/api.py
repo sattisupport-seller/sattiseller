@@ -531,7 +531,16 @@ def get_overview(shop_id: str, period: str = Query("7d"), principal: Principal =
 
     out = dict(reportcache.memo(shop.id, f"overview|{period}|{_minute()}", compute))
     out["history_note"] = _history_note(db, shop, out.get("period", {}).get("from"))
+    out["data_from"] = _kaspi_data_from(db, shop)  # К-18.4: с какой даты есть данные Kaspi
     return out
+
+
+def _kaspi_data_from(db: DbSession, shop: Shop) -> str | None:
+    conn = db.get(KaspiConnection, shop.id)
+    if conn is None:
+        return None
+    from datetime import timedelta as _td
+    return (conn.connected_at.date() - _td(days=kaspi_service.FIRST_SYNC_DAYS)).isoformat()
 
 
 def _history_note(db: DbSession, shop: Shop, period_from: str | None) -> str | None:
@@ -594,7 +603,7 @@ def get_missing_costs(shop_id: str, principal: Principal = Depends(get_principal
 
 @api.get("/shops/{shop_id}/products", tags=["товары"], response_model=ProductsPageOut)
 def get_products(shop_id: str, period: str = Query("30d"), filter: str | None = Query(None, alias="filter"),
-                 sort: str = "profit_desc", q: str | None = None, cursor: str | None = None, limit: int = 50,
+                 sort: str = "profit_asc", q: str | None = None, cursor: str | None = None, limit: int = 50,
                  principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
 
@@ -1537,6 +1546,8 @@ def _kaspi_view(shop: Shop, conn: KaspiConnection | None, db: DbSession | None =
             "store_hint": conn.store_hint,
             "catalog": ({"offers_count": catalog.offers_count, "imported_at": catalog.imported_at.isoformat()}
                         if catalog is not None else None),
+            # К-18.3: прогресс первой загрузки (этап 1 — 7 дней, затем догрузка 90 дней)
+            "load": {"done": conn.load_done or 0, "total": conn.load_total, "complete": bool(conn.backfill_done)},
             "price_url": price_url,
             "price_hint": None if catalog is not None else (
                 "Сначала загрузите прайс-лист из кабинета Kaspi (Товары → Выгрузка прайс-листа). "

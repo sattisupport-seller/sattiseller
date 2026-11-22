@@ -71,6 +71,7 @@ class OverviewOut(BaseModel):
     period: PeriodOut
     comparison_period: PeriodOut
     history_note: str | None = None  # К-17.3: период раньше первой загрузки Kaspi
+    data_from: str | None = None  # К-18.4: дата, с которой есть данные Kaspi (за 90 дней)
     data_as_of: str
     is_today_in_period: bool
     kpi: KpiOut
@@ -309,6 +310,7 @@ class CoverageOut(BaseModel):
 class ProductsPageOut(BaseModel):
     items: list[ProductRowOut]
     total: int
+    no_cost_count: int = 0  # К-18: товаров без себестоимости — для подсказки
     coverage: CoverageOut
     next_cursor: str | None
 

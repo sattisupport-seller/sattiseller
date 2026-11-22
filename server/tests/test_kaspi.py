@@ -118,7 +118,7 @@ def test_hundred_products_many_pages(client, demo, kaspi_on, mock):
     _connect(client, demo)
     mock.generate(250, now=datetime.now(timezone.utc), products=100)
     stats = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"]).json()
-    assert stats["added"] == 250 and stats["pages"] == 3
+    assert stats["added"] == 250 and stats["pages"] >= 3  # этап 1 (7 дней) и догрузка 90 дней — страницами
     with DbSession(engine) as db:
         assert db.query(Product).filter(Product.shop_id == demo["shop_id"], Product.sku.like("K%")).count() == 100
 
@@ -129,11 +129,13 @@ def test_failure_in_the_middle_keeps_progress_and_resumes_without_duplicates(cli
     mock.fail_on_page = 1
     r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
     assert r.status_code == 503
-    assert _count_kaspi_orders(demo["shop_id"]) == 100  # первая страница сохранилась
+    saved = _count_kaspi_orders(demo["shop_id"])
+    assert 0 < saved < 250  # сохранённые страницы остались
     with DbSession(engine) as db:
         conn = db.get(KaspiConnection, demo["shop_id"])
-        # К-17.3: курсор двигается только после полного прохода; страницы сохранены, ошибка записана
-        assert conn.cursor_ms is None and conn.last_error
+        # К-17.3: курсор двигается только после полного прохода; ошибка записана; догрузка продолжится со страницы
+        assert conn.cursor_ms is not None and conn.last_error  # этап 1 (7 дней) завершён, курсор стоит
+        assert conn.backfill_done is False and conn.backfill_page >= 1
     mock.fail_on_page = None
     r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
     assert r.status_code == 200, r.text
@@ -479,51 +481,6 @@ def test_product_card_asks_to_check_commission_when_category_has_no_rate(client,
     assert client.get(url, headers=demo["headers"]).json()["commission_note"] is None
 
 
-def test_nightly_reread_catches_late_partial_cancel_that_regular_sync_misses(client, demo, kaspi_on, mock):
-    """К-17.2: частичная отмена старого выполненного заказа (старше 14 дней) обычной синхронизацией не подхватывается,
-    ночное перечитывание за 60 дней подхватывает и пишет движение «отмена»."""
-    from app import kaspi as kaspi_service
-    from app.kaspi_client import KaspiClient as _KC
-    from app.models import KaspiConnection as _KCon, OrderItem as _OI, StockMovement as _SM
-
-    _connect(client, demo)
-    mock.generate(6, now=datetime.now(timezone.utc), days=40, state_cycle=["COMPLETED"], products=2)
-    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
-    code = next(c for c, rows in mock.entries.items() if rows[0]["qty"] >= 2)  # самый старый заказ, qty >= 2
-    old_qty = mock.entries[code][0]["qty"]
-    total_before = sum(r["qty"] for r in mock.entries[code])
-    mock.partial_cancel(code, 0, 1)
-    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])  # обычная синхронизация
-    with DbSession(engine) as db:
-        order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == code).one()
-        assert sum(it.qty for it in db.query(_OI).filter(_OI.order_id == order.id)) == total_before  # пока не видна
-    with DbSession(engine) as db:
-        conn = db.get(_KCon, demo["shop_id"])
-        res = kaspi_service.reread_window(db, conn, _KC(VALID_TOKEN, transport=mock.transport(), sleep=lambda s: None,
-                                                          min_interval=0), datetime.now(timezone.utc))
-        assert res["items_changed"] >= 1
-    with DbSession(engine) as db:
-        order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == code).one()
-        assert sum(it.qty for it in db.query(_OI).filter(_OI.order_id == order.id)) == total_before - (old_qty - 1)
-        moves = db.query(_SM).filter(_SM.shop_id == demo["shop_id"], _SM.kind == "cancel").all()
-        assert [m.qty for m in moves] == [old_qty - 1]
-
-
-def test_nightly_job_runs_for_active_connections(client, demo, kaspi_on, mock, monkeypatch):
-    from app import scheduler as sched
-
-    _connect(client, demo)
-    mock.generate(2, now=datetime.now(timezone.utc), days=5, products=1)
-    monkeypatch.setattr("app.kaspi.client_for", lambda conn: _client_from(mock))
-    done = sched.run_kaspi_nightly_reread()
-    assert (demo["shop_id"], "reread") in done
-
-
-def _client_from(mock):
-    from app.kaspi_client import KaspiClient as _KC
-    return _KC(VALID_TOKEN, transport=mock.transport(), sleep=lambda s: None, min_interval=0)
-
-
 def test_second_sync_while_one_runs_is_refused(client, demo, kaspi_on, mock):
     """К-17.3: параллельная синхронизация того же магазина не запускается (409), а не идёт второй раз."""
     from app import kaspi as kaspi_service
@@ -584,3 +541,191 @@ def test_seller_delivery_is_an_expense_and_credit_orders_have_unknown_profit(cli
         assert items and all(it.buyer_delivery_minor is None for it in items)  # рассрочка — прибыль неизвестна
         plain = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000002").one()
         assert all(it.buyer_delivery_minor == 0 for it in db.query(_OI).filter(_OI.order_id == plain.id).all()[1:])
+
+
+# ---------- окно возврата 14 дней от выдачи (К-19) ----------
+
+def _pick_code(mock):
+    """Заказ, у которого первая позиция больше одной штуки (чтобы частичная отмена что-то меняла)."""
+    return next(c for c, rows in mock.entries.items() if rows[0]["qty"] >= 2)
+
+
+def _order_dates(mock, code, created_days_ago, delivered_days_ago):
+    """Заказ с датой создания и выдачи относительно сейчас (мок)."""
+    now = datetime.now(timezone.utc)
+    for o in mock.orders:
+        if o["id"] == code:
+            o["attributes"]["creationDate"] = int((now - timedelta(days=created_days_ago)).timestamp() * 1000)
+            o["attributes"]["completedDate"] = int((now - timedelta(days=delivered_days_ago)).timestamp() * 1000)
+            o["attributes"]["state"] = "COMPLETED"
+            return
+    raise KeyError(code)
+
+
+def _sync_and_open_refresh(client, demo, mock):
+    from app import kaspi as kaspi_service
+    from app.kaspi_client import KaspiClient as _KC
+    from app.models import KaspiConnection as _KCon
+
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    with DbSession(engine) as db:
+        conn = db.get(_KCon, demo["shop_id"])
+        kc = _KC(VALID_TOKEN, transport=mock.transport(), sleep=lambda s: None, min_interval=0)
+        return kaspi_service.refresh_open_orders(db, conn, kc, datetime.now(timezone.utc))
+
+
+def _entry_qty_sum(code):
+    from app.models import OrderItem as _OI
+    with DbSession(engine) as db:
+        order = db.query(Order).filter(Order.number == code).one()
+        return sum(it.qty for it in db.query(_OI).filter(_OI.order_id == order.id).all())
+
+
+def test_return_on_day_13_after_delivery_is_still_tracked_though_created_20_days_ago(client, demo, kaspi_on, mock):
+    """К-19: окно возврата — 14 дней от выдачи. Создан 20 дней назад, выдан 13 дней назад: заказ ещё отслеживается."""
+    _connect(client, demo)
+    mock.generate(3, now=datetime.now(timezone.utc), days=5, state_cycle=["COMPLETED"], products=2)
+    code = _pick_code(mock)
+    _order_dates(mock, code, created_days_ago=20, delivered_days_ago=13)
+    total_before = sum(r["qty"] for r in mock.entries[code])
+    _sync_and_open_refresh(client, demo, mock)
+    assert _entry_qty_sum(code) == total_before
+    old_qty = mock.entries[code][0]["qty"]
+    mock.partial_cancel(code, 0, 1)  # возврат/отмена на 13-й день
+    res = _sync_and_open_refresh(client, demo, mock)
+    assert res["checked"] >= 1 and res["items_changed"] >= 1
+    assert _entry_qty_sum(code) == total_before - (old_qty - 1)
+
+
+def test_return_window_closes_17_days_after_delivery(client, demo, kaspi_on, mock):
+    """К-19: через 14 дней + 3 дня запаса после выдачи заказ больше не перечитывается."""
+    _connect(client, demo)
+    mock.generate(3, now=datetime.now(timezone.utc), days=5, state_cycle=["COMPLETED"], products=2)
+    code = _pick_code(mock)
+    _order_dates(mock, code, created_days_ago=30, delivered_days_ago=18)
+    total_before = sum(r["qty"] for r in mock.entries[code])
+    _sync_and_open_refresh(client, demo, mock)
+    old_qty = mock.entries[code][0]["qty"]
+    mock.partial_cancel(code, 0, 1)
+    _sync_and_open_refresh(client, demo, mock)
+    assert _entry_qty_sum(code) == total_before  # окно закрыто: изменение не подхватываем
+
+
+def test_undelivered_order_is_tracked_regardless_of_creation_date(client, demo, kaspi_on, mock):
+    """К-19: невыданный заказ (в пути) отслеживается до выдачи, даже если создан давно."""
+    _connect(client, demo)
+    mock.generate(3, now=datetime.now(timezone.utc), days=5, state_cycle=["COMPLETED"], products=2)
+    code = _pick_code(mock)
+    _order_dates(mock, code, created_days_ago=60, delivered_days_ago=0)
+    for o in mock.orders:
+        if o["id"] == code:
+            o["attributes"]["state"] = "ACCEPTED_BY_MERCHANT"
+            o["attributes"]["completedDate"] = None
+    total_before = sum(r["qty"] for r in mock.entries[code])
+    _sync_and_open_refresh(client, demo, mock)
+    old_qty = mock.entries[code][0]["qty"]
+    mock.partial_cancel(code, 0, 1)
+    _sync_and_open_refresh(client, demo, mock)
+    assert _entry_qty_sum(code) == total_before - (old_qty - 1)
+
+
+def test_nightly_job_refreshes_open_orders_for_active_connections(client, demo, kaspi_on, mock, monkeypatch):
+    from app import scheduler as sched
+    from app.kaspi_client import KaspiClient as _KC
+
+    _connect(client, demo)
+    mock.generate(2, now=datetime.now(timezone.utc), days=5, products=1)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    monkeypatch.setattr("app.kaspi.client_for", lambda conn: _KC(VALID_TOKEN, transport=mock.transport(),
+                                                                sleep=lambda s: None, min_interval=0))
+    done = sched.run_kaspi_nightly_reread()
+    assert (demo["shop_id"], "refreshed") in done
+
+
+
+def test_installment_orders_use_seller_installment_rate(client, demo, kaspi_on, mock):
+    """К-18: рассрочка — комиссия по тарифу рассрочки (по умолчанию 10,9%, продавец может изменить); прибыль считается."""
+    from app.models import CommissionPreset as _CP, OrderItem as _OI
+    from app import kaspi as kaspi_service
+
+    _connect(client, demo)
+    mock.generate(8, now=datetime.now(timezone.utc), days=5, products=2)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    with DbSession(engine) as db:
+        credit = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000001").one()
+        items = db.query(_OI).filter(_OI.order_id == credit.id).all()
+        assert items and all(it.commission_rate_bp == 1090 for it in items)  # 10,9% по умолчанию
+        plain = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000002").one()
+        assert all(it.commission_rate_bp is None for it in db.query(_OI).filter(_OI.order_id == plain.id).all())
+        db.add(_CP(shop_id=demo["shop_id"], category=kaspi_service.INSTALLMENT_CATEGORY, rate_bp=1350,
+                   effective_from=None, source="manual", verified=False))
+        db.commit()
+    mock.generate(8, now=datetime.now(timezone.utc), days=3, products=2)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    with DbSession(engine) as db:
+        new_credit = [o for o in db.query(Order).filter(Order.shop_id == demo["shop_id"]).all()
+                      if o.number.startswith("KC") and o.number not in ("KC00000001",)]
+        rates = {it.commission_rate_bp for o in new_credit for it in db.query(_OI).filter(_OI.order_id == o.id).all()}
+        assert 1350 in rates  # новые заказы в рассрочку — по новой ставке продавца
+
+
+def test_first_load_shows_progress_and_completes_90_days(client, demo, kaspi_on, mock):
+    """К-18.3: прогресс «загружено N из M»; после первой загрузки — полные 90 дней, прогресс завершён."""
+    _connect(client, demo)
+    mock.generate(120, now=datetime.now(timezone.utc), days=60, products=5)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    load = client.get(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).json()["load"]
+    assert load["complete"] is True
+    assert load["done"] == 120 and load["total"] == 120
+    assert _count_kaspi_orders(demo["shop_id"]) == 120
+
+
+def test_first_seven_days_are_loaded_before_the_rest(client, demo, kaspi_on, mock):
+    """К-18.3: если догрузка оборвалась, заказы последних 7 дней уже есть — продавец видит данные."""
+    _connect(client, demo)
+    mock.generate(250, now=datetime.now(timezone.utc), days=60, products=5)
+    mock.fail_on_page = 1  # первая страница этапа 2 падает
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    recent = datetime.now(timezone.utc) - timedelta(days=7)
+    with DbSession(engine) as db:
+        from app.models import Order as _O
+        newest = db.query(_O).filter(_O.shop_id == demo["shop_id"], _O.created_at >= recent).count()
+    assert newest >= 1
+    mock.fail_on_page = None
+
+
+def test_main_scenario_first_day_connect_import_costs_profit_by_product(client, demo, kaspi_on, mock):
+    """Главный сценарий владельца (К-18): подключение → прайс продавца → продажи за 90 дней → себестоимость →
+    прибыль по товарам за 90 дней (комиссия категории, Kaspi Доставка) → убыточные сверху → подсказка о себестоимости."""
+    from app.models import CommissionPreset as _CP, Product as _P
+
+    _connect(client, demo)
+    xml = _seller_xml([("K0", "Товар 0", 1000), ("K1", "Товар 1", 1000), ("K2", "Товар 2", 1000),
+                       ("K3", "Товар 3", 1000), ("K4", "Товар 4", 1000)])
+    assert _import(client, demo, xml).status_code == 200
+    mock.generate(40, now=datetime.now(timezone.utc), days=85, state_cycle=["COMPLETED"], products=5)
+    sync = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"]).json()
+    assert sync["added"] == 40
+    load = client.get(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).json()["load"]
+    assert load["complete"] is True  # 90 дней загружены
+    with DbSession(engine) as db:
+        db.add(_CP(shop_id=demo["shop_id"], category="Посуда для кухни", rate_bp=1200, effective_from=None,
+                   source="manual", verified=True))
+        db.commit()
+        pids = {p.sku: p.id for p in db.query(_P).filter(_P.shop_id == demo["shop_id"]).all()}
+    # себестоимость: K0 — прибыль, K1 — убыток, K2..K4 — без себестоимости
+    for sku, purchase in (("K0", "300"), ("K1", "5000")):
+        r = client.post(f"/v1/shops/{demo['shop_id']}/products/{pids[sku]}/cost-versions", headers=demo["headers"],
+                        json={"purchase": purchase, "apply_to_history": True})
+        assert r.status_code == 201, r.text
+    rows = client.get(f"/v1/shops/{demo['shop_id']}/products?period=90d", headers=demo["headers"]).json()
+    items = rows["items"]
+    by_sku = {r_["sku"]: r_ for r_ in items}
+    # подсказка: сколько продаваемых товаров без себестоимости (в демо-магазине есть и свои товары)
+    assert rows["no_cost_count"] >= 3
+    assert by_sku["K2"]["profit_minor"] is None and by_sku["K3"]["profit_minor"] is None  # не ноль
+    assert by_sku["K0"]["profit_minor"] > 0 and by_sku["K1"]["profit_minor"] < 0
+    # убыточные сверху: известная прибыль идёт от меньшей к большей
+    known = [r_["profit_minor"] for r_ in items if r_["profit_minor"] is not None]
+    assert known == sorted(known)
+    assert known[0] < 0

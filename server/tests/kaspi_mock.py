@@ -110,13 +110,18 @@ class MockKaspi:
         if not path.endswith("/" + kaspi_client.ORDERS_PATH):
             return httpx.Response(404, json={"error": "not found"})
         q = request.url.params
+        if "filter[orders][code]" in q:  # заказ по номеру (К-19)
+            code = q["filter[orders][code]"]
+            return self._json({"data": [o for o in self.orders if o["id"] == code]})
         since = int(q.get("filter[orders][creationDate][$ge]", "0"))
+        until = q.get("filter[orders][creationDate][$le]")
         page = int(q.get("page[number]", "0"))
         size = int(q.get("page[size]", str(kaspi_client.PAGE_SIZE)))
-        rows = sorted((o for o in self.orders if o["attributes"]["creationDate"] >= since),
+        rows = sorted((o for o in self.orders if o["attributes"]["creationDate"] >= since
+                       and (until is None or o["attributes"]["creationDate"] <= int(until))),
                       key=lambda o: o["attributes"]["creationDate"])
         chunk = rows[page * size:(page + 1) * size]
-        return self._json({"data": chunk})
+        return self._json({"data": chunk, "meta": {"totalCount": len(rows), "pageCount": -(-len(rows) // size)}})
 
     @staticmethod
     def _json(body: dict) -> httpx.Response:

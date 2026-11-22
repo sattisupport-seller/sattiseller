@@ -40,7 +40,7 @@ export default function ProductsScreen() {
   const { shopId } = useSession();
   const [preset, setPreset] = useState<Preset>('30d');
   const [filter, setFilter] = useState<string | null>(null);
-  const [sort, setSort] = useState<Sort>('profit_desc');
+  const [sort, setSort] = useState<Sort>('profit_asc');  // К-18: убыточные товары сверху
   const [query, setQuery] = useState('');
 
   const products = useProducts(shopId, preset, filter, sort, query.trim());
@@ -49,7 +49,8 @@ export default function ProductsScreen() {
   const coverage = pages[0]?.coverage;
   const total = pages[0]?.total ?? 0;
   const coverageBp = coverage && coverage.total > 0 ? Math.round((coverage.complete * 10000) / coverage.total) : 10000;
-  const noCostCount = coverage ? coverage.total - coverage.complete : 0;
+  // К-18: сколько продаваемых товаров без себестоимости — подсказка, а не нули в прибыли
+  const noCostCount = (pages[0] as { no_cost_count?: number } | undefined)?.no_cost_count ?? (coverage ? coverage.total - coverage.complete : 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>

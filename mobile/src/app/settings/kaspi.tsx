@@ -27,6 +27,7 @@ type KaspiStatus = {
   store_ids?: string[];
   store_hint?: string | null;
   catalog?: { offers_count: number; imported_at: string } | null;
+  load?: { done: number; total: number | null; complete: boolean } | null;
   price_hint?: string | null;
 };
 
@@ -203,6 +204,11 @@ export default function KaspiScreen() {
               />
             </View>
             <Txt variant="footnote" tone="secondary">{t('kaspi.lastSync')}: {lastSync}</Txt>
+            {data?.load && !data.load.complete ? (
+              <Txt variant="footnote" tone="secondary">
+                {t('kaspi.loadProgress', { done: data.load.done, total: data.load.total ?? data.load.done })}
+              </Txt>
+            ) : null}
             {data?.last_error ? <Banner text={data.last_error} tone="warning" /> : null}
           </Card>
 

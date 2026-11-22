@@ -40,6 +40,7 @@ STATE_MAP = {
 }
 DEFAULT_STATUS = "in_progress"
 FIRST_SYNC_DAYS = 90  # ТЗ: при подключении — заказы за 90 дней
+FIRST_STAGE_DAYS = 7  # К-18.3: сначала последние 7 дней (продавец сразу видит данные), остальное — в фоне
 # Повторно читаем заказы за 14 дней до курсора: Kaspi меняет состояние заказа позже (возврат, отмена).
 OVERLAP_MS = 14 * 86_400_000
 UNKNOWN_CATEGORY = "Без категории"
@@ -90,6 +91,10 @@ def connect(db: DbSession, shop: Shop, seller_id: str, token: str, client: Kaspi
     conn.price_key = secrets.token_urlsafe(24)
     conn.status = "active"
     conn.cursor_ms = None
+    conn.backfill_done = False  # К-18.3: новое подключение — 90 дней догружаем заново
+    conn.backfill_page = 0
+    conn.load_done = 0
+    conn.load_total = None
     conn.last_error = None
     conn.connected_at = now
     db.add(conn)
@@ -189,12 +194,13 @@ def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, i
         product = _product_for(db, shop.id, products, sku, name or sku, category)
         q0, _p0 = fresh.get(product.id, (0, price))
         fresh[product.id] = (q0 + qty, price)
-    # К-17.3: доставка продавца — расход заказа. Ставим её на первую позицию (сумма по заказу верна).
-    # При рассрочке/кредите комиссия отличается от ставки категории: прибыль не считаем (delivery = None — «неизвестно»).
+    # К-17.3/К-18: доставка продавца — расход заказа. Ставим её на первую позицию (сумма по заказу верна).
     delivery_by_pid: dict[str, int | None] = {pid: None for pid in fresh}
-    if fresh and not credit and seller_delivery is not None:
+    if fresh and seller_delivery is not None:
         for i, pid in enumerate(fresh):
             delivery_by_pid[pid] = seller_delivery * 100 if i == 0 else 0
+    # К-18: при рассрочке/кредите комиссия — ставка рассрочки (тариф продавца), а не ставка категории
+    rate_bp = installment_rate_bp(db, shop.id) if credit else None
     existing: dict[str, list[OrderItem]] = {}
     for it in db.scalars(select(OrderItem).where(OrderItem.order_id == order.id)).all():
         existing.setdefault(it.product_id, []).append(it)
@@ -211,7 +217,7 @@ def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, i
         if not items:
             db.add(OrderItem(id=_uid(), order_id=order.id, shop_id=shop.id, product_id=pid, qty=qty,
                              unit_price_minor=price * 100, buyer_delivery_minor=delivery_by_pid.get(pid),
-                             commission_rate_bp=None))
+                             commission_rate_bp=rate_bp))
             changed = True
             continue
         keep, extra = items[0], items[1:]
@@ -227,15 +233,28 @@ def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, i
         if keep.buyer_delivery_minor != delivery_by_pid.get(pid):
             keep.buyer_delivery_minor = delivery_by_pid.get(pid)
             changed = True
+        if keep.commission_rate_bp != rate_bp and (credit or keep.commission_rate_bp is not None):
+            keep.commission_rate_bp = rate_bp
+            changed = True
     return changed
 
 
-def _needs_refresh(order: Order, status: str, now: datetime) -> bool:
-    """Состав перечитываем у заказов, созданных за последние 14 дней (К-7), и у всех незавершённых: там бывают частичные отмены.
-    Старые выполненные заказы не трогаем, чтобы не делать запрос на каждый заказ при каждой синхронизации."""
-    if status in ("pending", "in_progress"):
+RETURN_WINDOW_DAYS = 14  # срок возврата по закону: 14 дней после получения покупателем
+RETURN_GRACE_DAYS = 3  # запас на оформление возврата (К-19)
+
+
+def return_window_open(order: Order, status: str, now: datetime) -> bool:
+    """Нужно ли ещё следить за заказом (К-19): невыданные — до выдачи; выданные — 14 дней от выдачи + 3 дня запаса.
+    Дата выдачи — completed_at (из атрибута Kaspi либо время, когда синхронизация впервые увидела «выдан»)."""
+    if status in ("cancelled",):
+        return False
+    if status in ("pending", "in_progress") or order.completed_at is None:
         return True
-    return _aware(order.created_at) >= now - timedelta(milliseconds=OVERLAP_MS)
+    return now < _aware(order.completed_at) + timedelta(days=RETURN_WINDOW_DAYS + RETURN_GRACE_DAYS)
+
+
+def _needs_refresh(order: Order, status: str, now: datetime) -> bool:
+    return return_window_open(order, status, now)
 
 
 def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: dict[str, Product],
@@ -302,14 +321,18 @@ def _sync_locked(db: DbSession, conn: KaspiConnection, client: KaspiClient, now:
     if conn.cursor_ms is not None:
         since = conn.cursor_ms - OVERLAP_MS
     else:
-        since = _now_ms(now) - FIRST_SYNC_DAYS * 86_400_000
+        since = _now_ms(now) - FIRST_STAGE_DAYS * 86_400_000  # этап 1 первой загрузки: последние 7 дней
     products: dict[str, Product] = {}
     added = updated = pages = items_changed = 0
     newest_overall = 0
+    first_load = conn.cursor_ms is None
+    stage_total = None
     try:
         page = 0
         while True:
-            orders = client.list_orders(since_ms=since, page=page)
+            orders, total = client.list_orders_page(since_ms=since, page=page)
+            if page == 0 and first_load:
+                stage_total = total
             if not orders:
                 break
             a, u, c = _apply_page(db, shop, orders, products, now, client)
@@ -317,6 +340,10 @@ def _sync_locked(db: DbSession, conn: KaspiConnection, client: KaspiClient, now:
             updated += u
             items_changed += c
             pages += 1
+            if first_load:
+                conn.load_done = (conn.load_done or 0) + len(orders)
+                if stage_total is not None:
+                    conn.load_total = stage_total
             newest_overall = max(newest_overall, max(o.created_ms for o in orders))
             if client.last_point_id and not conn.store_ids:  # подсказка только пока код склада не задан
                 conn.store_hint = client.last_point_id
@@ -330,6 +357,13 @@ def _sync_locked(db: DbSession, conn: KaspiConnection, client: KaspiClient, now:
             conn.cursor_ms = max(conn.cursor_ms or 0, newest_overall)
             db.add(conn)
             db.commit()
+        # этап 2: догрузка остальных 90 дней постранично (продолжается с сохранённой страницы)
+        if not conn.backfill_done:
+            b = _backfill_pass(db, shop, conn, client, now, products)
+            added += b["added"]
+            updated += b["updated"]
+            items_changed += b["items_changed"]
+            pages += b["pages"]
     except KaspiAuthError:
         db.rollback()
         conn.status = "token_invalid"
@@ -349,6 +383,44 @@ def _sync_locked(db: DbSession, conn: KaspiConnection, client: KaspiClient, now:
     db.commit()
     reportcache.invalidate(shop.id)  # AUD-12: появились новые заказы
     return {"pages": pages, "added": added, "updated": updated, "items_changed": items_changed}
+
+
+def _backfill_pass(db: DbSession, shop: Shop, conn: KaspiConnection, client: KaspiClient, now: datetime,
+                   products: dict[str, Product]) -> dict:
+    """Догрузка заказов за 90 дней без последних 7 (К-18.3). Страница сохраняется после каждой, поэтому
+    следующий запуск продолжает с неё; заказы не дублируются. Прогресс: load_done / load_total."""
+    since = _now_ms(now) - FIRST_SYNC_DAYS * 86_400_000
+    until = _now_ms(now) - FIRST_STAGE_DAYS * 86_400_000
+    page = conn.backfill_page or 0
+    added = updated = items_changed = pages = 0
+    while True:
+        orders, total = client.list_orders_page(since_ms=since, page=page, until_ms=until)
+        if page == 0 and total is not None:
+            # прогресс: всего = этап 1 (7 дней) + догрузка. При повторе страницы 0 после сбоя возможна погрешность
+            conn.load_total = (conn.load_total or 0) + total
+        if not orders:
+            conn.backfill_done = True
+            conn.backfill_page = 0
+            db.add(conn)
+            db.commit()
+            break
+        a, u, c = _apply_page(db, shop, orders, products, now, client)
+        added += a
+        updated += u
+        items_changed += c
+        pages += 1
+        conn.load_done = (conn.load_done or 0) + len(orders)
+        conn.backfill_page = page + 1
+        db.add(conn)
+        db.commit()
+        if len(orders) < PAGE_SIZE:
+            conn.backfill_done = True
+            conn.backfill_page = 0
+            db.add(conn)
+            db.commit()
+            break
+        page += 1
+    return {"added": added, "updated": updated, "items_changed": items_changed, "pages": pages}
 
 
 def client_for(conn: KaspiConnection) -> KaspiClient:
@@ -471,53 +543,69 @@ def find_by_price_key(db: DbSession, shop_id: str, price_key: str) -> KaspiConne
 SYNC_EVERY = 15 * 60  # ТЗ: новые заказы — каждые 15 минут
 
 
-REREAD_DAYS = 60  # К-17.2: ночное перечитывание за 60 дней — поздние возвраты и брак
-REREAD_TOOK_HOURS = 3  # время запуска ночной задачи по Алматы
+INSTALLMENT_CATEGORY = "Рассрочка Kaspi"  # категория тарифа в настройках комиссий продавца
+INSTALLMENT_DEFAULT_BP = 1090  # 10,9% — ставка продажи в рассрочку по официальной странице Kaspi (К-18); продавец может изменить
 
 
-def reread_window(db: DbSession, conn: KaspiConnection, client: KaspiClient, now: datetime,
-                  days: int = REREAD_DAYS) -> dict:
-    """Перечитывает заказы за последние days дней вместе с составом (К-17.2). Курсор синхронизации не трогает.
-    Нужно для поздних возвратов и частичных отмен, которые приходят позже 14-дневного окна обычной синхронизации."""
+def installment_rate_bp(db: DbSession, shop_id: str) -> int:
+    from .models import CommissionPreset
+    row = db.scalar(select(CommissionPreset).where(CommissionPreset.shop_id == shop_id,
+                                                   CommissionPreset.category == INSTALLMENT_CATEGORY)
+                    .order_by(CommissionPreset.effective_from.desc()).limit(1))
+    return row.rate_bp if row is not None else INSTALLMENT_DEFAULT_BP
+
+
+MAX_OPEN_REFRESH = 2000  # за один суточный проход (К-19)
+
+
+def refresh_open_orders(db: DbSession, conn: KaspiConnection, client: KaspiClient, now: datetime) -> dict:
+    """Суточная проверка открытых заказов (К-19): по каждому заказу, у которого окно возврата ещё открыто, —
+    запрос по номеру (filter[orders][code]). Заказы с датой создания старше окна обычной синхронизации тоже видны."""
     with _SHOP_LOCKS_GUARD:
         lock = _SHOP_LOCKS.setdefault(conn.shop_id, threading.Lock())
     if not lock.acquire(blocking=False):
         raise KaspiBusy("синхронизация уже идёт")
     try:
-        return _reread_locked(db, conn, client, now, days)
+        return _refresh_open_locked(db, conn, client, now)
     finally:
         lock.release()
 
 
-def _reread_locked(db: DbSession, conn: KaspiConnection, client: KaspiClient, now: datetime, days: int) -> dict:
+def _refresh_open_locked(db: DbSession, conn: KaspiConnection, client: KaspiClient, now: datetime) -> dict:
     shop = db.get(Shop, conn.shop_id)
     if shop is None:
         raise KaspiUnavailable("магазин не найден")
-    since = _now_ms(now) - days * 86_400_000
+    candidates = db.scalars(
+        select(Order).where(Order.shop_id == shop.id, Order.status != "cancelled")
+        .order_by(Order.created_at).limit(MAX_OPEN_REFRESH)
+    ).all()
     products: dict[str, Product] = {}
-    added = updated = items_changed = pages = 0
+    checked = updated = items_changed = 0
     try:
-        page = 0
-        while True:
-            orders = client.list_orders(since_ms=since, page=page)
-            if not orders:
-                break
-            a, u, c = _apply_page(db, shop, orders, products, now, client, force_refresh=True)
-            added += a
-            updated += u
-            items_changed += c
-            pages += 1
+        for order in candidates:
+            if not return_window_open(order, order.status, now):
+                continue
+            ko = client.order_by_code(order.number)
+            checked += 1
+            if ko is None:
+                continue
+            status = STATE_MAP.get(ko.state, DEFAULT_STATUS)
+            if order.status != status:
+                order.status = status
+                updated += 1
+            if order.completed_at is None and status in ("completed", "returned"):
+                order.completed_at = _utc(ko.completed_ms) if ko.completed_ms else now
+            if return_window_open(order, status, now) and _reconcile(
+                    db, shop, order, _lines(client, order.number), products, now, ko.seller_delivery, ko.credit):
+                items_changed += 1
             db.commit()
-            if len(orders) < PAGE_SIZE:
-                break
-            page += 1
     except KaspiAuthError:
         db.rollback()
         conn.status = "token_invalid"
         db.add(conn)
         db.commit()
         raise
-    return {"pages": pages, "added": added, "updated": updated, "items_changed": items_changed}
+    return {"checked": checked, "updated": updated, "items_changed": items_changed}
 
 
 def sync_due(db: DbSession, now: datetime, limit: int = 50) -> list[tuple[str, str]]:

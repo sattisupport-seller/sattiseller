@@ -702,9 +702,12 @@ def products_list(data: ShopData, facts: list[ItemFact], period: Period, flt: st
     page = rows[offset: offset + limit]
     next_offset = offset + limit if offset + limit < len(rows) else None
     complete_count = sum(1 for s in stats.values() if s.has_cost and s.complete)
+    # К-18: подсказка «введите себестоимость для N товаров» вместо нулей в прибыли
+    no_cost_count = sum(1 for s in stats.values() if not s.has_cost and s.sold_qty > 0)  # только продаваемые в периоде
     return {
         "items": [_product_row(s) for s in page],
         "total": len(rows),
+        "no_cost_count": no_cost_count,
         "coverage": {"complete": complete_count, "total": len(stats)},
         "next_cursor": str(next_offset) if next_offset is not None else None,
     }

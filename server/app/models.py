@@ -347,6 +347,10 @@ class KaspiConnection(Base):
     price_key: Mapped[str] = mapped_column(String(64))  # секрет в адресе прайс-листа; меняется при каждом подключении
     store_ids: Mapped[str | None] = mapped_column(Text, nullable=True)  # коды складов Kaspi через запятую (storeId из кабинета)
     store_hint: Mapped[str | None] = mapped_column(Text, nullable=True)  # подсказка кода склада из данных заказов (не значение)
+    backfill_done: Mapped[bool] = mapped_column(Boolean, default=False)  # 90 дней догружены (К-18.3)
+    backfill_page: Mapped[int] = mapped_column(Integer, default=0)  # страница догрузки, с которой продолжить
+    load_done: Mapped[int] = mapped_column(Integer, default=0)  # сколько заказов загружено (прогресс)
+    load_total: Mapped[int | None] = mapped_column(Integer, nullable=True)  # всего заказов за 90 дней (из ответа Kaspi)
     status: Mapped[str] = mapped_column(String(16), default="active")  # active | token_invalid
     cursor_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # время создания самого свежего обработанного заказа
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

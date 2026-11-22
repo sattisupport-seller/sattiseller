@@ -79,7 +79,7 @@ def run_kaspi_sync(now: datetime | None = None) -> list[tuple[str, str]]:
 
 def run_kaspi_nightly_reread(now: datetime | None = None) -> list[tuple[str, str]]:
     """К-17.2: раз в сутки (ночью по Алматы) перечитываем заказы Kaspi за 60 дней вместе с составом."""
-    from .kaspi import client_for, reread_window
+    from .kaspi import client_for, refresh_open_orders
     from .kaspi_client import KaspiAuthError, KaspiUnavailable
     from .models import KaspiConnection
 
@@ -92,8 +92,8 @@ def run_kaspi_nightly_reread(now: datetime | None = None) -> list[tuple[str, str
             client = None
             try:
                 client = client_for(conn)
-                reread_window(db, conn, client, now)
-                done.append((conn.shop_id, "reread"))
+                refresh_open_orders(db, conn, client, now)
+                done.append((conn.shop_id, "refreshed"))
             except KaspiAuthError:
                 done.append((conn.shop_id, "token_invalid"))
             except KaspiUnavailable:
