@@ -44,6 +44,7 @@ class OrderEntry:
     entry_id: str
     qty: int
     unit_price: int  # тенге, целое (basePrice)
+    category: str | None = None  # категория из позиции Kaspi (К-16.2): название, иначе код
 
 
 @dataclass
@@ -53,28 +54,44 @@ class KaspiOrder:
     created_ms: int
     completed_ms: int | None
     entries: list[OrderEntry] = field(default_factory=list)
+    seller_delivery: int | None = None  # deliveryCostForSeller: доставка, которую оплачивает продавец (тенге)
+    credit: bool = False  # paymentMode == PAY_WITH_CREDIT: рассрочка/кредит, комиссия отличается
 
 
 def parse_order(item: dict) -> KaspiOrder:
     """Разбор заказа из списка. Позиции приходят отдельным запросом (см. KaspiClient.order_entries)."""
     attrs = item.get("attributes", {})
     completed = attrs.get("completedDate")
+    raw_delivery = attrs.get("deliveryCostForSeller")
+    seller_delivery = None
+    if raw_delivery is not None:
+        try:
+            seller_delivery = int(round(float(raw_delivery)))
+        except (TypeError, ValueError):
+            seller_delivery = None
     return KaspiOrder(
         code=str(item["id"]),
         state=str(attrs.get("state", "")),
         created_ms=int(attrs["creationDate"]),
         completed_ms=int(completed) if completed is not None else None,
         entries=[],
+        seller_delivery=seller_delivery,
+        credit=attrs.get("paymentMode") == "PAY_WITH_CREDIT",
     )
 
 
 def parse_entry(item: dict) -> OrderEntry:
     """Позиция из /orders/{id}/entries. Поля quantity и basePrice — по документации; id позиции — из ответа."""
     attrs = item.get("attributes", {})
+    cat = attrs.get("category")
+    category = None
+    if isinstance(cat, dict):
+        category = str(cat.get("title") or cat.get("code") or "").strip() or None
     return OrderEntry(
         entry_id=str(item["id"]),
         qty=int(attrs.get("quantity", 1)),
         unit_price=int(round(float(attrs.get("basePrice", 0)))),
+        category=category,
     )
 
 
@@ -154,18 +171,29 @@ class KaspiClient:
     def entry_sku(self, entry_id: str) -> str | None:
         """Артикул продавца для позиции: orderentries/{id}/product → masterproducts/{id}/merchantProduct.
         Формат ответов — по связям из документации; код берётся из attributes.code. Результат кэшируется на клиенте."""
+        return self.entry_product(entry_id)[0]
+
+    def entry_product(self, entry_id: str) -> tuple[str | None, str | None]:
+        """(артикул, название) товара позиции (К-16.1). Название — из merchantProduct или masterproducts (attributes.name);
+        формат ответа по связям документации, полный пример не разобран. Кэшируется на клиенте."""
         if entry_id in self._sku_by_entry:
             return self._sku_by_entry[entry_id]
-        sku = None
+        sku = name = None
         product = self._get(f"orderentries/{entry_id}/product", {}).get("data") or {}
         master_id = product.get("id")
         if master_id:
             if master_id not in self._sku_by_master:
                 mp = self._get(f"masterproducts/{master_id}/merchantProduct", {}).get("data") or {}
-                self._sku_by_master[master_id] = str((mp.get("attributes") or {}).get("code") or "") or None
-            sku = self._sku_by_master[master_id]
-        self._sku_by_entry[entry_id] = sku
-        return sku
+                attrs = mp.get("attributes") or {}
+                code = str(attrs.get("code") or "") or None
+                title = str(attrs.get("name") or "").strip() or None
+                if title is None:
+                    master = self._get(f"masterproducts/{master_id}", {}).get("data") or {}
+                    title = str((master.get("attributes") or {}).get("name") or "").strip() or None
+                self._sku_by_master[master_id] = (code, title)
+            sku, name = self._sku_by_master[master_id]
+        self._sku_by_entry[entry_id] = (sku, name)
+        return sku, name
 
     def ping(self, now_ms: int) -> None:
         """Проверка токена: короткий запрос за последние сутки."""

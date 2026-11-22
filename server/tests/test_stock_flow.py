@@ -85,10 +85,22 @@ def test_delist_only_at_zero_and_only_after_confirmation(client, demo):
                        json={"confirm": False}).status_code == 422
     assert client.post(f"/v1/shops/{shop}/products/{pid}/stock/delist", headers=demo["headers"],
                        json={"confirm": True}).status_code == 200
+    # К-16.3: товар остаётся в файле продавца, а снятие с продажи — available="no" и stockCount="0" на складе
+    from datetime import datetime as _dt
+    from app.models import KaspiCatalog as _KC, KaspiConnection as _KCon
+    catalog_xml = (f'<?xml version="1.0" encoding="UTF-8"?><kaspi_catalog xmlns="kaspiShopping">'
+                   f'<company>Тест</company><merchantid>T-1</merchantid><offers>'
+                   f'<offer sku="{sku}"><model>Тест</model><price>1500</price></offer></offers></kaspi_catalog>')
     with DbSession(engine) as db:
-        conn = SimpleNamespace(seller_id="test")
+        db.add(_KC(shop_id=shop, xml_text=catalog_xml, offers_count=1, imported_at=_dt.now(timezone.utc)))
+        conn = _KCon(shop_id=shop, seller_id="T-1", token_enc="x", price_key="pk-stock-test", status="active",
+                     store_ids="S-100", connected_at=_dt.now(timezone.utc))
+        db.add(conn)
+        db.commit()
         xml = price_list_xml(db, db.get(Shop, shop), conn).decode("utf-8")
-    assert f'sku="{sku}"' not in xml
+    assert f'sku="{sku}"' in xml
+    assert 'available="no"' in xml and 'stockCount="0"' in xml and 'storeId="S-100"' in xml
+    assert "<price>1500</price>" in xml  # цена продавца не меняется
 
 
 def test_assistant_answers_what_is_ending(demo, live):  # noqa: F811

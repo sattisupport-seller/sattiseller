@@ -1,5 +1,6 @@
 // Подключение Kaspi (этап 2, задача 2.7). Работает только при флаге kaspi_connection на сервере.
 import * as Clipboard from 'expo-clipboard';
+import * as DocumentPicker from 'expo-document-picker';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, ScrollView, View } from 'react-native';
 import { Plug } from 'lucide-react-native';
@@ -25,6 +26,8 @@ type KaspiStatus = {
   price_url?: string;
   store_ids?: string[];
   store_hint?: string | null;
+  catalog?: { offers_count: number; imported_at: string } | null;
+  price_hint?: string | null;
 };
 
 // Код склада Kaspi (storeId): латиница, цифры, «-» и «_», до 40 знаков (документация Kaspi, К-7).
@@ -40,6 +43,7 @@ function errorText(e: unknown, t: ReturnType<typeof useI18n>['t']): string {
     if (e.code === 'kaspi_token_rejected') return t('kaspi.errTokenRejected');
     if (e.code === 'kaspi_unavailable') return t('kaspi.errUnavailable');
     if (e.code === 'rate_limited') return t('kaspi.errRateLimited');
+    if (e.code === 'kaspi_sync_running') return t('kaspi.errSyncRunning');
   }
   return t('kaspi.errGeneric');
 }
@@ -86,11 +90,30 @@ export default function KaspiScreen() {
     onError: (e) => setError(errorText(e, t)),
   });
 
+  const uploadCatalog = useMutation({
+    mutationFn: async () => {
+      const res = await DocumentPicker.getDocumentAsync({ type: ['text/xml', 'application/xml'], copyToCacheDirectory: true });
+      if (res.canceled) return null;
+      const a = res.assets[0];
+      const form = new FormData();
+      form.append('file', { uri: a.uri, name: a.name ?? 'price.xml', type: 'application/xml' } as unknown as Blob);
+      return request<KaspiStatus>(`/shops/${shopId}/kaspi/catalog`, { method: 'POST', form });
+    },
+    onMutate: () => { setError(null); setNotice(null); },
+    onSuccess: (r) => {
+      if (r) {
+        setNotice(t('kaspi.catalogDone', { count: r.catalog?.offers_count ?? 0 }));
+        void qc.invalidateQueries({ queryKey: [KEY, shopId] });
+      }
+    },
+    onError: (e) => setError(e instanceof ApiError && e.code === 'kaspi_catalog_invalid' ? e.message : errorText(e, t)),
+  });
+
   const sync = useMutation({
     mutationFn: () => request<SyncResult>(`/shops/${shopId}/kaspi/sync`, { method: 'POST' }),
     onMutate: () => { setError(null); setNotice(null); },
     onSuccess: (r) => {
-      setNotice(t('kaspi.syncDone', { added: r.added, updated: r.updated }));
+      setNotice(r.status === 'queued' ? t('kaspi.syncQueued') : t('kaspi.syncDone', { added: r.added, updated: r.updated }));
       void qc.invalidateQueries({ queryKey: [KEY, shopId] });
       void qc.invalidateQueries({ queryKey: ['shops'] });
     },
@@ -210,6 +233,19 @@ export default function KaspiScreen() {
               }}
               fullWidth
             />
+          </Card>
+
+          <Card style={{ gap: spacing.sm }}>
+            <Txt variant="subheadMedium">{t('kaspi.catalogTitle')}</Txt>
+            {data?.catalog ? (
+              <Txt variant="footnote" tone="secondary">
+                {t('kaspi.catalogLoaded', { count: data.catalog.offers_count, date: new Date(data.catalog.imported_at).toLocaleString('ru-RU') })}
+              </Txt>
+            ) : (
+              <Banner text={data?.price_hint ?? t('kaspi.catalogNone')} tone="warning" />
+            )}
+            <Button title={t('kaspi.catalogUpload')} variant="outline" onPress={() => uploadCatalog.mutate()}
+              loading={uploadCatalog.isPending} disabled={busy} fullWidth />
           </Card>
 
           {data?.price_url ? (

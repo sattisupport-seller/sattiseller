@@ -328,6 +328,16 @@ class AuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class KaspiCatalog(Base):
+    """Прайс-лист продавца, импортированный из кабинета Kaspi (К-16.3). Наш файл строится из него:
+    товары и цены продавца сохраняются, меняются только наличие и остатки по складам."""
+    __tablename__ = "kaspi_catalogs"
+    shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id", ondelete="CASCADE"), primary_key=True)
+    xml_text: Mapped[str] = mapped_column(Text)
+    offers_count: Mapped[int] = mapped_column(Integer)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class KaspiConnection(Base):
     """Подключение магазина Kaspi (этап 2). Токен хранится только в зашифрованном виде (Fernet)."""
     __tablename__ = "kaspi_connections"

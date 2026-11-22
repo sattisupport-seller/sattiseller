@@ -70,6 +70,7 @@ class OverviewOut(BaseModel):
     shop_id: str
     period: PeriodOut
     comparison_period: PeriodOut
+    history_note: str | None = None  # К-17.3: период раньше первой загрузки Kaspi
     data_as_of: str
     is_today_in_period: bool
     kpi: KpiOut
@@ -200,6 +201,7 @@ class ProductDetailOut(BaseModel):
     cost_history: list[CostHistoryOut]
     returns: list[ProductReturnOut]
     data_complete: bool
+    commission_note: str | None = None  # К-16.2: нет ставки комиссии для категории
 
 
 class MissingCostProductOut(BaseModel):

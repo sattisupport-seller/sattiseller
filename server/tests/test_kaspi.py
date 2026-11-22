@@ -132,7 +132,8 @@ def test_failure_in_the_middle_keeps_progress_and_resumes_without_duplicates(cli
     assert _count_kaspi_orders(demo["shop_id"]) == 100  # первая страница сохранилась
     with DbSession(engine) as db:
         conn = db.get(KaspiConnection, demo["shop_id"])
-        assert conn.cursor_ms is not None and conn.last_error
+        # К-17.3: курсор двигается только после полного прохода; страницы сохранены, ошибка записана
+        assert conn.cursor_ms is None and conn.last_error
     mock.fail_on_page = None
     r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
     assert r.status_code == 200, r.text
@@ -154,25 +155,6 @@ def test_revoked_token_marks_the_connection(client, demo, kaspi_on, mock):
     assert r.status_code == 422 and r.json()["error"]["code"] == "kaspi_token_rejected"
     status = client.get(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).json()
     assert status["status"] == "token_invalid" and status["last_error"]
-
-
-def test_price_list_lists_sold_products_and_stops_after_disconnect(client, demo, kaspi_on, mock):
-    _connect(client, demo)
-    mock.generate(30, now=datetime.now(timezone.utc), products=10)
-    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
-    status = client.get(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).json()
-    path = status["price_url"]
-    r = client.get(path)
-    assert r.status_code == 200 and "xml" in r.headers["content-type"]
-    root = ET.fromstring(r.content)
-    assert root.tag == "{kaspiShopping}kaspi_catalog"  # пространство имён из документации Kaspi
-    offers = [o for o in root.findall("./{kaspiShopping}offers/{kaspiShopping}offer") if o.get("sku", "").startswith("K")]
-    assert 1 <= len(offers) <= 10  # товары из заказов Kaspi; демо-товары тоже попадают в прайс
-    assert all(int(o.find("{kaspiShopping}price").text) > 0 for o in root.findall("./{kaspiShopping}offers/{kaspiShopping}offer"))
-    assert client.get(path.rsplit("/", 1)[0] + "/wrong-key-000000000000000000000").status_code == 404
-    assert client.delete(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).status_code == 200
-    assert client.get(path).status_code == 404
-    assert client.get(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).json()["status"] == "not_connected"
 
 
 def test_deleting_the_shop_removes_the_kaspi_connection(client, demo, kaspi_on, mock):
@@ -277,30 +259,6 @@ def test_orders_request_uses_documented_filter_and_headers():
     assert seen["headers"]["content-type"] == "application/vnd.api+json"
 
 
-def test_price_list_header_matches_kaspi_docs_and_bad_sku_is_skipped_with_note(client, demo, kaspi_on, mock):
-    """Прайс по документации Kaspi (сверка 22.11): корень в пространстве kaspiShopping с схемой; sku — латиница и цифры
-    до 20 знаков. Неподходящий артикул в файл не попадает, а в комментарии файла указывается, что его не передали."""
-    _connect(client, demo)
-    mock.generate(10, now=datetime.now(timezone.utc), products=3)
-    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
-    with DbSession(engine) as db:
-        db.add(Product(shop_id=demo["shop_id"], sku="Артикул-кириллица", name="Плохой артикул"))
-        db.commit()
-    with DbSession(engine) as db:  # товар с плохим артикулом должен иметь продажу, чтобы попасть в прайс
-        from app.models import OrderItem as _OI
-        bad = db.query(Product).filter(Product.sku == "Артикул-кириллица").one()
-        ord_ = db.query(Order).filter(Order.shop_id == demo["shop_id"]).first()
-        db.add(_OI(order_id=ord_.id, shop_id=demo["shop_id"], product_id=bad.id, qty=1, unit_price_minor=100000))
-        db.commit()
-    path = client.get(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).json()["price_url"]
-    body = client.get(path).content.decode("utf-8")
-    assert body.lstrip().startswith("<?xml")
-    assert 'xmlns="kaspiShopping"' in body and "xsi:schemaLocation" in body
-    assert "ns0:" not in body
-    assert "Артикул-кириллица" not in body.split("<!--")[0]  # не попал в файл как предложение
-    assert "не переданы" in body and "Артикул-кириллица" in body  # но указан в комментарии
-
-
 def test_sku_comes_from_product_links_not_from_entry_fields(client, demo, kaspi_on, mock):
     """К-6 п.1: в позиции заказа артикула нет; код берётся через orderentries → masterproducts → merchantProduct.
     Если связь не отдала код, позиция не теряется: её код строится из id (префикс KX-)."""
@@ -371,38 +329,258 @@ def test_store_hint_comes_from_order_data_and_is_only_a_suggestion(client, demo,
     assert view["store_hint"] == "PP1" and view["store_ids"] == []
 
 
+def test_store_code_is_validated(client, demo, kaspi_on, mock):
+    _connect(client, demo)
+    r = client.put(f"/v1/shops/{demo['shop_id']}/kaspi/stores", json={"store_ids": ["bad code!"]}, headers=demo["headers"])
+    assert r.status_code == 422 and r.json()["error"]["code"] == "kaspi_store_invalid"
+
+
+# ---------- прайс продавца (К-16.3): импорт, ссылка только после импорта, наш файл = каталог продавца ----------
+
+SELLER_NS = "kaspiShopping"
+
+
+def _seller_xml(offers, date_attr="2020-01-01") -> bytes:
+    """Прайс в формате кабинета Kaspi: offers — список (sku, название, цена тенге)."""
+    items = "".join(
+        f'<offer sku="{sku}"><model>{name}</model><price>{price}</price></offer>' for sku, name, price in offers)
+    xml = (f'<?xml version="1.0" encoding="UTF-8"?>'
+           f'<kaspi_catalog date="{date_attr}" xmlns="{SELLER_NS}" '
+           f'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+           f'xsi:schemaLocation="{SELLER_NS} http://kaspi.kz/kaspishopping.xsd">'
+           f'<company>Магазин</company><merchantid>S-1</merchantid><offers>{items}</offers></kaspi_catalog>')
+    return xml.encode("utf-8")
+
+
+def _import(client, demo, data: bytes):
+    return client.post(f"/v1/shops/{demo['shop_id']}/kaspi/catalog", headers=demo["headers"],
+                       files={"file": ("price.xml", data, "application/xml")})
+
+
+def _price_key(demo) -> str:
+    with DbSession(engine) as db:
+        return db.get(KaspiConnection, demo["shop_id"]).price_key
+
+
+def test_price_link_is_hidden_until_seller_catalog_is_imported(client, demo, kaspi_on, mock):
+    _connect(client, demo)
+    view = client.get(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).json()
+    assert view["price_url"] is None and view["catalog"] is None
+    assert "Сначала загрузите прайс-лист" in view["price_hint"]
+    r = client.get(f"/v1/kaspi/price/{demo['shop_id']}/{_price_key(demo)}")
+    assert r.status_code == 409 and r.json()["error"]["code"] == "catalog_not_imported"
+
+
+def test_our_file_keeps_the_whole_seller_catalog_and_prices(client, demo, kaspi_on, mock):
+    """Наш файл — весь каталог продавца с его ценами; товары и цены не меняются, добавляется только наличие по складу."""
+    _connect(client, demo)
+    mock.generate(20, now=datetime.now(timezone.utc), days=5, products=5)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    offers = [("K0", "Товар 0", 1111), ("K1", "Товар 1", 2222), ("SELLER-ONLY", "Не продаётся в заказах", 3333)]
+    r = _import(client, demo, _seller_xml(offers))
+    assert r.status_code == 200, r.text
+    assert r.json()["catalog"]["offers_count"] == 3 and r.json()["price_url"]
+    body = client.get(r.json()["price_url"]).content
+    root = ET.fromstring(body)
+    got = {o.get("sku"): o for o in root.iter(f"{{{SELLER_NS}}}offer")}
+    assert set(got) == {"K0", "K1", "SELLER-ONLY"}  # весь каталог, не только проданное
+    assert got["SELLER-ONLY"].find(f"{{{SELLER_NS}}}price").text == "3333"  # цена продавца не изменена
+    assert got["K0"].find(f"{{{SELLER_NS}}}model").text == "Товар 0"
+
+
+def test_price_file_keeps_seller_namespace_and_refreshes_date(client, demo, kaspi_on, mock):
+    _connect(client, demo)
+    _import(client, demo, _seller_xml([("A1", "Тест", 500)], date_attr="2020-01-01"))
+    body = client.get(client.get(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).json()["price_url"]).content.decode("utf-8")
+    assert 'xmlns="kaspiShopping"' in body and "ns0:" not in body and "xsi:schemaLocation" in body
+    assert 'date="2020-01-01"' not in body
+
+
+def test_import_refuses_files_with_dtd_or_wrong_root(client, demo, kaspi_on, mock):
+    _connect(client, demo)
+    bomb = b'<?xml version="1.0"?><!DOCTYPE kaspi_catalog [<!ENTITY a "x">]><kaspi_catalog><offers/></kaspi_catalog>'
+    assert _import(client, demo, bomb).status_code == 422
+    assert _import(client, demo, b"<html><body>no</body></html>").status_code == 422
+    assert _import(client, demo, b"<kaspi_catalog><offers></offers></kaspi_catalog>").status_code == 422
+
+
 def test_delisting_keeps_offer_with_available_no_and_zero_stock_when_store_codes_are_set(client, demo, kaspi_on, mock):
-    """К-6 п.3: снятие с продажи — available="no" и stockCount="0" на всех складах, offer остаётся в файле.
-    Без кодов складов наличие не передаётся: снятый товар не попадает в файл, и это записано в комментарии."""
+    """Снятие с продажи — available="no" и stockCount="0" на складе; без кодов складов файл продавца не меняется."""
     from app.models import Product as _Prod, ProductStock as _PS
 
     _connect(client, demo)
     mock.generate(9, now=datetime.now(timezone.utc), days=5, state_cycle=["COMPLETED"], products=3)
     client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
-    sku = f"K{mock.entries[next(iter(mock.entries))][0]['idx']}"
+    _import(client, demo, _seller_xml([("K0", "Товар 0", 1000), ("K1", "Товар 1", 2000)]))
     with DbSession(engine) as db:
-        pid = db.query(_Prod.id).filter(_Prod.shop_id == demo["shop_id"], _Prod.sku == sku).scalar()
+        pid = db.query(_Prod.id).filter(_Prod.shop_id == demo["shop_id"], _Prod.sku == "K0").scalar()
         db.add(_PS(id="ds" + pid[:20], shop_id=demo["shop_id"], product_id=pid, qty=0, delisted=True))
         db.commit()
-    path = client.get(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).json()["price_url"]
-
-    # без кодов складов: товар вне файла, в комментарии — почему
-    body = client.get(path).content.decode("utf-8")
-    assert f'sku="{sku}"' not in body and "наличие не передаётся" in body
-
-    # с кодом склада: товар в файле, наличие 0 и available="no"
+    url = client.get(f"/v1/shops/{demo['shop_id']}/kaspi/connection", headers=demo["headers"]).json()["price_url"]
+    body = client.get(url).content.decode("utf-8")
+    assert "снятие с продажи не передано" in body  # без кодов складов — записано в комментарии
     r = client.put(f"/v1/shops/{demo['shop_id']}/kaspi/stores", json={"store_ids": ["S-100"]}, headers=demo["headers"])
-    assert r.status_code == 200, r.text
-    assert r.json()["store_ids"] == ["S-100"]
-    body = client.get(path).content.decode("utf-8")
-    ns = "{kaspiShopping}"
-    root = ET.fromstring(body.encode("utf-8"))
-    offer = next(o for o in root.findall(f"./{ns}offers/{ns}offer") if o.get("sku") == sku)
-    av = offer.find(f"{ns}availabilities/{ns}availability")
+    assert r.status_code == 200
+    root = ET.fromstring(client.get(url).content)
+    offer = next(o for o in root.iter(f"{{{SELLER_NS}}}offer") if o.get("sku") == "K0")
+    av = offer.find(f"{{{SELLER_NS}}}availabilities/{{{SELLER_NS}}}availability")
     assert av.get("available") == "no" and av.get("stockCount") == "0" and av.get("storeId") == "S-100"
+    assert offer.find(f"{{{SELLER_NS}}}price").text == "1000"  # цена не меняется даже при снятии
 
 
-def test_store_code_is_validated(client, demo, kaspi_on, mock):
+def test_product_gets_name_and_category_from_kaspi(client, demo, kaspi_on, mock):
+    """К-16.1/К-16.2: название товара — из связи товара Kaspi (не артикул); категория — из позиции (для комиссии)."""
+    from app.models import Product as _P
+
     _connect(client, demo)
-    r = client.put(f"/v1/shops/{demo['shop_id']}/kaspi/stores", json={"store_ids": ["bad code!"]}, headers=demo["headers"])
-    assert r.status_code == 422 and r.json()["error"]["code"] == "kaspi_store_invalid"
+    mock.generate(4, now=datetime.now(timezone.utc), days=5, products=2)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    with DbSession(engine) as db:
+        p = db.query(_P).filter(_P.shop_id == demo["shop_id"], _P.sku == "K0").one()
+        assert p.name == "Товар K0 из кабинета"
+        assert p.category == "Посуда для кухни"
+
+
+def test_placeholder_name_is_replaced_on_next_sync(client, demo, kaspi_on, mock):
+    """Товар, созданный раньше с названием-артикулом, получает название Kaspi при следующей синхронизации."""
+    from app.models import Product as _P
+
+    _connect(client, demo)
+    mock.generate(2, now=datetime.now(timezone.utc), days=5, products=1)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    with DbSession(engine) as db:
+        p = db.query(_P).filter(_P.shop_id == demo["shop_id"], _P.sku == "K0").one()
+        p.name = "K0"  # имитация старого товара
+        p.category = "Без категории"
+        db.commit()
+    mock.generate(1, now=datetime.now(timezone.utc), days=1, products=1)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    with DbSession(engine) as db:
+        p = db.query(_P).filter(_P.shop_id == demo["shop_id"], _P.sku == "K0").one()
+        assert p.name == "Товар K0 из кабинета" and p.category == "Посуда для кухни"
+
+
+def test_product_card_asks_to_check_commission_when_category_has_no_rate(client, demo, kaspi_on, mock):
+    from datetime import date as _date
+    from app.models import CommissionPreset as _CP, Product as _P
+
+    _connect(client, demo)
+    mock.generate(2, now=datetime.now(timezone.utc), days=5, products=1)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    with DbSession(engine) as db:
+        pid = db.query(_P.id).filter(_P.shop_id == demo["shop_id"], _P.sku == "K0").scalar()
+    url = f"/v1/shops/{demo['shop_id']}/products/{pid}"
+    r = client.get(url, headers=demo["headers"])
+    assert r.status_code == 200 and "уточнить комиссию" in r.json()["commission_note"]
+    with DbSession(engine) as db:
+        db.add(_CP(shop_id=demo["shop_id"], category="Посуда для кухни", rate_bp=1200, effective_from=_date(2020, 1, 1),
+                   source="manual", verified=True))
+        db.commit()
+    assert client.get(url, headers=demo["headers"]).json()["commission_note"] is None
+
+
+def test_nightly_reread_catches_late_partial_cancel_that_regular_sync_misses(client, demo, kaspi_on, mock):
+    """К-17.2: частичная отмена старого выполненного заказа (старше 14 дней) обычной синхронизацией не подхватывается,
+    ночное перечитывание за 60 дней подхватывает и пишет движение «отмена»."""
+    from app import kaspi as kaspi_service
+    from app.kaspi_client import KaspiClient as _KC
+    from app.models import KaspiConnection as _KCon, OrderItem as _OI, StockMovement as _SM
+
+    _connect(client, demo)
+    mock.generate(6, now=datetime.now(timezone.utc), days=40, state_cycle=["COMPLETED"], products=2)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    code = next(c for c, rows in mock.entries.items() if rows[0]["qty"] >= 2)  # самый старый заказ, qty >= 2
+    old_qty = mock.entries[code][0]["qty"]
+    total_before = sum(r["qty"] for r in mock.entries[code])
+    mock.partial_cancel(code, 0, 1)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])  # обычная синхронизация
+    with DbSession(engine) as db:
+        order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == code).one()
+        assert sum(it.qty for it in db.query(_OI).filter(_OI.order_id == order.id)) == total_before  # пока не видна
+    with DbSession(engine) as db:
+        conn = db.get(_KCon, demo["shop_id"])
+        res = kaspi_service.reread_window(db, conn, _KC(VALID_TOKEN, transport=mock.transport(), sleep=lambda s: None,
+                                                          min_interval=0), datetime.now(timezone.utc))
+        assert res["items_changed"] >= 1
+    with DbSession(engine) as db:
+        order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == code).one()
+        assert sum(it.qty for it in db.query(_OI).filter(_OI.order_id == order.id)) == total_before - (old_qty - 1)
+        moves = db.query(_SM).filter(_SM.shop_id == demo["shop_id"], _SM.kind == "cancel").all()
+        assert [m.qty for m in moves] == [old_qty - 1]
+
+
+def test_nightly_job_runs_for_active_connections(client, demo, kaspi_on, mock, monkeypatch):
+    from app import scheduler as sched
+
+    _connect(client, demo)
+    mock.generate(2, now=datetime.now(timezone.utc), days=5, products=1)
+    monkeypatch.setattr("app.kaspi.client_for", lambda conn: _client_from(mock))
+    done = sched.run_kaspi_nightly_reread()
+    assert (demo["shop_id"], "reread") in done
+
+
+def _client_from(mock):
+    from app.kaspi_client import KaspiClient as _KC
+    return _KC(VALID_TOKEN, transport=mock.transport(), sleep=lambda s: None, min_interval=0)
+
+
+def test_second_sync_while_one_runs_is_refused(client, demo, kaspi_on, mock):
+    """К-17.3: параллельная синхронизация того же магазина не запускается (409), а не идёт второй раз."""
+    from app import kaspi as kaspi_service
+
+    _connect(client, demo)
+    mock.generate(3, now=datetime.now(timezone.utc), days=5, products=1)
+    lock = kaspi_service._SHOP_LOCKS.setdefault(demo["shop_id"], __import__("threading").Lock())
+    assert lock.acquire(blocking=False)
+    try:
+        r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+        assert r.status_code == 409 and r.json()["error"]["code"] == "kaspi_sync_running"
+    finally:
+        lock.release()
+    assert client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"]).status_code == 200
+
+
+def test_first_load_is_queued_to_background_when_scheduler_runs(client, demo, kaspi_on, mock, monkeypatch):
+    """К-17.3: первая загрузка в продакшене (планировщик включён) не держит HTTP-запрос: ставится в очередь."""
+    _connect(client, demo)
+    mock.generate(5, now=datetime.now(timezone.utc), days=5, products=1)
+    monkeypatch.setenv("SATTI_SCHEDULER", "1")
+    r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    assert r.status_code == 200 and r.json()["status"] == "queued"
+    assert _count_kaspi_orders(demo["shop_id"]) == 0  # в запросе заказы не загружаются
+    with DbSession(engine) as db:
+        conn = db.get(KaspiConnection, demo["shop_id"])
+        assert conn.cursor_ms is None and conn.last_sync_at is None  # due для планировщика
+    monkeypatch.delenv("SATTI_SCHEDULER")
+    assert client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"]).json()["added"] == 5
+
+
+def test_overview_says_when_period_is_older_than_kaspi_history(client, demo, kaspi_on, mock):
+    """К-17.3: период старше 90 дней загрузки Kaspi — в обзоре честная пометка о неполных данных."""
+    _connect(client, demo)
+    mock.generate(2, now=datetime.now(timezone.utc), days=5, products=1)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    r = client.get(f"/v1/shops/{demo['shop_id']}/overview?period=2025-12-01..2026-11-22", headers=demo["headers"])
+    assert r.status_code == 200
+    assert r.json()["history_note"] and "неполные" in r.json()["history_note"]
+    r = client.get(f"/v1/shops/{demo['shop_id']}/overview?period=7d", headers=demo["headers"])
+    assert r.json()["history_note"] is None
+
+
+def test_seller_delivery_is_an_expense_and_credit_orders_have_unknown_profit(client, demo, kaspi_on, mock):
+    """К-17.3: доставка, которую оплачивает продавец (deliveryCostForSeller), — расход заказа.
+    Рассрочка (PAY_WITH_CREDIT): комиссия отличается, поэтому прибыль по таким позициям не считаем (delivery = None)."""
+    from app.models import OrderItem as _OI
+
+    _connect(client, demo)
+    mock.generate(8, now=datetime.now(timezone.utc), days=5, products=2)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    with DbSession(engine) as db:
+        delivery_order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000000").one()
+        first_item = db.query(_OI).filter(_OI.order_id == delivery_order.id).first()
+        assert first_item.buyer_delivery_minor == 50_000  # 500 тенге на первой позиции
+        credit_order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000001").one()
+        items = db.query(_OI).filter(_OI.order_id == credit_order.id).all()
+        assert items and all(it.buyer_delivery_minor is None for it in items)  # рассрочка — прибыль неизвестна
+        plain = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000002").one()
+        assert all(it.buyer_delivery_minor == 0 for it in db.query(_OI).filter(_OI.order_id == plain.id).all()[1:])

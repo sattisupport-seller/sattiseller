@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import logging
+import os
 from decimal import Decimal, InvalidOperation
 import json
 
@@ -528,7 +529,22 @@ def get_overview(shop_id: str, period: str = Query("7d"), principal: Principal =
         data, facts = base_for(db, shop)
         return overview(data, facts, _period(period, shop), _now())
 
-    return reportcache.memo(shop.id, f"overview|{period}|{_minute()}", compute)
+    out = dict(reportcache.memo(shop.id, f"overview|{period}|{_minute()}", compute))
+    out["history_note"] = _history_note(db, shop, out.get("period", {}).get("from"))
+    return out
+
+
+def _history_note(db: DbSession, shop: Shop, period_from: str | None) -> str | None:
+    """К-17.3: заказы Kaspi загружаются за последние 90 дней. Период раньше этого — цифры неполные, и это говорим прямо."""
+    conn = db.get(KaspiConnection, shop.id)
+    if conn is None or not period_from:
+        return None
+    from datetime import timedelta as _td
+    earliest = (conn.connected_at.date() - _td(days=kaspi_service.FIRST_SYNC_DAYS)).isoformat()
+    if period_from < earliest:
+        return (f"Заказы Kaspi загружены не раньше {earliest[8:]}.{earliest[5:7]}.{earliest[:4]}. "
+                "За более ранний период заказов в приложении нет, поэтому выручка и прибыль за него неполные.")
+    return None
 
 
 @api.get("/shops/{shop_id}/profit-breakdown", tags=["обзор"], response_model=ProfitBreakdownOut)
@@ -670,7 +686,13 @@ def get_product(shop_id: str, product_id: str, period: str = Query("30d"),
     if product is None or product.shop_id != shop.id:
         raise ApiError(404, "not_found")
     data, facts = base_for(db, shop)
-    return product_detail(data, facts, product, _period(period, shop), _now())
+    out = product_detail(data, facts, product, _period(period, shop), _now())
+    # К-16.2: нет ставки комиссии для категории товара — пометка в карточке
+    from .models import CommissionPreset
+    has_rate = db.scalar(select(CommissionPreset.id).where(
+        CommissionPreset.shop_id == shop.id, CommissionPreset.category == product.category).limit(1)) is not None
+    out["commission_note"] = None if has_rate else "уточнить комиссию: для категории «" + product.category + "» нет ставки"
+    return out
 
 
 # ---------- затраты ----------
@@ -1498,17 +1520,27 @@ class KaspiStoresIn(BaseModel):
     store_ids: list[str] = Field(default_factory=list, max_length=20)
 
 
-def _kaspi_view(shop: Shop, conn: KaspiConnection | None) -> dict:
+def _kaspi_view(shop: Shop, conn: KaspiConnection | None, db: DbSession | None = None) -> dict:
     if conn is None:
         return {"enabled": True, "status": "not_connected"}
+    catalog = kaspi_service.get_catalog(db, shop.id) if db is not None else None
+    # К-16.3: ссылку на прайс показываем только после импорта прайса продавца
     price_path = f"/v1/kaspi/price/{shop.id}/{conn.price_key}"
+    price_url = None
+    if catalog is not None:
+        price_url = (settings.public_base_url + price_path) if settings.public_base_url else price_path
     return {"enabled": True, "status": conn.status, "seller_id": conn.seller_id,
             "connected_at": conn.connected_at.isoformat(),
             "last_sync_at": conn.last_sync_at.isoformat() if conn.last_sync_at else None,
             "last_error": conn.last_error,
             "store_ids": kaspi_service.store_list(conn),
             "store_hint": conn.store_hint,
-            "price_url": (settings.public_base_url + price_path) if settings.public_base_url else price_path}
+            "catalog": ({"offers_count": catalog.offers_count, "imported_at": catalog.imported_at.isoformat()}
+                        if catalog is not None else None),
+            "price_url": price_url,
+            "price_hint": None if catalog is not None else (
+                "Сначала загрузите прайс-лист из кабинета Kaspi (Товары → Выгрузка прайс-листа). "
+                "Без него ссылку на прайс не показываем: иначе Kaspi может снять с продажи товары, которых нет в файле.")}
 
 
 @api.post("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"], status_code=201)
@@ -1531,7 +1563,24 @@ def kaspi_connect(shop_id: str, body: KaspiConnectIn, principal: Principal = Dep
         client.close()
     analytics_service.record(db, "kaspi_connect_succeeded", now)
     audit.record(db, "kaspi_connect", "kaspi_connection", actor_id=principal.user_id, shop_id=shop.id)
-    return _kaspi_view(shop, conn)
+    return _kaspi_view(shop, conn, db)
+
+
+@api.post("/shops/{shop_id}/kaspi/catalog", tags=["Kaspi"])
+async def kaspi_upload_catalog(shop_id: str, file: UploadFile = File(...), principal: Principal = Depends(get_principal),
+                               db: DbSession = Depends(get_session)) -> dict:
+    """Импорт прайс-листа продавца из кабинета Kaspi (К-16.3). Наш файл потом строится из него."""
+    _require_kaspi(db)
+    shop = shop_for(db, principal, shop_id)
+    conn = db.get(KaspiConnection, shop.id)
+    if conn is None:
+        raise ApiError(409, "kaspi_not_connected", "Сначала подключите Kaspi.")
+    data = await file.read(kaspi_service.MAX_CATALOG_BYTES + 1)
+    try:
+        kaspi_service.import_catalog(db, shop.id, data, _now())
+    except ValueError as exc:
+        raise ApiError(422, "kaspi_catalog_invalid", str(exc)) from exc
+    return _kaspi_view(shop, conn, db)
 
 
 @api.put("/shops/{shop_id}/kaspi/stores", tags=["Kaspi"])
@@ -1547,7 +1596,7 @@ def kaspi_set_stores(shop_id: str, body: KaspiStoresIn, principal: Principal = D
     except KaspiUnavailable as exc:
         raise ApiError(409, "kaspi_not_connected", "Сначала подключите Kaspi.") from exc
     conn = db.get(KaspiConnection, shop.id)
-    return _kaspi_view(shop, conn)
+    return _kaspi_view(shop, conn, db)
 
 
 @api.get("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"])
@@ -1555,7 +1604,7 @@ def kaspi_status(shop_id: str, principal: Principal = Depends(get_principal), db
     if not kaspi_enabled(db):
         return {"enabled": False, "status": "not_connected"}
     shop = shop_for(db, principal, shop_id)
-    return _kaspi_view(shop, db.get(KaspiConnection, shop.id))
+    return _kaspi_view(shop, db.get(KaspiConnection, shop.id), db)
 
 
 @api.post("/shops/{shop_id}/kaspi/sync", tags=["Kaspi"])
@@ -1568,10 +1617,20 @@ def kaspi_sync_now(shop_id: str, principal: Principal = Depends(get_principal), 
     db.commit()  # соединение — лимиту ниже (см. demo_session)
     if not allow(f"kaspi-sync:{shop.id}", 12, 3600, db=db):
         raise ApiError(429, "rate_limited", "Слишком часто. Синхронизация доступна не чаще 12 раз в час.")
+    # К-17.3: первая загрузка большого магазина (тысячи заказов) идёт часы — в фоне планировщика, а не в запросе.
+    if conn.cursor_ms is None and os.environ.get("SATTI_SCHEDULER", "0") == "1":
+        conn.last_sync_at = None  # сделаем подключение «due»: планировщик возьмёт его в ближайший проход
+        conn.last_error = None
+        db.add(conn)
+        db.commit()
+        return {"status": "queued", "added": 0, "updated": 0, "pages": 0,
+                "message": "Первая загрузка заказов запущена в фоне. Обычно это занимает от 10 минут до часа."}
     client = None
     try:
         client = kaspi_service.client_for(conn)
         stats = kaspi_service.sync(db, conn, client, utcnow())
+    except kaspi_service.KaspiBusy as exc:
+        raise ApiError(409, "kaspi_sync_running", "Синхронизация уже идёт. Дождитесь окончания.") from exc
     except KaspiAuthError as exc:
         raise ApiError(422, "kaspi_token_rejected", "Kaspi не принимает ключ. Подключите магазин заново.") from exc
     except KaspiUnavailable as exc:
@@ -1640,4 +1699,8 @@ def kaspi_price_list(shop_id: str, price_key: str, db: DbSession = Depends(get_s
     conn = kaspi_service.find_by_price_key(db, shop_id, price_key) if shop else None
     if conn is None:
         raise ApiError(404, "not_found")
-    return Response(content=kaspi_service.price_list_xml(db, shop, conn), media_type="application/xml")
+    try:
+        body = kaspi_service.price_list_xml(db, shop, conn)
+    except kaspi_service.KaspiNoCatalog as exc:
+        raise ApiError(409, "catalog_not_imported", "Прайс-лист ещё не загружен из кабинета Kaspi.") from exc
+    return Response(content=body, media_type="application/xml")

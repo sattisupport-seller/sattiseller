@@ -50,7 +50,9 @@ class MockKaspi:
             self.orders.append({
                 "id": code, "type": "orders",
                 "attributes": {"state": state, "creationDate": created,
-                               "completedDate": created + DAY_MS if state in ("COMPLETED", "RETURNED") else None},
+                               "completedDate": created + DAY_MS if state in ("COMPLETED", "RETURNED") else None,
+                               "paymentMode": "PAY_WITH_CREDIT" if i % 4 == 1 else "PREPAID",
+                               **({"deliveryCostForSeller": 500} if i % 3 == 0 else {})},
                 "relationships": {"entries": {"links": {"related": f"/orders/{code}/entries"}}},
             })
 
@@ -90,7 +92,8 @@ class MockKaspi:
         if m:
             rows = self.entries.get(m.group(1), [])
             data = [{"type": "orderentries", "id": r["id"],
-                     "attributes": {"quantity": r["qty"], "basePrice": r["basePrice"]},
+                     "attributes": {"quantity": r["qty"], "basePrice": r["basePrice"],
+                                    "category": {"code": "C1", "title": "Посуда для кухни"}},
                      "relationships": {"product": {"links": {"related": f"/orderentries/{r['id']}/product"}},
                                        "deliveryPointOfService": {"data": {"type": "pointofservices", "id": "PP1"}}}}
                     for r in rows]
@@ -103,7 +106,7 @@ class MockKaspi:
         if m:
             idx = m.group(1)[1:]
             return self._json({"data": {"type": "merchantproducts", "id": f"MP{idx}",
-                                        "attributes": {"code": f"K{idx}"}}})
+                                        "attributes": {"code": f"K{idx}", "name": f"Товар K{idx} из кабинета"}}})
         if not path.endswith("/" + kaspi_client.ORDERS_PATH):
             return httpx.Response(404, json={"error": "not found"})
         q = request.url.params

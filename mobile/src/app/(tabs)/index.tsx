@@ -136,6 +136,10 @@ export default function OverviewScreen() {
 
         {data && kpi ? (
           <>
+            {/* К-17.3: период раньше первой загрузки заказов Kaspi — цифры неполные, говорим прямо */}
+            {(data as { history_note?: string | null }).history_note ? (
+              <Banner text={(data as { history_note?: string | null }).history_note as string} tone="neutral" />
+            ) : null}
             <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
               <KpiBox
                 title={t('overview.kpiNet')}
