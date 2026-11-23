@@ -116,19 +116,27 @@ def check_draft(obj: dict, facts: str) -> dict:
     raw_chars = obj.get("characteristics")
     if not isinstance(raw_chars, list) or not raw_chars or len(raw_chars) > 20:
         raise DraftFallback("нет характеристик")
+    allowed = _allowed_numbers(facts)
+
+    def _has_unknown_number(text: str) -> bool:
+        return any(n.replace(",", ".") not in allowed for n in NUMBER.findall(text))
+
     chars = []
     for row in raw_chars:
         if not isinstance(row, dict) or not isinstance(row.get("name"), str) or not isinstance(row.get("value"), str):
             raise DraftFallback("характеристика не в формате name/value")
-        chars.append({"name": row["name"].strip()[:60], "value": row["value"].strip()[:200] or "Уточнить"})
+        value = row["value"].strip()[:200] or "Уточнить"
+        # К-20 п.3: число в характеристике, которого нет в фактах (например, снято с фото), не отдаёт
+        # весь ответ в шаблон: такое значение становится «Уточнить».
+        if _has_unknown_number(value):
+            value = "Уточнить"
+        chars.append({"name": row["name"].strip()[:60], "value": value})
 
     everything = " ".join([*titles, description, *(c["name"] + " " + c["value"] for c in chars)])
     if LINK.search(everything) or contains_pii(everything):
         raise DraftFallback("контакты или ссылки в ответе")
-    allowed = _allowed_numbers(facts)
-    for n in NUMBER.findall(everything):
-        if n.replace(",", ".") not in allowed:
-            raise DraftFallback("число, которого нет в фактах")
+    if _has_unknown_number(" ".join([*titles, description])):
+        raise DraftFallback("число, которого нет в фактах")
     lowered_facts = facts.lower()
     for claim in FORBIDDEN_CLAIMS.findall(everything):
         if claim.lower() not in lowered_facts:

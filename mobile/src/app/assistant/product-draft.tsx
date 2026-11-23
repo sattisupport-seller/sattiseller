@@ -1,5 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
 import { Image, Pressable, ScrollView, View } from 'react-native';
@@ -16,6 +17,21 @@ import { Sheet, useToast } from '@/components/ui/Overlays';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
+
+// К-20 п.2: фото с телефона бывают больше лимита сервера (5 МБ). Сжимаем до длинной стороны 1600 px в JPEG 0,7.
+async function shrinkPhoto(uri: string, width?: number, height?: number) {
+  // Размер неизвестен (файл из проводника): ширина 1600, высота по пропорции — этого хватает для лимита.
+  const landscapeOrUnknown = width === undefined || height === undefined || width >= height;
+  const longest = Math.max(width ?? 0, height ?? 0);
+  const actions = longest > 1600 || longest === 0
+    ? [{ resize: landscapeOrUnknown ? { width: 1600 } : { height: 1600 } }]
+    : [];
+  const out = await ImageManipulator.manipulateAsync(uri, actions, {
+    compress: 0.7,
+    format: ImageManipulator.SaveFormat.JPEG,
+  });
+  return { uri: out.uri, name: `photo-${Date.now()}.jpg`, type: 'image/jpeg' };
+}
 
 // Черновик описания товара (docs/spec.md, 8.9): только по введённым фактам и фото, ничего не публикуется.
 export default function ProductDraftScreen() {
@@ -34,7 +50,7 @@ export default function ProductDraftScreen() {
   const addPhoto = async () => {
     const res = await DocumentPicker.getDocumentAsync({ type: ['image/jpeg', 'image/png', 'image/webp'], multiple: true, copyToCacheDirectory: true });
     if (res.canceled) return;
-    const next = res.assets.map((a) => ({ uri: a.uri, name: a.name, type: a.mimeType ?? 'image/jpeg' }));
+    const next = await Promise.all(res.assets.map((a) => shrinkPhoto(a.uri)));  // у файлов из проводника размер не известен
     setPhotos((p) => [...p, ...next].slice(0, 5));
   };
 
@@ -48,8 +64,8 @@ export default function ProductDraftScreen() {
     const res = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.8 });
     if (res.canceled) return;
     const a = res.assets[0];
-    const name = a.fileName ?? `photo-${Date.now()}.jpg`;
-    setPhotos((p) => [...p, { uri: a.uri, name, type: a.mimeType ?? 'image/jpeg' }].slice(0, 5));
+    const photo = await shrinkPhoto(a.uri, a.width, a.height);
+    setPhotos((p) => [...p, photo].slice(0, 5));
   };
 
   const make = async () => {

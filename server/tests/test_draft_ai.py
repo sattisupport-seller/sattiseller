@@ -43,6 +43,15 @@ def test_check_rejects_number_not_in_facts():
         draft_ai.check_draft(_good(description="Объём 450 мл, вес 300 г."), FACTS)
 
 
+def test_unknown_number_in_characteristic_becomes_clarify_not_template():
+    # К-20 п.3: вес взят с фото, в фактах его нет — характеристика «Уточнить», остальной ответ сохраняется
+    out = draft_ai.check_draft(_good(characteristics=[{"name": "Вес", "value": "300 г"},
+                                                       {"name": "Объём", "value": "450 мл"}]), FACTS)
+    assert out["characteristics"][0]["value"] == "Уточнить"
+    assert out["characteristics"][1]["value"] == "450 мл"
+    assert len(out["titles"]) == 3
+
+
 def test_check_rejects_links_and_contacts():
     with pytest.raises(draft_ai.DraftFallback):
         draft_ai.check_draft(_good(description="Подробнее на www.shop-example.kz"), FACTS)
