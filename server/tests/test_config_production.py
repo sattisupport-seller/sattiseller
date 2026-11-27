@@ -36,6 +36,7 @@ def good_production(monkeypatch):
     monkeypatch.setattr(settings, "anthropic_api_key", "sk-ant-test")
     monkeypatch.setattr(settings, "push_mode", "expo")  # 3.4
     monkeypatch.setattr(settings, "ip_requests_per_minute", 300)  # ч.2 п.11
+    monkeypatch.setattr(settings, "kaspi_key", "x" * 44)  # аудит L5: ключ токенов обязателен и при входе Apple
     return monkeypatch
 
 

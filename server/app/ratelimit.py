@@ -67,6 +67,32 @@ def _allow_in_session(db, key: str, limit: int, window: int) -> bool:
     return True
 
 
+def _safe_key(key: str) -> str:
+    """Аудит 27.11, L2: email в ключе лимита не хранится открытым текстом (таблица rate_limits на PostgreSQL)."""
+    if "@" not in key:
+        return key
+    from .security import hash_token
+
+    prefix = key.split(":", 1)[0]
+    return f"{prefix}:h:{hash_token(key)[:32]}"
+
+
+def purge_expired(older_than_seconds: int = 2 * 86_400) -> int:
+    """Удаляет счётчики, окно которых давно закончилось (ежедневная задача)."""
+    if _is_sqlite():
+        return 0
+    from datetime import timedelta
+
+    db = SessionLocal()
+    try:
+        cut = datetime.now(timezone.utc) - timedelta(seconds=older_than_seconds)
+        n = db.query(RateLimit).filter(RateLimit.window_start < cut).delete()
+        db.commit()
+        return n or 0
+    finally:
+        db.close()
+
+
 def allow(key: str, limit: int, window: int = WINDOW_SECONDS, db=None) -> bool:
     """True — попадание засчитано; False — лимит исчерпан (счётчик не растёт).
 
@@ -75,6 +101,7 @@ def allow(key: str, limit: int, window: int = WINDOW_SECONDS, db=None) -> bool:
     При конфликте вставки сессия откатывается и счётчик ведётся отдельно (как раньше).
     SQLite: счётчик в памяти процесса (одна база на один процесс; общая запись по SQLite ломает транзакции запроса).
     """
+    key = _safe_key(key)
     if _is_sqlite():
         return _memory_allow(key, limit, window)
     if db is not None:

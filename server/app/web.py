@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import markdown
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
@@ -23,7 +23,7 @@ from .mailer import MailError, send_code_email
 from .errors import pick_lang
 from .accounts import delete_user_account
 from .models import AuthCode, User
-from .ratelimit import allow
+from .ratelimit import allow, client_ip
 from .security import hash_code, new_code
 
 LEGAL_DIR = Path(__file__).resolve().parent / "legal"  # копия текстов из docs/legal, входит в пакет
@@ -140,20 +140,26 @@ def delete_account_page() -> HTMLResponse:
     return _page("Удаление аккаунта", _FORM)
 
 
+def _send_delete_code(email: str, code: str, lang: str) -> None:
+    try:
+        send_code_email(email, code, "delete", lang)
+    except MailError:
+        pass  # та же страница, что и без ошибки: не показываем, есть ли аккаунт
+
+
 @router.post("/delete-account/start", response_class=HTMLResponse)
-def delete_account_start(request: Request, email: str = Form(...), db: DbSession = Depends(get_session)) -> HTMLResponse:
+def delete_account_start(request: Request, background: BackgroundTasks, email: str = Form(...),
+                         db: DbSession = Depends(get_session)) -> HTMLResponse:
     address = email.strip().lower()
-    if allow(f"webdelete:{address}", 5, db=db):  # 1.16: в сессии запроса
+    # аудит 27.11, L6: лимит и по адресу клиента; письмо — в фоне, время ответа не выдаёт, есть ли аккаунт
+    if allow(f"webdelete-ip:{client_ip(request)}", 20, db=db) and allow(f"webdelete:{address}", 5, db=db):
         user = db.scalar(select(User).where(User.email == address))
         if user is not None:
             code = new_code()
             db.add(AuthCode(email=user.email, purpose="delete", user_id=user.id, code_hash=hash_code(user.email, code),
                             expires_at=datetime.now(timezone.utc) + timedelta(minutes=settings.code_ttl_minutes)))
             db.commit()
-            try:
-                send_code_email(user.email, code, "delete", pick_lang(request.headers.get("accept-language")))
-            except MailError:
-                pass  # та же страница, что и без ошибки: не показываем, есть ли аккаунт
+            background.add_task(_send_delete_code, user.email, code, pick_lang(request.headers.get("accept-language")))
     return _page("Введите код", _code_form(address))
 
 

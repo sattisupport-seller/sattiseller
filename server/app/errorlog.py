@@ -125,9 +125,19 @@ def admin_errors(_: User = Depends(require_admin), db: DbSession = Depends(get_s
 def unhandled_error_response(request: Request, exc: Exception, db: DbSession) -> JSONResponse:
     """Общий обработчик внутренних ошибок: пользователь видит код, в журнале — группа без данных."""
     error_id = uuid.uuid4().hex[:12]
-    where = f"{request.method} {request.url.path.split('?')[0]}"
+    route = request.scope.get("route")
+    # аудит 27.11, L3: шаблон маршрута вместо фактического пути — секрет price_key не попадает в журнал
+    where = f"{request.method} {getattr(route, 'path', None) or request.url.path.split('?')[0]}"
+    message = str(exc)
     try:
-        record_error(db, kind="server", exc_type=type(exc).__name__, where=where, message=str(exc))
+        from sqlalchemy.exc import SQLAlchemyError
+
+        if isinstance(exc, SQLAlchemyError):  # без SQL и параметров запроса
+            message = f"{type(exc).__name__}: {type(getattr(exc, 'orig', None)).__name__}"
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        record_error(db, kind="server", exc_type=type(exc).__name__, where=where, message=message)
     except Exception:  # noqa: BLE001 — запись ошибки не должна мешать ответу
         log.exception("could not record error")
     log.error("unhandled %s at %s (id %s)", type(exc).__name__, where, error_id)

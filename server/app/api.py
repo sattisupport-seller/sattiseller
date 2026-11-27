@@ -224,7 +224,8 @@ def auth_email_verify(body: VerifyIn, db: DbSession = Depends(get_session)) -> d
     if code_row.attempts >= settings.code_max_attempts:
         raise ApiError(429, "rate_limited", "Слишком много неверных попыток. Запросите новый код.")
     if hash_code(email, body.code) != code_row.code_hash:
-        code_row.attempts += 1
+        # аудит 27.11, L8: атомарно — параллельные запросы не обходят предел попыток
+        db.execute(update(AuthCode).where(AuthCode.id == code_row.id).values(attempts=AuthCode.attempts + 1))
         db.commit()
         raise ApiError(400, "code_invalid")
     code_row.used = True

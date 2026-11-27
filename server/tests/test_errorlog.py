@@ -52,6 +52,7 @@ def test_admin_sees_error_groups_others_do_not(client, monkeypatch):
 def test_unhandled_error_gets_generic_answer_and_is_logged(client):
     class _Req:
         method = "GET"
+        scope: dict = {}
 
         class url:  # noqa: N801 — имитация объекта url
             path = "/v1/shops/abc/overview?period=7d"

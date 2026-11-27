@@ -115,13 +115,14 @@ def totp_verify(secret_b32: str, code: str | None, at: float | None = None) -> b
 SESSION_TTL_SECONDS = 30 * 60
 
 
-def _session_token(user_id: str, expires: int) -> str:
+def _session_token(user_id: str, session_id: str, expires: int) -> str:
+    """Подпись включает сессию входа (аудит 27.11, L4): выход из аккаунта гасит и сессию админки."""
     from .security import hash_token
 
-    return f"{expires}.{hash_token(f'admin-session|{user_id}|{expires}')}"
+    return f"{expires}.{hash_token(f'admin-session|{user_id}|{session_id}|{expires}')}"
 
 
-def _check_session_token(token: str | None, user_id: str) -> bool:
+def _check_session_token(token: str | None, user_id: str, session_id: str) -> bool:
     from .security import hash_token
 
     if not token or "." not in token:
@@ -133,7 +134,7 @@ def _check_session_token(token: str | None, user_id: str) -> bool:
         return False
     if expires < int(time.time()):
         return False
-    return hmac.compare_digest(sig, hash_token(f"admin-session|{user_id}|{expires}"))
+    return hmac.compare_digest(sig, hash_token(f"admin-session|{user_id}|{session_id}|{expires}"))
 
 
 def _accept_new_step(db: DbSession, row: "AdminTotp", step: int) -> None:
@@ -185,7 +186,7 @@ def require_admin(principal: Principal = Depends(get_principal),
     row = db.get(AdminTotp, user.id)
     if row is None or not row.enabled:
         raise ApiError(403, "two_factor_required", "Включите двухфакторную защиту администратора.")
-    if not _check_session_token(session, user.id):
+    if not _check_session_token(session, user.id, principal.session_id):
         raise ApiError(403, "admin_session_required", "Введите код двухфакторной защиты, чтобы открыть панель.")
     return user
 
@@ -256,7 +257,7 @@ def open_session(body: CodeIn, principal: Principal = Depends(get_principal),
     _accept_new_step(db, row, step)
     db.commit()
     expires = int(time.time()) + SESSION_TTL_SECONDS
-    return {"admin_session": _session_token(user.id, expires), "expires_in": SESSION_TTL_SECONDS}
+    return {"admin_session": _session_token(user.id, principal.session_id, expires), "expires_in": SESSION_TTL_SECONDS}
 
 
 def _ai_budget(db: DbSession) -> dict:

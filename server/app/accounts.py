@@ -29,7 +29,10 @@ def _revoke_apple_tokens(db: DbSession, user_id: str) -> None:
         try:
             apple_tokens.revoke(decrypt_token(link.refresh_token_enc))
         except KaspiAuthError:
-            pass  # ключ шифрования сменился — отозвать нечем; удаление продолжается
+            # аудит 27.11, L5: ключ сменился без ротации — токен не отозвать; удаление продолжается, но громко
+            import logging
+
+            logging.getLogger("satti.apple").error("apple token revoke impossible: refresh token cannot be decrypted")
 
 
 def delete_user_account(db: DbSession, user: User) -> None:

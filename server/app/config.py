@@ -37,6 +37,8 @@ def production_config_problems() -> list[str]:
         problems.append("SATTI_OWNER_NAME не задан: в юридических текстах будет общий оператор без имени")
     if not settings.smtp_host:
         problems.append("SATTI_SMTP_HOST не задан: письма с кодами пишутся в папку outbox и не доходят до людей")
+    if os.environ.get("SATTI_APPLE_CLIENT_ID") and not settings.kaspi_key:
+        problems.append("SATTI_KASPI_KEY не задан: refresh-токены Apple шифруются ключом разработки (аудит 27.11, L5)")
     if settings.kaspi_connection_enabled and not settings.kaspi_key:
         problems.append("KASPI_ENABLED=1, но SATTI_KASPI_KEY не задан: токены Kaspi нечем шифровать")
     if any("localhost" in o or "127.0.0.1" in o for o in os.environ.get(

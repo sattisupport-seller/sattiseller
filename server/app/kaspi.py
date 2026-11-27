@@ -48,9 +48,14 @@ UNKNOWN_CATEGORY = "Без категории"
 
 # ---------- шифрование токена ----------
 
-def _fernet() -> Fernet:
-    if settings.kaspi_key:
-        return Fernet(settings.kaspi_key.encode())
+def _fernet():
+    """Ключ шифрования токенов (Kaspi и refresh-токены Apple). SATTI_KASPI_KEY может содержать несколько ключей
+    через запятую (аудит 27.11, L5: ротация): первый шифрует, все расшифровывают."""
+    from cryptography.fernet import MultiFernet
+
+    keys = [k.strip() for k in settings.kaspi_key.split(",") if k.strip()] if settings.kaspi_key else []
+    if keys:
+        return MultiFernet([Fernet(k.encode()) for k in keys])
     # без ключа (разработка и тесты) — ключ, выведенный из секрета разработки; в продакшене проверка не даст запуститься
     digest = hashlib.sha256(f"kaspi-dev:{settings.admin_totp_key}".encode()).digest()
     return Fernet(base64.urlsafe_b64encode(digest))

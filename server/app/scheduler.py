@@ -42,6 +42,9 @@ def run_daily_jobs(now: datetime | None = None) -> list[tuple[str, str]]:
 
         purge_old_ai_feedback(db, now)
         purged = purge_deactivated(db, now)  # К-21: 30 дней деактивации прошли — полное удаление
+        from .ratelimit import purge_expired
+
+        purge_expired()  # аудит 27.11, L2: старые счётчики лимитов не копятся
         done = run_retention(db, now)
         done += [("-", "deactivated_purged")] * purged
     finally:

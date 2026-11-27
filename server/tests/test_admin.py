@@ -91,8 +91,21 @@ def test_code_is_accepted_once_and_session_expires(client, admin_email):
     assert client.get("/v1/admin/stats", headers={**headers, "X-Admin-Session": token}).status_code == 200
     # сессия с истёкшим сроком не работает (тот же механизм подписи, срок в прошлом)
     user_id = client.get("/v1/me", headers=headers).json()["id"]
-    expired = _session_token(user_id, int(time.time()) - 5)
-    assert client.get("/v1/admin/stats", headers={**headers, "X-Admin-Session": expired}).status_code == 403
+    from sqlalchemy import select as _select
+    from sqlalchemy.orm import Session as _S
+
+    from app.db import engine as _engine
+    from app.models import Session as _Sess
+
+    with _S(_engine) as db:  # сессия входа этого запроса (подпись включает её, аудит 27.11, L4)
+        session_ids = list(db.scalars(_select(_Sess.id).where(_Sess.user_id == user_id)).all())
+    for sid in session_ids:
+        expired = _session_token(user_id, sid, int(time.time()) - 5)
+        assert client.get("/v1/admin/stats", headers={**headers, "X-Admin-Session": expired}).status_code == 403
+    # аудит 27.11, L4: сессия админки другой сессии входа не подходит
+    other = login(client, ADMIN)
+    other_headers = {"Authorization": f"Bearer {other['access_token']}"}
+    assert client.get("/v1/admin/stats", headers={**other_headers, "X-Admin-Session": token}).status_code == 403
     # подделанная сессия не работает
     assert client.get("/v1/admin/stats", headers={**headers, "X-Admin-Session": "9999999999.deadbeef"}).status_code == 403
 
