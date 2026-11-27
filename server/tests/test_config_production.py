@@ -35,6 +35,7 @@ def good_production(monkeypatch):
     monkeypatch.setattr(settings, "ai_live", True)
     monkeypatch.setattr(settings, "anthropic_api_key", "sk-ant-test")
     monkeypatch.setattr(settings, "push_mode", "expo")  # 3.4
+    monkeypatch.setattr(settings, "ip_requests_per_minute", 300)  # ч.2 п.11
     return monkeypatch
 
 
@@ -106,6 +107,7 @@ def test_apple_login_without_siwa_key_refused(good_production):
     ("admin_email", "", "SATTI_ADMIN_EMAIL"),
     ("ai_budget_monthly_usd", 0.0, "SATTI_AI_BUDGET_MONTHLY_USD"),
     ("push_mode", "mock", "SATTI_PUSH_MODE"),
+    ("ip_requests_per_minute", 0, "SATTI_IP_REQUESTS_PER_MINUTE"),
 ])
 def test_new_variables_refused_when_missing(good_production, name, value, needle):
     """4.4 (К-21): переменные, добавленные после 4.4, проверяются при запуске в продакшене."""

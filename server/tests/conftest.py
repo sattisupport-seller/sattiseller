@@ -5,6 +5,7 @@ from pathlib import Path
 # Изоляция: тестовая база и папка писем во временной папке, до импорта приложения.
 _tmp = Path(tempfile.mkdtemp(prefix="satti-test-"))
 # SATTI_TEST_DATABASE_URL — прогон на PostgreSQL (QA-01); без неё — SQLite во временной папке
+os.environ.setdefault("SATTI_IP_REQUESTS_PER_MINUTE", "0")  # лимит на входе проверяется отдельным тестом
 os.environ["DATABASE_URL"] = os.environ.get("SATTI_TEST_DATABASE_URL") or f"sqlite:///{(_tmp / 'test.db').as_posix()}"
 os.environ["SATTI_OUTBOX_DIR"] = str(_tmp / "outbox")
 os.environ["SATTI_DATA_DIR"] = str(_tmp / "data")

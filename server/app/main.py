@@ -95,6 +95,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+from .iplimit import IpRateLimitMiddleware  # noqa: E402
+
+app.add_middleware(IpRateLimitMiddleware)  # К-21 ч.2 п.11: лимит с одного адреса на входе
 app.include_router(api, prefix="/v1")
 
 from .web import router as web_router  # noqa: E402  (страницы политики, условий, удаление аккаунта)

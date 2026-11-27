@@ -72,6 +72,8 @@ def production_config_problems() -> list[str]:
         problems.append("SATTI_OWNER_ALERT_EMAIL не задан: оповещения владельцу (копии, ошибки, место на диске) не уйдут")
     if not settings.admin_email:
         problems.append("SATTI_ADMIN_EMAIL не задан: админка (блокировка, окно токена, особые условия) недоступна")
+    if settings.ip_requests_per_minute <= 0:
+        problems.append("SATTI_IP_REQUESTS_PER_MINUTE = 0: лимит запросов с одного адреса на входе выключен")
     if settings.push_mode != "expo":
         problems.append("SATTI_PUSH_MODE не expo: уведомления пишутся в папку outbox/push и не доходят до телефонов")
     # 3.3: вход Apple без ключа Sign in with Apple — при удалении аккаунта токен не отозвать (требование Apple)
@@ -185,6 +187,8 @@ class Settings:
     # 3.4: пуши — mock (файлы в outbox/push) или expo (Expo Push API → FCM/APNs по ключам EAS)
     push_mode: str = os.environ.get("SATTI_PUSH_MODE", "mock")
     onboarding_restart_minutes: int = int(os.environ.get("SATTI_ONBOARDING_RESTART_MINUTES", "5"))
+    # К-21 ч.2 п.11: запросов в минуту с одного адреса на входе сервера (0 — выключено)
+    ip_requests_per_minute: int = int(os.environ.get("SATTI_IP_REQUESTS_PER_MINUTE", "300"))
     expo_access_token: str = os.environ.get("SATTI_EXPO_ACCESS_TOKEN", "")
     apple_siwa_key_id: str = os.environ.get("SATTI_APPLE_SIWA_KEY_ID", "")
     apple_siwa_key_path: str = os.environ.get("SATTI_APPLE_SIWA_KEY_PATH", "")  # .p8 в server/data/secrets/
