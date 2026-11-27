@@ -5,6 +5,10 @@
 #                           ufw (22, 80, 443), fail2ban, автообновления безопасности, синхронизация времени, Docker
 #   ./deploy.sh up        — обновить до текущей версии: бэкап, миграции, запуск, проверка здоровья
 #   ./deploy.sh rollback  — вернуться на предыдущий образ и откатить последнюю миграцию (после бэкапа)
+#   ./deploy.sh backup         — копия базы сейчас (зашифрована, выгружается в S3 другой компании); cron — каждую ночь
+#   ./deploy.sh verify-backup  — последняя копия → временная база satti_verify → сверка; сбой — письмо владельцу (cron)
+#   ./deploy.sh export-latest  — последняя копия в ~/satti-export (её забирает компьютер владельца, deploy/windows)
+#   ./deploy.sh restore-latest — НОВЫЙ сервер после потери хостинга: последняя копия из S3 → база (docs/DR.md, шаг 4)
 # Все секреты — в deploy/.env (права 600). Ничего не запускает без docker compose.
 set -euo pipefail
 
@@ -84,6 +88,15 @@ APT
   [ -d "$DEPLOY_DIR/../server/data/secrets" ] && chmod 700 "$DEPLOY_DIR/../server/data/secrets"     && find "$DEPLOY_DIR/../server/data/secrets" -type f -exec chmod 600 {} +
   chown -R "$user:$user" "$DEPLOY_DIR/.."
 
+  # ночная копия и её проверка (К-21, часть 2, п.9): cron от имени пользователя
+  cat > /etc/cron.d/satti <<CRON
+SHELL=/bin/bash
+15 2 * * * $user $DEPLOY_DIR/deploy.sh backup >> /var/log/satti-backup.log 2>&1
+45 3 * * * $user $DEPLOY_DIR/deploy.sh verify-backup >> /var/log/satti-backup.log 2>&1
+CRON
+  chmod 644 /etc/cron.d/satti
+  touch /var/log/satti-backup.log && chown "$user:$user" /var/log/satti-backup.log
+
   echo "готово. Проверьте вход: ssh $user@<IP> в НОВОМ окне, не закрывая текущее. Затем: ./deploy.sh up"
 }
 
@@ -139,6 +152,29 @@ case "${1:-}" in
       exit 1
     fi
     ;;
+  backup)
+    "${COMPOSE[@]}" exec -T app python scripts/backup.py create
+    ;;
+  verify-backup)
+    # временная база в том же PostgreSQL; боевая не трогается (скрипт отказывается, если адрес совпадает)
+    "${COMPOSE[@]}" exec -T db sh -c 'createdb -U "$POSTGRES_USER" satti_verify 2>/dev/null || true'
+    "${COMPOSE[@]}" exec -T app sh -c 'python scripts/backup.py verify --scratch-url "${DATABASE_URL%/*}/satti_verify"'
+    ;;
+  export-latest)
+    # К-21 ч.2 п.10: последняя зашифрованная копия — в ~/satti-export (её забирает компьютер владельца по SSH)
+    mkdir -p "$HOME/satti-export"
+    latest=$("${COMPOSE[@]}" exec -T app sh -c 'ls -1 /app/data/backups/satti-*.bak 2>/dev/null | tail -n 1' | tr -d '\r')
+    [ -n "$latest" ] || { echo "копий нет: сначала ./deploy.sh backup" >&2; exit 1; }
+    "${COMPOSE[@]}" cp "app:$latest" "$HOME/satti-export/"
+    find "$HOME/satti-export" -name 'satti-*.bak' -mtime +1 -delete  # на сервере держим только свежую
+    basename "$latest"
+    ;;
+  restore-latest)
+    # чистый сервер: база пустая, приложение ещё не запущено (docs/DR.md)
+    "${COMPOSE[@]}" up -d db
+    "${COMPOSE[@]}" run --rm app sh -c 'python scripts/backup.py restore-latest --target-url "$DATABASE_URL" --yes'
+    echo "база восстановлена; дальше: ./deploy.sh up"
+    ;;
   rollback)
     [ -f "$STATE_DIR/previous_image" ] || { echo "нет предыдущей версии для отката" >&2; exit 1; }
     backup
@@ -148,7 +184,7 @@ case "${1:-}" in
     echo "откат выполнен на предыдущий образ; проверьте /v1/health"
     ;;
   *)
-    echo "использование: $0 setup <пользователь> <ключ.pub> | up | rollback" >&2
+    echo "использование: $0 setup <пользователь> <ключ.pub> | up | rollback | backup | verify-backup | export-latest | restore-latest" >&2
     exit 2
     ;;
 esac

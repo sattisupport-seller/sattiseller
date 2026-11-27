@@ -147,3 +147,10 @@
 - **Шаги:** Certificates, Identifiers & Profiles → Identifiers → Services IDs → создать (например, `kz.satti.seller.web`), включить Sign in with Apple, домен `<домен>` и адрес возврата `https://<домен>/v1/auth/apple/web/callback`. Передать Claude Code Services ID.
 - **До этого:** на экране входа подсказка «Если у вас есть и Android — входите через Google».
 
+
+## 17. Защита от «хостинг пропал целиком» (К-21, часть 2, п.7; план — docs/DR.md)
+- Домен — у регистратора **не** у хостинга; вход в кабинет регистратора с 2FA; записать код переноса домена (EPP/auth-code).
+- DNS: TTL записи `A` для `api.<домен>` — 300 секунд.
+- Менеджер паролей + офлайн-копия (бумага или флешка в сейфе): `SATTI_BACKUP_KEY`, `SATTI_KASPI_KEY`, `SATTI_TOTP_KEY`, `SATTI_BILLING_PEPPER`, весь `deploy/.env`, ключи Apple `.p8` и Google JSON.
+- Второе хранилище копий — у другой казахстанской компании (п.8).
+- Первый день после покупки сервера — репетиция переезда (LAUNCH.md).

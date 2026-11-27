@@ -6,6 +6,10 @@
   python scripts/backup.py restore FILE --target-url URL [--yes]
                                                   — расшифровать и восстановить в ДРУГУЮ базу (боевая защищена флагом --yes)
   python scripts/backup.py prune                  — удалить локальные копии старше SATTI_BACKUP_KEEP_DAYS (по умолчанию 14)
+  python scripts/backup.py restore-latest --target-url URL [--yes]
+                                                  — К-21 ч.2 п.8: последняя копия из S3 (или из SATTI_BACKUP_DIR) → новая база
+  python scripts/backup.py verify --scratch-url URL
+                                                  — К-21 ч.2 п.9: последняя копия → временная база → сверка; сбой — письмо владельцу
 
 Переменные окружения: DATABASE_URL, SATTI_BACKUP_KEY (обязателен), SATTI_BACKUP_DIR (по умолчанию ./backups),
 SATTI_BACKUP_KEEP_DAYS, SATTI_PG_BIN (папка с pg_dump и pg_restore, если они не в PATH),
@@ -93,6 +97,23 @@ def dump_database(tmp: Path) -> str:
     return "postgresql"
 
 
+COUNT_TABLES = ("users", "shops", "products", "orders", "order_items", "product_cost_versions", "stock_movements")
+
+
+def table_counts(url: str) -> dict[str, int]:
+    """Число строк ключевых таблиц — для сверки после восстановления (ежедневная проверка копии, п.9)."""
+    from sqlalchemy import create_engine, inspect, text
+
+    engine = create_engine(url)
+    try:
+        existing = set(inspect(engine).get_table_names())
+        with engine.connect() as conn:
+            return {t: int(conn.execute(text(f"SELECT COUNT(*) FROM {t}")).scalar() or 0)  # noqa: S608 — имена из списка
+                    for t in COUNT_TABLES if t in existing}
+    finally:
+        engine.dispose()
+
+
 def build_archive(db_kind: str, tmp: Path) -> bytes:
     """Упаковка: дамп, secret_key (если есть) и манифест с контрольными суммами."""
     from app.config import DATA_DIR
@@ -111,7 +132,8 @@ def build_archive(db_kind: str, tmp: Path) -> bytes:
             tar.addfile(info, io.BytesIO(data))
             members["secret_key"] = hashlib.sha256(data).hexdigest()
         manifest = json.dumps({"format": FORMAT_VERSION, "db": db_kind,
-                               "created": datetime.now(timezone.utc).isoformat(), "sha256": members},
+                               "created": datetime.now(timezone.utc).isoformat(), "sha256": members,
+                               "counts": table_counts(_db_url())},
                               ensure_ascii=False).encode("utf-8")
         info = tarfile.TarInfo("manifest.json")
         info.size = len(manifest)
@@ -202,6 +224,72 @@ def _upload_s3(path: Path) -> None:
             client.delete_object(Bucket=bucket, Key=obj["Key"])
 
 
+def fetch_latest(dest: Path) -> Path:
+    """Последняя копия: из S3-хранилища другой компании (если настроено), иначе из SATTI_BACKUP_DIR."""
+    client, bucket = _s3_client()
+    if client is not None:
+        objects = [o for o in client.list_objects_v2(Bucket=bucket, Prefix="satti/").get("Contents", [])
+                   if o["Key"].endswith(".bak")]
+        if not objects:
+            raise SystemExit("В хранилище S3 нет копий (satti/*.bak)")
+        newest = max(objects, key=lambda o: o["LastModified"])
+        target = dest / Path(newest["Key"]).name
+        client.download_file(bucket, newest["Key"], str(target))
+        return target
+    local = sorted(_backup_dir().glob("satti-*.bak"))
+    if not local:
+        raise SystemExit(f"Копий нет ни в S3, ни в {_backup_dir()}")
+    return local[-1]
+
+
+def _manifest_of(file: Path) -> dict:
+    archive = _fernet().decrypt(file.read_bytes())
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
+        return json.loads(tar.extractfile("manifest.json").read().decode("utf-8"))
+
+
+def restore_latest(target_url: str, assume_yes: bool) -> Path:
+    """Восстановление одной командой на чистом сервере: скачать последнюю копию и восстановить (docs/DR.md, шаг 4)."""
+    with tempfile.TemporaryDirectory() as td:
+        file = fetch_latest(Path(td))
+        restore(file, target_url, assume_yes)
+        return file
+
+
+MAX_BACKUP_AGE = timedelta(hours=26)
+
+
+def verify(scratch_url: str, now: datetime | None = None) -> list[str]:
+    """Ежедневная проверка: последняя копия свежая, расшифровывается, восстанавливается во временную базу и число строк
+    совпадает с записанным при создании. Возвращает список проблем; при проблемах — письмо владельцу."""
+    now = now or datetime.now(timezone.utc)
+    problems: list[str] = []
+    if scratch_url == os.environ.get("DATABASE_URL"):
+        return ["временная база совпадает с боевой — проверка не запущена"]
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            file = fetch_latest(Path(td))
+            manifest = _manifest_of(file)
+            created = datetime.fromisoformat(manifest["created"])
+            if now - created > MAX_BACKUP_AGE:
+                problems.append(f"последняя копия старше 26 часов ({manifest['created']})")
+            restore(file, scratch_url, assume_yes=True)
+            got = table_counts(scratch_url)
+            for table, expected in (manifest.get("counts") or {}).items():
+                if got.get(table) != expected:
+                    problems.append(f"таблица {table}: в копии {expected}, после восстановления {got.get(table)}")
+    except (SystemExit, Exception) as exc:  # noqa: BLE001 — любая ошибка проверки = проблема для владельца
+        problems.append(f"восстановление не удалось: {exc}")
+    if problems:
+        try:
+            from app.mailer import send_owner_alert
+
+            send_owner_alert("Satti: проверка резервной копии не прошла", "\n".join(problems))
+        except Exception:  # noqa: BLE001
+            pass
+    return problems
+
+
 def genkey() -> str:
     return Fernet.generate_key().decode("ascii")
 
@@ -216,6 +304,11 @@ def main(argv: list[str]) -> int:
     r.add_argument("file", type=Path)
     r.add_argument("--target-url", required=True)
     r.add_argument("--yes", action="store_true")
+    rl = sub.add_parser("restore-latest")
+    rl.add_argument("--target-url", required=True)
+    rl.add_argument("--yes", action="store_true")
+    v = sub.add_parser("verify")
+    v.add_argument("--scratch-url", required=True)
     args = parser.parse_args(argv)
     if args.cmd == "genkey":
         print(genkey())
@@ -225,6 +318,12 @@ def main(argv: list[str]) -> int:
         print(f"удалено: {prune(_backup_dir())}")
     elif args.cmd == "restore":
         restore(args.file, args.target_url, args.yes)
+    elif args.cmd == "restore-latest":
+        print(f"восстановлено из {restore_latest(args.target_url, args.yes).name}")
+    elif args.cmd == "verify":
+        problems = verify(args.scratch_url)
+        print("копия в порядке" if not problems else "\n".join(problems))
+        return 1 if problems else 0
     return 0
 
 

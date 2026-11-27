@@ -86,3 +86,77 @@ def test_alembic_downgrade_needs_explicit_flag(tmp_path):
     env["SATTI_ALLOW_DOWNGRADE"] = "1"
     down2 = subprocess.run([sys.executable, "-m", "alembic", "downgrade", "base"], cwd=root, env=env, capture_output=True)
     assert down2.returncode == 0, down2.stderr[-400:]
+
+
+class FakeS3:
+    """S3-совместимое хранилище другой компании (мок): list_objects_v2, upload_file, download_file, delete_object."""
+
+    def __init__(self):
+        self.objects: dict[str, tuple[bytes, object]] = {}
+
+    def upload_file(self, path, bucket, key):
+        from datetime import datetime, timezone
+        self.objects[key] = (Path(path).read_bytes(), datetime.now(timezone.utc))
+
+    def list_objects_v2(self, Bucket, Prefix):  # noqa: N803 — имена как у boto3
+        return {"Contents": [{"Key": k, "LastModified": t} for k, (_, t) in self.objects.items() if k.startswith(Prefix)]}
+
+    def download_file(self, bucket, key, path):
+        Path(path).write_bytes(self.objects[key][0])
+
+    def delete_object(self, Bucket, Key):  # noqa: N803
+        self.objects.pop(Key, None)
+
+
+@pytest.fixture
+def s3(monkeypatch):
+    fake = FakeS3()
+    monkeypatch.setattr(backup, "_s3_client", lambda: (fake, "satti-backups"))
+    return fake
+
+
+def test_restore_latest_from_s3_on_clean_server(sqlite_db, tmp_path, s3, monkeypatch):
+    """К-21 ч.2 п.8: хостинг пропал — на новом сервере одной командой последняя копия из S3 другой компании."""
+    backup.create(tmp_path / "out")
+    conn = sqlite3.connect(sqlite_db)
+    conn.execute("insert into shops values ('c3', 'Магазин Три')")
+    conn.commit()
+    conn.close()
+    time.sleep(0.01)
+    backup.create(tmp_path / "out")  # вторая, более новая копия
+    assert len(s3.objects) == 2
+    # «чистый сервер»: локальных копий нет, только хранилище
+    monkeypatch.setenv("SATTI_BACKUP_DIR", str(tmp_path / "empty"))
+    target = tmp_path / "new-server.db"
+    backup.restore_latest(f"sqlite:///{target.as_posix()}", assume_yes=False)
+    rows = sqlite3.connect(target).execute("select id from shops order by id").fetchall()
+    assert rows == [("a1",), ("b2",), ("c3",)]  # из последней копии
+
+
+def test_verify_passes_and_checks_counts(sqlite_db, tmp_path, s3):
+    """К-21 ч.2 п.9: ежедневная проверка — восстановление во временную базу и сверка числа строк."""
+    backup.create(tmp_path / "out")
+    scratch = tmp_path / "scratch.db"
+    assert backup.verify(f"sqlite:///{scratch.as_posix()}") == []
+
+
+def test_verify_reports_old_or_broken_copy_to_owner(sqlite_db, tmp_path, s3, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    sent = []
+    import app.mailer as mailer
+    monkeypatch.setattr(mailer, "send_owner_alert", lambda subject, text: sent.append((subject, text)) or True)
+    backup.create(tmp_path / "out")
+    scratch = f"sqlite:///{(tmp_path / 'scratch.db').as_posix()}"
+    later = datetime.now(timezone.utc) + timedelta(hours=30)
+    problems = backup.verify(scratch, now=later)
+    assert any("старше 26 часов" in p for p in problems) and sent
+    key = next(iter(s3.objects))
+    data, t = s3.objects[key]
+    s3.objects[key] = (data[:-10] + b"0" * 10, t)  # повреждённая копия
+    problems = backup.verify(scratch)
+    assert any("восстановление не удалось" in p for p in problems)
+
+
+def test_verify_refuses_production_as_scratch(sqlite_db, s3):
+    assert backup.verify(os.environ["DATABASE_URL"]) == ["временная база совпадает с боевой — проверка не запущена"]
