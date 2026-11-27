@@ -15,6 +15,8 @@ import logging
 import secrets
 import threading
 import xml.etree.ElementTree as ET
+
+import defusedxml.ElementTree as SafeET  # К-30: разбор чужого XML — без DTD, сущностей и внешних ссылок
 from datetime import date, datetime, timedelta, timezone
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -521,7 +523,7 @@ def import_catalog(db: DbSession, shop_id: str, data: bytes, now: datetime) -> i
     if b"<!DOCTYPE" in head or b"<!ENTITY" in data.upper():
         raise ValueError("файл с описанием DTD или сущностями не принимается")
     try:
-        root = ET.fromstring(data)
+        root = SafeET.fromstring(data)
     except ET.ParseError as exc:
         raise ValueError("не удалось разобрать XML") from exc
     if _local(root.tag) != "kaspi_catalog":
@@ -553,7 +555,7 @@ def catalog_stock_hints(db: DbSession, shop_id: str) -> dict[str, int]:
     if row is None:
         return {}
     try:
-        root = ET.fromstring(row.xml_text)
+        root = SafeET.fromstring(row.xml_text)
     except ET.ParseError:
         return {}
     hints: dict[str, int] = {}
@@ -578,7 +580,7 @@ def price_list_xml(db: DbSession, shop: Shop, conn: KaspiConnection, today: date
         raise KaspiNoCatalog("прайс продавца не импортирован")
     ET.register_namespace("", KASPI_NS)
     ET.register_namespace("xsi", XSI_NS)
-    root = ET.fromstring(catalog.xml_text.encode("utf-8"))
+    root = SafeET.fromstring(catalog.xml_text.encode("utf-8"))
     root.set("date", (today or date.today()).isoformat())
 
     stores = store_list(conn)

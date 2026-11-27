@@ -660,13 +660,22 @@ def test_installment_orders_use_seller_installment_rate(client, demo, kaspi_on, 
         db.add(_CP(shop_id=demo["shop_id"], category=kaspi_service.INSTALLMENT_CATEGORY, rate_bp=1350,
                    effective_from=None, source="manual", verified=False))
         db.commit()
-    mock.generate(8, now=datetime.now(timezone.utc), days=3, products=2)
+    # новый заказ в рассрочку (новый номер) — по новой ставке; старый заказ задним числом не меняется (К-30, D5)
+    import copy
+
+    src = next(o for o in mock.orders if o["id"] == "KC00000001")
+    fresh = copy.deepcopy(src)
+    fresh["id"] = "KC90000001"
+    fresh["attributes"]["creationDate"] = int(datetime.now(timezone.utc).timestamp() * 1000)
+    fresh["relationships"]["entries"]["links"]["related"] = "/orders/KC90000001/entries"
+    mock.entries["KC90000001"] = [{**r, "id": "N" + r["id"]} for r in mock.entries["KC00000001"]]
+    mock.orders.append(fresh)
     client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
     with DbSession(engine) as db:
-        new_credit = [o for o in db.query(Order).filter(Order.shop_id == demo["shop_id"]).all()
-                      if o.number.startswith("KC") and o.number not in ("KC00000001",)]
-        rates = {it.commission_rate_bp for o in new_credit for it in db.query(_OI).filter(_OI.order_id == o.id).all()}
-        assert 1350 in rates  # новые заказы в рассрочку — по новой ставке продавца
+        new_order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC90000001").one()
+        assert {it.commission_rate_bp for it in db.query(_OI).filter(_OI.order_id == new_order.id).all()} == {1350}
+        old_order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000001").one()
+        assert {it.commission_rate_bp for it in db.query(_OI).filter(_OI.order_id == old_order.id).all()} == {1090}
 
 
 def test_first_load_shows_progress_and_completes_90_days(client, demo, kaspi_on, mock):
