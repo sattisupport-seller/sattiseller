@@ -19,6 +19,8 @@ jest.mock('@/api/hooks', () => {
     useCostVersions: () => m.hookResult({ data: { items: [] } }),
     useSaveCost: () => m.hookResult({ mutateAsync: mockSave }),
     useCancelCost: () => m.hookResult({ mutate: jest.fn() }),
+    useMissingCosts: () => m.hookResult({ data: { items: [
+      { product_id: 'p1', sku: 'D007', name: 'Термокружка', needs_cost: true, needs_stock: true, stock_hint: null }] } }),
   });
 });
 
@@ -31,6 +33,17 @@ function renderScreen() {
 
 beforeEach(() => mockSave.mockClear());
 
+test('К-24: без остатка затраты не сохраняются; с остатком — уходят вместе', async () => {
+  await renderScreen();
+  await fireEvent.changeText(screen.getByLabelText('Закупка'), '2800');
+  await fireEvent.press(screen.getByRole('button', { name: 'Сохранить' }));
+  expect(await screen.findByText('Укажите остаток (0 — можно)')).toBeTruthy();
+  expect(mockSave).not.toHaveBeenCalled();
+  await fireEvent.changeText(screen.getByLabelText('Остаток сейчас, шт.'), '5');
+  await fireEvent.press(screen.getByRole('button', { name: 'Сохранить' }));
+  await waitFor(() => expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({ purchase: '2800', stock_qty: 5 })));
+});
+
 test('без закупки затраты не сохраняются', async () => {
   await renderScreen();
   await fireEvent.press(screen.getByRole('button', { name: 'Сохранить' }));
@@ -42,6 +55,7 @@ test('закупка с запятой и доставка сохраняютс�
   await renderScreen();
   await fireEvent.changeText(screen.getByLabelText('Закупка'), '1 900,5');
   await fireEvent.changeText(screen.getByLabelText('Доставка до склада'), '150');
+  await fireEvent.changeText(screen.getByLabelText('Остаток сейчас, шт.'), '0');
   await fireEvent.press(screen.getByRole('button', { name: 'Сохранить' }));
   await waitFor(() => expect(mockSave).toHaveBeenCalledWith({
     purchase: '1900.5',
@@ -50,5 +64,6 @@ test('закупка с запятой и доставка сохраняютс�
     other: '0',
     apply_to_history: true,
     effective_from: null,
+    stock_qty: 0,
   }));
 });

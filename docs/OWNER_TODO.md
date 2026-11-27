@@ -55,7 +55,7 @@
 
 ## 9. Почтовый сервис (SMTP)
 - **Зачем:** коды входа и удаления, письма о хранении, оповещения.
-- **Шаги:** выбрать сервис (например, Postmark или Mailgun), создать SMTP-учётные данные. Для домена добавить DNS-записи SPF, DKIM, DMARC (точные значения даст Claude Code после выбора сервиса). В `server\.env`: `SATTI_SMTP_HOST`, `SATTI_SMTP_PORT`, `SATTI_SMTP_USER`, `SATTI_SMTP_PASSWORD`.
+- **Шаги:** выбрать сервис (например, Postmark или Mailgun), создать SMTP-учётные данные. Для домена добавить три DNS-записи у регистратора (точные значения сервис покажет в своей панели после добавления домена): **SPF** — TXT на корне домена, например `v=spf1 include:<адрес из инструкции сервиса> ~all` (если SPF-запись уже есть — дописать `include:` в неё, вторую не создавать); **DKIM** — одна-две записи TXT или CNAME с именами вида `<селектор>._domainkey`, значения копируются из панели сервиса целиком; **DMARC** — TXT с именем `_dmarc`, на первые две недели `v=DMARC1; p=none; rua=mailto:<ваш ящик>`, после проверки отчётов — `p=quarantine`. Проверка: письмо с кодом должно приходить во «Входящие» Gmail, Mail.ru и iCloud; в заголовках письма — `spf=pass`, `dkim=pass`, `dmarc=pass`. Письма Satti: коды входа и удаления, подтверждение удаления, деактивация (дата удаления), окончание подписки (0, 60, 83 день, удаление на 90-й), оповещения владельцу. В `server\.env`: `SATTI_SMTP_HOST`, `SATTI_SMTP_PORT`, `SATTI_SMTP_USER`, `SATTI_SMTP_PASSWORD`.
 - **Стоимость:** от нуля до нескольких долларов в месяц при малом объёме.
 - **Разблокирует:** 3.6 (отправка), дозавершение 1.4 (письмо владельцу при 80% бюджета), проверку доставки.
 
@@ -68,6 +68,7 @@
 - **Пробный период один на телефон (К-21):** отдельный ключ DeviceCheck (Certificates, Identifiers & Profiles → Keys → DeviceCheck) → `SATTI_APPLE_DEVICECHECK_KEY_ID`, `SATTI_APPLE_DEVICECHECK_KEY_PATH`, Team ID → `SATTI_APPLE_TEAM_ID`; затем `SATTI_DEVICE_CHECK_MODE=store`.
 
 ## 11. Firebase (пуши на Android)
+- **Код готов на моках (К-21, 3.4).** Пуши идут через Expo Push API: для Android нужен `google-services.json` и ключ FCM в EAS (`eas credentials`), для iPhone — ключ APNs в EAS (создаётся при `eas credentials`, нужен аккаунт Apple Developer). Затем на сервере `SATTI_PUSH_MODE=expo` (и при желании `SATTI_EXPO_ACCESS_TOKEN` — токен доступа Expo с включённой «Enhanced Security for Push»).
 - **Зачем:** пуш-уведомления на Android.
 - **Шаги:** console.firebase.google.com → Add project → Android-приложение с package `kz.satti.seller` → скачать `google-services.json` и сообщить Claude Code, где лежит.
 - **Стоимость:** бесплатный план.

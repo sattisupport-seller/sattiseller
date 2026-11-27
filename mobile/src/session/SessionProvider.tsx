@@ -1,4 +1,5 @@
 // Сессия приложения: вход, демо-режим, магазин, язык и тема. Токены — только в защищённом хранилище.
+import { forgetPushToken } from '@/lib/push';
 import { deleteItem, getItem, setItem } from '@/lib/storage';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
@@ -35,7 +36,7 @@ type SessionValue = {
   startDemo: () => Promise<void>;
   requestCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string, acceptTerms?: boolean) => Promise<void>;
-  signInWithIdToken: (provider: 'apple' | 'google', idToken: string, nonce?: string, acceptTerms?: boolean) => Promise<void>;
+  signInWithIdToken: (provider: 'apple' | 'google', idToken: string, nonce?: string, acceptTerms?: boolean, authorizationCode?: string) => Promise<void>;
   createShop: (name: string, timezone: string, language: Locale) => Promise<void>;
   selectShop: (id: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -137,10 +138,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [resolveShops]);
 
   // Вход через Apple или Google: токен провайдера проверяет сервер (ТЗ 2.1, раздел 5).
-  const signInWithIdToken = useCallback(async (provider: 'apple' | 'google', idToken: string, nonce?: string, acceptTerms = false) => {
+  const signInWithIdToken = useCallback(async (provider: 'apple' | 'google', idToken: string, nonce?: string, acceptTerms = false,
+    authorizationCode?: string) => {
     const res = await request<{ access_token: string; refresh_token: string; user: { email: string } }>(
       `/auth/${provider}`,
-      { method: 'POST', auth: false, body: { id_token: idToken, nonce: nonce ?? null, accept_terms: acceptTerms } },
+      { method: 'POST', auth: false, body: { id_token: idToken, nonce: nonce ?? null, accept_terms: acceptTerms,
+        ...(authorizationCode ? { authorization_code: authorizationCode } : {}) } },
     );
     await saveTokens(res.access_token, res.refresh_token);
     setEmail(res.user.email);
@@ -162,6 +165,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    await forgetPushToken();  // 3.4: телефон больше не получает уведомления этого аккаунта
     try {
       await request('/auth/logout', { method: 'POST' });
     } catch {

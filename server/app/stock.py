@@ -2,7 +2,6 @@
 + возвраты годного товара после него. Расчёт по заказам, без фоновых задач. Пороги уведомлений: 10, 5, 3 шт. и 0."""
 
 from __future__ import annotations
-import json
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -111,11 +110,14 @@ LEVEL_TEXT = {"out": "закончился", "t3": "осталось 3 шт. и�
 
 
 def stock_push_mock(shop: Shop, st: StockState) -> None:
-    """Push на моке: файл в outbox/push (без персональных данных: только название товара и остаток)."""
-    from .config import settings
-    folder = settings.outbox_dir / "push"
-    folder.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
-    payload = {"shopId": shop.id, "productId": st.product_id, "title": "Склад: " + st.name,
-               "body": f"Остаток: {st.current} шт. — {LEVEL_TEXT.get(st.level or '', '')}.", "level": st.level}
-    (folder / f"{stamp}_{st.product_id}.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    """Уведомление склада (3.4): через общую очередь пушей; тихие часы и деактивация учитываются там.
+    Без персональных данных: только название товара и остаток."""
+    from .db import SessionLocal
+    from .push import enqueue
+
+    with SessionLocal() as db:
+        enqueue(db, shop.owner_user_id, "stock", "Склад: " + st.name,
+                f"Остаток: {st.current} шт. — {LEVEL_TEXT.get(st.level or '', '')}.",
+                {"screen": "stock", "productId": st.product_id, "level": st.level},
+                dedup_key=f"stock:{st.product_id}:{st.level}:{datetime.now(timezone.utc):%Y%m%d%H%M}")
+        db.commit()

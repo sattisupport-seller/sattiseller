@@ -132,6 +132,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/sellers/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Seller Get
+         * @description Поиск по номеру продавца: аккаунт, магазин, подписка, особые условия.
+         */
+        get: operations["seller_get_v1_admin_sellers__number__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/sellers/{number}/block": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Seller Block
+         * @description Блокировка: продавец видит сообщение с контактом поддержки; удалить аккаунт может всегда (правила магазинов).
+         *     Блокировка хранится на номере продавца и переживает удаление аккаунта.
+         */
+        post: operations["seller_block_v1_admin_sellers__number__block_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/sellers/{number}/reconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Seller Reconnect
+         * @description «Возобновить доступ» к Kaspi: одноразовое окно на 24 часа, чтобы продавец ввёл новый токен того же магазина.
+         */
+        post: operations["seller_reconnect_v1_admin_sellers__number__reconnect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/sellers/{number}/special-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Seller Special Grant
+         * @description Доступ без подписки на 1, 3 или 6 месяцев. Только бесплатно (OPERATIONS.md: продавать в обход магазинов нельзя).
+         */
+        post: operations["seller_special_grant_v1_admin_sellers__number__special_access_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/sellers/{number}/special-access/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Seller Special Cancel */
+        post: operations["seller_special_cancel_v1_admin_sellers__number__special_access_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/session": {
         parameters: {
             query?: never;
@@ -146,6 +244,26 @@ export interface paths {
          * @description Код двухфакторной защиты меняется на сессию на 30 минут. Один и тот же код второй раз не принимается.
          */
         post: operations["open_session_v1_admin_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/special-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Special Access List
+         * @description Вкладка «Особые условия»: магазин, ID продавца, с какого по какое число, комментарий владельца.
+         */
+        get: operations["special_access_list_v1_admin_special_access_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -611,6 +729,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/deactivation/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deactivation Confirm
+         * @description К-21: «Деактивировать на 30 дней» — тот же код из письма, что и для удаления (/me/deletion/start).
+         */
+        post: operations["deactivation_confirm_v1_me_deactivation_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/deletion/confirm": {
         parameters: {
             query?: never;
@@ -659,6 +797,27 @@ export interface paths {
         get: operations["export_my_data_v1_me_export_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/reactivation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reactivation
+         * @description К-21: восстановление до конца 30 дней — только при оплаченной подписке 9 900 ₸ (проверена сервером у магазина).
+         *     Подписка в App Store или Google Play сама не отменяется: если она ещё оплачена, восстановление сразу.
+         */
+        post: operations["reactivation_v1_me_reactivation_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1019,7 +1178,11 @@ export interface paths {
         put?: never;
         /** Kaspi Connect */
         post: operations["kaspi_connect_v1_shops__shop_id__kaspi_connection_post"];
-        /** Kaspi Disconnect */
+        /**
+         * Kaspi Disconnect
+         * @description К-21 (решение владельца 01:24): отдельного отключения Kaspi нет — только удаление или деактивация аккаунта.
+         *     Иначе «отключить и подключить снова» обходило бы правило «токен подключается один раз».
+         */
         delete: operations["kaspi_disconnect_v1_shops__shop_id__kaspi_connection_delete"];
         options?: never;
         head?: never;
@@ -1387,6 +1550,7 @@ export interface paths {
          * Post Verify Purchase
          * @description Проверка покупки у магазина (App Store Server API, Google Play Developer API) и доступ по её состоянию.
          *     Тот же вызов — для «Восстановить покупки»: приложение присылает каждую найденную покупку.
+         *     Деактивированный аккаунт (К-21) восстанавливается здесь же — только оплаченной подпиской, не пробным периодом.
          */
         post: operations["post_verify_purchase_v1_shops__shop_id__subscription_verify_post"];
         delete?: never;
@@ -1536,6 +1700,11 @@ export interface components {
             many_returns: components["schemas"]["ManyReturnsItem"][];
             /** No Cost Count */
             no_cost_count: number;
+            /**
+             * Not Configured Count
+             * @default 0
+             */
+            not_configured_count: number;
         };
         /** BestProductOut */
         BestProductOut: {
@@ -1623,7 +1792,9 @@ export interface components {
             /** Product Id */
             product_id: string;
             /** Purchase */
-            purchase: string;
+            purchase?: string | null;
+            /** Stock Qty */
+            stock_qty?: number | null;
         };
         /** ClientErrorIn */
         ClientErrorIn: {
@@ -1687,11 +1858,6 @@ export interface components {
             /** Items */
             items: components["schemas"]["CommissionOut"][];
         };
-        /** ConfirmIn */
-        ConfirmIn: {
-            /** Code */
-            code: string;
-        };
         /** ConsentIn */
         ConsentIn: {
             /** Granted */
@@ -1731,6 +1897,8 @@ export interface components {
             packaging: string;
             /** Purchase */
             purchase: string;
+            /** Stock Qty */
+            stock_qty?: number | null;
         };
         /** CostVersionOut */
         CostVersionOut: {
@@ -1995,6 +2163,13 @@ export interface components {
         MeOut: {
             /** Age Confirmed */
             age_confirmed?: boolean | null;
+            /**
+             * Deactivated
+             * @default false
+             */
+            deactivated: boolean;
+            /** Delete On */
+            delete_on?: string | null;
             /** Demo */
             demo: boolean;
             /** Email */
@@ -2008,6 +2183,8 @@ export interface components {
             locale: string;
             /** Name */
             name?: string | null;
+            /** Seller Number */
+            seller_number?: string | null;
             /**
              * Terms Consent Required
              * @default false
@@ -2020,10 +2197,22 @@ export interface components {
             category: string;
             /** Name */
             name: string;
+            /**
+             * Needs Cost
+             * @default true
+             */
+            needs_cost: boolean;
+            /**
+             * Needs Stock
+             * @default true
+             */
+            needs_stock: boolean;
             /** Product Id */
             product_id: string;
             /** Sku */
             sku: string;
+            /** Stock Hint */
+            stock_hint?: number | null;
         };
         /** MissingCostsOut */
         MissingCostsOut: {
@@ -2308,6 +2497,16 @@ export interface components {
             /** Refund Minor */
             refund_minor: number;
         };
+        /** SellerBlockIn */
+        SellerBlockIn: {
+            /** Blocked */
+            blocked: boolean;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
         /** SeriesOut */
         SeriesOut: {
             /** Days */
@@ -2375,6 +2574,21 @@ export interface components {
             id_token: string;
             /** Nonce */
             nonce?: string | null;
+        };
+        /** SpecialIn */
+        SpecialIn: {
+            /**
+             * Comment
+             * @default
+             */
+            comment: string;
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Months */
+            months: number;
         };
         /** StockIn */
         StockIn: {
@@ -2455,6 +2669,19 @@ export interface components {
             code: string;
             /** Email */
             email: string;
+        };
+        /** ConfirmIn */
+        app__admin__ConfirmIn: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+        };
+        /** ConfirmIn */
+        app__api__ConfirmIn: {
+            /** Code */
+            code: string;
         };
     };
     responses: never;
@@ -2699,6 +2926,192 @@ export interface operations {
             };
         };
     };
+    seller_get_v1_admin_sellers__number__get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Session"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                number: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    seller_block_v1_admin_sellers__number__block_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Session"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                number: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SellerBlockIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    seller_reconnect_v1_admin_sellers__number__reconnect_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Session"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                number: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["app__admin__ConfirmIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    seller_special_grant_v1_admin_sellers__number__special_access_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Session"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                number: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecialIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    seller_special_cancel_v1_admin_sellers__number__special_access_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Session"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                number: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["app__admin__ConfirmIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     open_session_v1_admin_session_post: {
         parameters: {
             query?: never;
@@ -2713,6 +3126,38 @@ export interface operations {
                 "application/json": components["schemas"]["CodeIn"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    special_access_list_v1_admin_special_access_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Session"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -3621,6 +4066,41 @@ export interface operations {
             };
         };
     };
+    deactivation_confirm_v1_me_deactivation_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["app__api__ConfirmIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     deletion_confirm_v1_me_deletion_confirm_post: {
         parameters: {
             query?: never;
@@ -3632,7 +4112,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ConfirmIn"];
+                "application/json": components["schemas"]["app__api__ConfirmIn"];
             };
         };
         responses: {
@@ -3706,6 +4186,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reactivation_v1_me_reactivation_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
                 };
             };
             /** @description Validation Error */

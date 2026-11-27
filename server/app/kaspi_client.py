@@ -56,6 +56,7 @@ class KaspiOrder:
     entries: list[OrderEntry] = field(default_factory=list)
     seller_delivery: int | None = None  # deliveryCostForSeller: доставка, которую оплачивает продавец (тенге)
     credit: bool = False  # paymentMode == PAY_WITH_CREDIT: рассрочка/кредит, комиссия отличается
+    returned_to_warehouse: bool | None = None  # returnedToWarehouse: товар вернулся на склад продавца (возврат)
 
 
 def parse_order(item: dict) -> KaspiOrder:
@@ -77,6 +78,8 @@ def parse_order(item: dict) -> KaspiOrder:
         entries=[],
         seller_delivery=seller_delivery,
         credit=attrs.get("paymentMode") == "PAY_WITH_CREDIT",
+        returned_to_warehouse=(bool(attrs["returnedToWarehouse"]) if attrs.get("returnedToWarehouse") is not None
+                               else None),
     )
 
 

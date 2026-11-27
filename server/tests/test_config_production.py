@@ -26,6 +26,15 @@ def good_production(monkeypatch):
     monkeypatch.setattr(settings, "google_service_account_path", "/srv/satti/secrets/google.json")
     monkeypatch.setattr(settings, "google_rtdn_token", "x" * 32)
     monkeypatch.setattr(settings, "device_check_mode", "store")
+    monkeypatch.setattr(settings, "apple_team_id", "TEAM123456")  # 3.3: ключ Sign in with Apple
+    monkeypatch.setattr(settings, "apple_siwa_key_id", "SIWAKEY001")
+    monkeypatch.setattr(settings, "apple_siwa_key_path", "/srv/satti/secrets/siwa.p8")
+    monkeypatch.setattr(settings, "support_email", "support@satti.example")  # 4.4: контакты и админка
+    monkeypatch.setattr(settings, "owner_alert_email", "owner@satti.example")
+    monkeypatch.setattr(settings, "admin_email", "owner@satti.example")
+    monkeypatch.setattr(settings, "ai_live", True)
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-ant-test")
+    monkeypatch.setattr(settings, "push_mode", "expo")  # 3.4
     return monkeypatch
 
 
@@ -82,3 +91,23 @@ def test_smtp_host_required(good_production):
 def test_owner_name_required(good_production):
     good_production.setattr(settings, "owner_name", "")
     assert any("SATTI_OWNER_NAME" in p for p in production_config_problems())
+
+
+def test_apple_login_without_siwa_key_refused(good_production):
+    """3.3: без ключа Sign in with Apple токен при удалении аккаунта не отозвать (требование Apple)."""
+    good_production.setattr(settings, "apple_siwa_key_path", "")
+    assert any("SIWA" in p for p in production_config_problems())
+
+
+@pytest.mark.parametrize("name,value,needle", [
+    ("anthropic_api_key", "", "ANTHROPIC_API_KEY"),
+    ("support_email", "", "SATTI_SUPPORT_EMAIL"),
+    ("owner_alert_email", "", "SATTI_OWNER_ALERT_EMAIL"),
+    ("admin_email", "", "SATTI_ADMIN_EMAIL"),
+    ("ai_budget_monthly_usd", 0.0, "SATTI_AI_BUDGET_MONTHLY_USD"),
+    ("push_mode", "mock", "SATTI_PUSH_MODE"),
+])
+def test_new_variables_refused_when_missing(good_production, name, value, needle):
+    """4.4 (К-21): переменные, добавленные после 4.4, проверяются при запуске в продакшене."""
+    good_production.setattr(settings, name, value)
+    assert any(needle in p for p in production_config_problems())

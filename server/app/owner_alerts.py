@@ -6,7 +6,8 @@
 - всплеск: появлений ошибок сервера за 30 минут (≥ SATTI_ERROR_SPIKE_PER_30MIN, по умолчанию 50), по журналу появлений;
 - массовые ошибки синхронизации Kaspi (≥ 3 подключения и не меньше половины с ошибкой в одном проходе);
 - сводка за день в 09:00 по Алматы: новые пользователи и магазины, расход ИИ, отметки «не понравилось» за сутки.
-Не реализовано: «сервер не отвечает» — нужен внешний сторож; ТЗ описывает его отдельно.
+- место на диске (4.2): свободно меньше 10% или меньше 2 ГБ — письмо раз в сутки.
+«Сервер не отвечает» проверяет внешний сторож (deploy/watchdog.sh и инструкция в OPERATIONS.md): изнутри упавшего сервера письмо не отправить.
 Каждое письмо уходит один раз на ключ (день, час или окно), отметка пишется после успешной отправки.
 """
 
@@ -53,6 +54,26 @@ def _send(db: DbSession, key: str, subject: str, text: str, now: datetime) -> bo
         db.add(OwnerAlertLog(key=key, sent_at=now))
         db.flush()
     return delivered
+
+
+DISK_MIN_FREE_RATIO = 0.10
+DISK_MIN_FREE_BYTES = 2 * 1024 ** 3
+
+
+def check_disk(db: DbSession, now: datetime, path: Path | None = None, usage=None) -> bool:
+    """4.2: мало места на диске сервера (база, копии, журналы). usage — для тестов (total, used, free)."""
+    import shutil
+
+    from .config import DATA_DIR
+
+    total, _used, free = usage if usage is not None else shutil.disk_usage(path or DATA_DIR)
+    if total <= 0 or (free / total >= DISK_MIN_FREE_RATIO and free >= DISK_MIN_FREE_BYTES):
+        return False
+    key = f"disk:{now.astimezone(SUMMARY_TZ):%Y-%m-%d}"
+    gb = free / 1024 ** 3
+    return _send(db, key, "Satti: на сервере заканчивается место",
+                 f"Свободно {gb:.1f} ГБ из {total / 1024 ** 3:.0f} ГБ ({free / total:.0%}). "
+                 "Удалите старые журналы и копии или увеличьте диск: при нуле база перестанет записывать заказы.", now)
 
 
 def latest_backup_time(backup_dir: Path) -> datetime | None:
@@ -144,6 +165,7 @@ def run_owner_checks(db: DbSession, now: datetime, backup_dir: Path | None = Non
     for name, check in (("backup", lambda: check_backup(db, now, backup_dir)),
                         ("errors", lambda: check_server_errors(db, now)),
                         ("spike", lambda: check_error_spike(db, now)),
+                        ("disk", lambda: check_disk(db, now)),
                         ("summary", lambda: check_daily_summary(db, now))):
         if check():
             sent.append(name)

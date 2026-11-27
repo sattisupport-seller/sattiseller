@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
-import { useReplyDraft } from '@/api/hooks';
+import { useFeedback, useReplyDraft } from '@/api/hooks';
 import { draftErrorText } from '@/api/aiErrors';
 import type { ReplyDraft } from '@/api/types';
 import { Button } from '@/components/ui/Button';
@@ -22,6 +22,8 @@ export default function ReplyDraftScreen() {
   const toast = useToast();
   const { shopId } = useSession();
   const reply = useReplyDraft(shopId);
+  const feedback = useFeedback();
+  const [flagged, setFlagged] = useState(false);
   const [question, setQuestion] = useState('');
   const [tone, setTone] = useState<'polite' | 'short'>('polite');
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +33,7 @@ export default function ReplyDraftScreen() {
     setError(null);
     try {
       setResult(await reply.mutateAsync({ question, tone }));
+      setFlagged(false);
     } catch (e) {
       setError(draftErrorText(e, t));
     }
@@ -70,6 +73,19 @@ export default function ReplyDraftScreen() {
           </Card>
           {result.warnings.map((w) => <Banner key={w} text={w} tone="warning" />)}
           <Txt variant="footnote" tone="tertiary">{t('assistant.replySendYourself')}</Txt>
+          {/* Google Play: жалоба на созданный ИИ текст — прямо в приложении */}
+          <Button
+            title={flagged ? t('assistant.flagSent') : t('assistant.flagDraft')}
+            variant="text"
+            disabled={flagged || !shopId}
+            onPress={() => {
+              if (!shopId) return;
+              feedback.mutate({ shop_id: shopId, turn_id: null, kind: 'flag', reason: 'reply_draft' });
+              setFlagged(true);
+              toast.show(t('assistant.flagSent'));
+            }}
+            fullWidth
+          />
         </>
       ) : null}
     </ScrollView>

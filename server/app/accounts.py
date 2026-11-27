@@ -19,11 +19,25 @@ from .models import AIConversation, AIFeedback, AITurn, AIUsageEvent, AuthCode, 
 from .social_auth import SocialIdentity
 
 
+def _revoke_apple_tokens(db: DbSession, user_id: str) -> None:
+    from . import apple_tokens
+    from .kaspi import KaspiAuthError, decrypt_token
+
+    for link in db.scalars(select(SocialIdentity).where(SocialIdentity.user_id == user_id,
+                                                        SocialIdentity.provider == "apple",
+                                                        SocialIdentity.refresh_token_enc.is_not(None))).all():
+        try:
+            apple_tokens.revoke(decrypt_token(link.refresh_token_enc))
+        except KaspiAuthError:
+            pass  # ключ шифрования сменился — отозвать нечем; удаление продолжается
+
+
 def delete_user_account(db: DbSession, user: User) -> None:
     from . import seller_access
 
     # К-21 (решение владельца 01:53): остаются номер продавца, хеш ID продавца, блокировка и отметки пробного периода
     seller_access.forget_account(db, user.id)
+    _revoke_apple_tokens(db, user.id)  # 3.3: требование Apple — отозвать токены Sign in with Apple
     shop_ids = list(db.scalars(select(Shop.id).where(Shop.owner_user_id == user.id)).all())
     if shop_ids:
         # подписка и отметки хранения относятся к магазину; сами магазины и их данные удаляются каскадно
@@ -35,15 +49,36 @@ def delete_user_account(db: DbSession, user: User) -> None:
     db.execute(delete(AITurn).where(AITurn.user_id == user.id))
     db.execute(delete(AIUsageEvent).where(AIUsageEvent.user_id == user.id))
     db.execute(delete(NotificationSettings).where(NotificationSettings.user_id == user.id))
+    from .push import DeviceToken, PushMessage  # 3.4: токены телефонов и очередь уведомлений
+
+    db.execute(delete(DeviceToken).where(DeviceToken.user_id == user.id))
+    db.execute(delete(PushMessage).where(PushMessage.user_id == user.id))
     db.execute(delete(SocialIdentity).where(SocialIdentity.user_id == user.id))
     # коды входа и удаления хранятся с открытым email — удаляем по адресу и по идентификатору
     db.execute(delete(AuthCode).where((AuthCode.user_id == user.id) | (AuthCode.email == user.email)))
     db.execute(delete(AdminTotp).where(AdminTotp.user_id == user.id))
     db.execute(delete(Session).where(Session.user_id == user.id))
+    email = user.email
     db.execute(delete(User).where(User.id == user.id))
     db.commit()
     # без идентификатора пользователя: после удаления он бы указывал в никуда
     audit.record(db, "account_delete", "user")
+    _send_deleted_letter(email)
+
+
+def _send_deleted_letter(email: str) -> None:
+    """3.6: подтверждение удаления. Адрес нигде не сохраняется — только письмо в почтовый сервис."""
+    from .mailer import MailError, send_notice_email
+
+    try:
+        send_notice_email(email, "Аккаунт Satti удалён",
+                          "Ваш аккаунт Satti и данные магазина удалены. Из резервных копий данные удалятся "
+                          "не позже чем через 30 дней.\n"
+                          "Подписка в App Store или Google Play сама не отменяется — "
+                          "проверьте её в настройках магазина приложений.\n"
+                          "Если вы не удаляли аккаунт, напишите в поддержку.")
+    except MailError:
+        pass  # удаление уже выполнено; письмо — подтверждение
 
 
 # ---------- деактивация на 30 дней (К-21, решения владельца 23.11.2026, 01:17 и 01:24) ----------

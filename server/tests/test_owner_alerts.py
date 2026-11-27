@@ -144,3 +144,16 @@ def test_error_events_older_than_two_days_are_purged():
         assert owner_alerts.purge_error_events(db, now) == 1
         db.commit()
         assert db.query(AppErrorEvent).count() == 1
+
+
+def test_disk_alert_when_space_low_once_per_day(sent):
+    """4.2: свободно меньше 10% или меньше 2 ГБ — письмо владельцу, не чаще раза в сутки."""
+    now = datetime(2026, 11, 27, 6, 0, tzinfo=timezone.utc)
+    gb = 1024 ** 3
+    with DbSession(engine) as db:
+        assert owner_alerts.check_disk(db, now, usage=(100 * gb, 50 * gb, 50 * gb)) is False
+        assert owner_alerts.check_disk(db, now, usage=(100 * gb, 95 * gb, 5 * gb)) is True  # 5% свободно
+        assert owner_alerts.check_disk(db, now + timedelta(hours=2), usage=(100 * gb, 95 * gb, 5 * gb)) is False
+        assert owner_alerts.check_disk(db, now + timedelta(days=1), usage=(10 * gb, 8.5 * gb, 1.5 * gb)) is True  # < 2 ГБ
+        db.rollback()
+    assert "место" in sent[0][0]

@@ -8,6 +8,7 @@ const mockInventory = jest.fn(async () => undefined);
 const mockReceipt = jest.fn(async () => undefined);
 const mockConsent = jest.fn(async () => undefined);
 
+const mockAskAsync = jest.fn(async (..._a: unknown[]) => { throw new Error("offline"); });
 jest.mock('expo-haptics', () => ({ selectionAsync: jest.fn(() => Promise.resolve()) }));
 
 jest.mock('expo-router', () => ({
@@ -42,7 +43,7 @@ jest.mock('@/api/hooks', () => {
     }),
     useAIQuota: () => ({ data: { remaining: 20, limit: 30, consent_active: false, consent_version: null } }),
     useAIConsent: () => ({ mutateAsync: mockConsent, isPending: false }),
-    useAsk: () => ({ mutateAsync: jest.fn(), isPending: false }),
+    useAsk: () => ({ mutateAsync: mockAskAsync, isPending: false }),
     useFeedback: () => ({ mutate: jest.fn() }),
     useConversations: () => ({ data: { items: [] } }),
     useDeleteConversation: noop,
@@ -75,16 +76,13 @@ describe('склад: ввод остатка', () => {
   });
 });
 
-describe('согласие на ИИ (экран помощника)', () => {
-  test('без согласия перед первым вопросом показывается экран с получателем данных и кнопками', async () => {
+describe('К-24: отдельного согласия на ИИ нет (экран помощника)', () => {
+  test('первый вопрос уходит сразу, без экрана согласия', async () => {
     await render(<AssistantScreen />);
     await fireEvent.changeText(await screen.findByLabelText('Спросите о магазине…'), 'Сколько прибыли за неделю?');
     await fireEvent.press(screen.getByRole('button', { name: 'Применить' }));
-    expect(await screen.findByText('Помощник использует ИИ')).toBeTruthy();
-    expect(screen.getByText(/Anthropic \(США\)/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Разрешить' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Не сейчас' })).toBeTruthy();
-    await fireEvent.press(screen.getByRole('button', { name: 'Разрешить' }));
-    await waitFor(() => expect(mockConsent).toHaveBeenCalledWith(true));
+    await waitFor(() => expect(mockAskAsync).toHaveBeenCalled());
+    expect(screen.queryByText('Помощник использует ИИ')).toBeNull();
+    expect(mockConsent).not.toHaveBeenCalled();
   });
 });

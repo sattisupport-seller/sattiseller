@@ -61,6 +61,24 @@ def production_config_problems() -> list[str]:
         problems.append("SATTI_GOOGLE_RTDN_TOKEN пустой или короче 24 знаков: адрес уведомлений Google легко подобрать")
     if os.environ.get("SATTI_SCHEDULER", "0") != "1":
         problems.append("SATTI_SCHEDULER не включён: удаление данных по хранению (90 дней) не запустится")
+    # 4.4 (К-21): переменные, добавленные после 4.4 — ИИ и карточка с фото, контакты, админка, оповещения
+    if settings.ai_live and not settings.anthropic_api_key:
+        problems.append("SATTI_AI_LIVE=1, но ANTHROPIC_API_KEY не задан: помощник и карточки будут только шаблоном")
+    if settings.ai_live and settings.ai_budget_monthly_usd <= 0:
+        problems.append("SATTI_AI_BUDGET_MONTHLY_USD не больше 0: бюджет ИИ не ограничивает расходы")
+    if not settings.support_email or settings.support_email.endswith(".invalid"):
+        problems.append("SATTI_SUPPORT_EMAIL не задан: блокировка, токен Kaspi и удаление ведут продавца в поддержку")
+    if not settings.owner_alert_email:
+        problems.append("SATTI_OWNER_ALERT_EMAIL не задан: оповещения владельцу (копии, ошибки, место на диске) не уйдут")
+    if not settings.admin_email:
+        problems.append("SATTI_ADMIN_EMAIL не задан: админка (блокировка, окно токена, особые условия) недоступна")
+    if settings.push_mode != "expo":
+        problems.append("SATTI_PUSH_MODE не expo: уведомления пишутся в папку outbox/push и не доходят до телефонов")
+    # 3.3: вход Apple без ключа Sign in with Apple — при удалении аккаунта токен не отозвать (требование Apple)
+    if os.environ.get("SATTI_APPLE_CLIENT_ID") and not (settings.apple_siwa_key_id and settings.apple_siwa_key_path
+                                                        and settings.apple_team_id):
+        problems.append("вход Apple включён, но SATTI_APPLE_SIWA_KEY_ID / SATTI_APPLE_SIWA_KEY_PATH / SATTI_APPLE_TEAM_ID "
+                        "не заданы: при удалении аккаунта токен Apple не будет отозван")
     if not settings.google_client_ids and not os.environ.get("SATTI_APPLE_CLIENT_ID") and not settings.email_login_enabled:
         problems.append("не задан ни один способ входа: SATTI_GOOGLE_CLIENT_IDS или SATTI_APPLE_CLIENT_ID")
     return problems
@@ -163,6 +181,12 @@ class Settings:
     admin_email: str = os.environ.get("SATTI_ADMIN_EMAIL", "").strip().lower()
     # Вход: Apple и Google (ТЗ 2.1, раздел 5). Идентификаторы приложения у провайдеров — после аккаунтов владельца.
     apple_client_id: str = os.environ.get("SATTI_APPLE_CLIENT_ID", "kz.satti.seller")
+    # 3.3: ключ Sign in with Apple — обмен authorizationCode на refresh token и отзыв при удалении аккаунта
+    # 3.4: пуши — mock (файлы в outbox/push) или expo (Expo Push API → FCM/APNs по ключам EAS)
+    push_mode: str = os.environ.get("SATTI_PUSH_MODE", "mock")
+    expo_access_token: str = os.environ.get("SATTI_EXPO_ACCESS_TOKEN", "")
+    apple_siwa_key_id: str = os.environ.get("SATTI_APPLE_SIWA_KEY_ID", "")
+    apple_siwa_key_path: str = os.environ.get("SATTI_APPLE_SIWA_KEY_PATH", "")  # .p8 в server/data/secrets/
     google_client_ids: str = os.environ.get("SATTI_GOOGLE_CLIENT_IDS", "")
     # Вход по email-коду — только для разработки и тестов (ADR-0004). В продакшене выключен.
     email_login_enabled: bool = os.environ.get("SATTI_EMAIL_LOGIN", "0") == "1"

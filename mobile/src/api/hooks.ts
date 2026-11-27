@@ -114,12 +114,16 @@ export function useProduct(shopId: string | null, productId: string, period: str
   });
 }
 
+// К-24: товар настроен, когда указаны и себестоимость, и остаток. stock_hint — stockCount из прайса продавца.
+export type UnconfiguredProduct = {
+  product_id: string; sku: string; name: string; category: string;
+  needs_cost?: boolean; needs_stock?: boolean; stock_hint?: number | null;
+};
+
 export function useMissingCosts(shopId: string | null) {
   return useQuery({
     queryKey: ['missing-costs', shopId],
-    queryFn: () => request<{ items: { product_id: string; sku: string; name: string; category: string }[] }>(
-      `/shops/${shopId}/products/missing-costs`,
-    ),
+    queryFn: () => request<{ items: UnconfiguredProduct[] }>(`/shops/${shopId}/products/missing-costs`),
     enabled: !!shopId,
   });
 }
@@ -139,6 +143,7 @@ export type CostInput = {
   other: string;
   apply_to_history: boolean | null;
   effective_from: string | null;
+  stock_qty?: number | null;  // К-24: остаток на сейчас — вместе с себестоимостью
 };
 
 export function useSaveCost(shopId: string | null, productId: string) {
@@ -162,7 +167,7 @@ export function useCancelCost(shopId: string | null) {
 export function useBulkCost(shopId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { items: { product_id: string; purchase: string; delivery_to_warehouse?: string; packaging?: string; other?: string }[]; apply_to_history: boolean }) =>
+    mutationFn: (body: { items: { product_id: string; purchase?: string; stock_qty?: number; delivery_to_warehouse?: string; packaging?: string; other?: string }[]; apply_to_history: boolean }) =>
       request<{ saved: number }>(`/shops/${shopId}/cost-versions/bulk`, { method: 'POST', body }),
     onSuccess: () => invalidateShop(qc, shopId),
   });
@@ -383,11 +388,18 @@ export function useReactivate() {
   });
 }
 
+export type NotificationPrefs = { product_in_minus: boolean; weekly_summary: boolean; quiet_hours: boolean };
+
+// 3.4: текущие настройки с сервера — экран показывает их, а не «всё выключено»
+export function useNotificationSettingsQuery(enabled = true) {
+  return useQuery({ queryKey: ['notif'], queryFn: () => request<NotificationPrefs>('/notification-settings'), enabled });
+}
+
 export function useNotificationSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { product_in_minus?: boolean; weekly_summary?: boolean; quiet_hours?: boolean }) =>
-      request<{ product_in_minus: boolean; weekly_summary: boolean; quiet_hours: boolean }>('/notification-settings', { method: 'PATCH', body }),
+    mutationFn: (body: Partial<NotificationPrefs>) =>
+      request<NotificationPrefs>('/notification-settings', { method: 'PATCH', body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['notif'] }),
   });
 }

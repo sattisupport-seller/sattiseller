@@ -74,7 +74,7 @@ from .models import (
     User,
 )
 from .periods import Period, PeriodError, resolve, today_in
-from . import billing, device_trust, seller_access, store_billing
+from . import billing, device_trust, push, seller_access, store_billing  # noqa: F401 — push: таблицы для create_all
 from .billing import get_subscription, start_trial, subscription_view, trial_decision, wipe_shop_content
 from .device_trust import DeviceVerdict
 from .models import AuditEvent
@@ -237,6 +237,7 @@ def auth_email_verify(body: VerifyIn, db: DbSession = Depends(get_session)) -> d
         created = True
     tokens = issue_tokens(db, user_id=user.id)
     db.commit()
+    analytics_service.record_safe("auth_method_used", _now())  # 3.9: только счётчик за день, после commit
     if body.accept_terms:
         _record_terms(user)
     db.commit()
@@ -581,6 +582,8 @@ def get_overview(shop_id: str, period: str = Query("7d"), principal: Principal =
     out = dict(reportcache.memo(shop.id, f"overview|{period}|{_minute()}", compute))
     out["history_note"] = _history_note(db, shop, out.get("period", {}).get("from"))
     out["data_from"] = _kaspi_data_from(db, shop)  # К-18.4: с какой даты есть данные Kaspi
+    unconfigured = reportcache.memo(shop.id, f"missing|{_minute()}", lambda: {"items": _unconfigured(db, shop)})
+    out["attention"] = {**out["attention"], "not_configured_count": len(unconfigured["items"])}
     return out
 
 
@@ -646,8 +649,47 @@ def get_order(shop_id: str, order_id: str, principal: Principal = Depends(get_pr
 def get_missing_costs(shop_id: str, principal: Principal = Depends(get_principal),
                       db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
-    return reportcache.memo(shop.id, f"missing|{_minute()}",
-                            lambda: {"items": missing_costs_list(base_for(db, shop)[0])})
+    return reportcache.memo(shop.id, f"missing|{_minute()}", lambda: {"items": _unconfigured(db, shop)})
+
+
+def _stocked_ids(db: DbSession, shop: Shop) -> set[str]:
+    from .models import StockMovement
+
+    ids = set(db.scalars(select(ProductStock.product_id).where(ProductStock.shop_id == shop.id)).all())
+    ids |= set(db.scalars(select(StockMovement.product_id).where(StockMovement.shop_id == shop.id,
+                                                                StockMovement.kind == "inventory")).all())
+    return ids
+
+
+def _unconfigured(db: DbSession, shop: Shop) -> list[dict]:
+    """К-24: товары без себестоимости или без остатка. Пока не заполнены оба поля, товар «не настроен»."""
+    data = base_for(db, shop)[0]
+    no_cost = {row["product_id"] for row in missing_costs_list(data)}
+    stocked = _stocked_ids(db, shop)
+    hints = kaspi_service.catalog_stock_hints(db, shop.id)
+    out = []
+    for p in sorted(data.products.values(), key=lambda p: p.sku):
+        needs_cost, needs_stock = p.id in no_cost, p.id not in stocked
+        if needs_cost or needs_stock:
+            out.append({"product_id": p.id, "sku": p.sku, "name": p.name, "category": p.category,
+                        "needs_cost": needs_cost, "needs_stock": needs_stock, "stock_hint": hints.get(p.sku)})
+    return out
+
+
+def _record_inventory(db: DbSession, shop: Shop, product_id: str, qty: int) -> ProductStock:
+    """Остаток на сейчас — событие «инвентаризация» (К-1). Продажи из истории до этого момента его не уменьшают."""
+    from .models import StockMovement
+
+    now = datetime.now(timezone.utc)
+    row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
+    if row is None:
+        row = ProductStock(shop_id=shop.id, product_id=product_id, qty=qty, updated_at=now)
+        db.add(row)
+    else:
+        row.qty, row.updated_at, row.last_alert_level = qty, now, None
+    db.add(StockMovement(shop_id=shop.id, product_id=product_id, kind="inventory", qty=qty,
+                         occurred_at=now, created_at=now))
+    return row
 
 
 @api.get("/shops/{shop_id}/products", tags=["товары"], response_model=ProductsPageOut)
@@ -778,11 +820,18 @@ def post_verify_purchase(body: PurchaseVerifyIn, shop_id: str, principal: Princi
         except IntegrityError:
             db.rollback()
             allowed = False
+    before_state = sub_before.state if sub_before is not None else None
     store_billing.bind_purchase(db, shop, st)
     store_billing.apply_state(db, shop, st, trial_allowed=allowed)
+    after = get_subscription(db, shop.id)
+    event = None
+    if after is not None and after.state != before_state:  # 3.9: счётчики без персональных данных
+        event = {"trial": "trial_started", "active": "subscription_started"}.get(after.state)
     db.add(AuditEvent(action="subscription_verify", entity=f"{st.store}:{st.state}", actor_id=principal.user_id,
                       shop_id=shop.id))
     db.commit()
+    if event:
+        analytics_service.record_safe(event, _now())  # после commit: отдельная сессия не ждёт блокировку
     if deactivated and _paid_access(db, shop):
         accounts_service.reactivate_user(db, owner)
     if st.store == "google" and st.needs_ack:
@@ -799,6 +848,7 @@ def _apply_store_event(db: DbSession, store: str, event_id: str, kind: str, key:
             store_billing.StoreNotification.event_id == event_id)) is not None:
         return "duplicate"
     result = "ignored"
+    event = None
     if key:
         st = store_billing.fetch_state(store, key)
         shop_id = store_billing.shop_for_state(db, st)
@@ -809,7 +859,13 @@ def _apply_store_event(db: DbSession, store: str, event_id: str, kind: str, key:
             store_billing.bind_purchase(db, shop, st)
             sub = get_subscription(db, shop.id)
             allowed = sub is not None and sub.trial_started_at is not None and sub.state == "trial"
+            prev = sub.state if sub is not None else None
             store_billing.apply_state(db, shop, st, trial_allowed=allowed or not st.in_trial)
+            now_state = get_subscription(db, shop.id).state if get_subscription(db, shop.id) else None
+            if now_state == "active" and prev in ("active", "trial", "grace"):
+                event = "subscription_renewed"  # 3.9
+            elif now_state in ("expired", "revoked", "on_hold") and prev != now_state:
+                event = "subscription_expired"
             if st.store == "google" and st.needs_ack:
                 store_billing.google_acknowledge(st.purchase_key)
             result = st.state
@@ -817,6 +873,8 @@ def _apply_store_event(db: DbSession, store: str, event_id: str, kind: str, key:
         db.rollback()
         return "duplicate"
     db.commit()
+    if event:
+        analytics_service.record_safe(event, _now())
     return result
 
 
@@ -851,6 +909,7 @@ def export_profit_xlsx(shop_id: str, period: str = Query("30d"), principal: Prin
     data, facts = base_for(db, shop)
     p = _period(period, shop)
     content = profit_workbook(data, facts, p, _now())
+    analytics_service.record_safe("excel_exported", _now())  # 3.9
     return Response(content=content, media_type=XLSX_MEDIA,
                     headers={"Content-Disposition": f'attachment; filename="{profit_filename(p)}"'})
 
@@ -865,6 +924,7 @@ def export_my_data(principal: Principal = Depends(get_principal), db: DbSession 
         raise ApiError(403, "account_deactivated", "Аккаунт деактивирован: данные недоступны до восстановления.")
     if not allow(f"export:{user.id}", 3, 86_400, db=db):
         raise ApiError(429, "rate_limited", "Выгрузок слишком много. Попробуйте завтра.")
+    analytics_service.record_safe("data_export_requested", _now())  # 3.9
     content = user_export_zip(db, user)
     audit.record(db, "user_export", "user", actor_id=user.id)
     stamp = _now().strftime("%Y%m%d")
@@ -898,6 +958,8 @@ class CostIn(BaseModel):
     other: str = "0"
     apply_to_history: bool | None = None  # None — по правилам раздела 7.5
     effective_from: date | None = None
+    # К-24: остаток на сейчас вместе с себестоимостью — запись «инвентаризация» в журнале склада
+    stock_qty: int | None = Field(default=None, ge=0, le=10_000_000)
 
 
 def _minor(value: str) -> int:
@@ -1008,21 +1070,11 @@ def stock_alerts(shop_id: str, principal: Principal = Depends(get_principal),
 def put_stock_row(shop_id: str, product_id: str, body: StockIn, principal: Principal = Depends(get_principal),
                   db: DbSession = Depends(get_session)) -> dict:
     """Инвентаризация: остаток на сейчас (событие журнала). Продажи и возвраты после неё уменьшают и увеличивают остаток."""
-    from .models import StockMovement
     shop = shop_for(db, principal, shop_id)
     _product_of_shop(db, shop, product_id)
-    row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
-    now = datetime.now(timezone.utc)
-    if row is None:
-        row = ProductStock(shop_id=shop.id, product_id=product_id, qty=body.qty, updated_at=now)
-        db.add(row)
-    else:
-        row.qty = body.qty
-        row.updated_at = now
-        row.last_alert_level = None
-    db.add(StockMovement(shop_id=shop.id, product_id=product_id, kind="inventory", qty=body.qty,
-                         occurred_at=now, created_at=now))
+    row = _record_inventory(db, shop, product_id, body.qty)
     db.commit()
+    reportcache.invalidate(shop.id)  # список «не настроенных» товаров изменился
     return {"qty": row.qty, "updatedAt": row.updated_at.isoformat()}
 
 
@@ -1106,8 +1158,14 @@ def cost_version_create(shop_id: str, product_id: str, body: CostIn,
     if recent is not None and (recent.purchase_minor, recent.delivery_to_warehouse_minor,
                                recent.packaging_minor, recent.other_minor) == values \
             and (body.effective_from is None or recent.effective_from == body.effective_from):
+        if body.stock_qty is not None:
+            _record_inventory(db, shop, product.id, body.stock_qty)
+            db.commit()
+            reportcache.invalidate(shop.id)
         return _version_json(recent)
     v = _add_cost(db, shop, product, body, "manual")
+    if body.stock_qty is not None:
+        _record_inventory(db, shop, product.id, body.stock_qty)
     db.commit()
     reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return _version_json(v)
@@ -1129,7 +1187,8 @@ def cost_version_cancel(shop_id: str, version_id: str, principal: Principal = De
 
 class BulkCostItem(BaseModel):
     product_id: str
-    purchase: str
+    purchase: str | None = None  # None — себестоимость уже указана, вводится только остаток (К-24)
+    stock_qty: int | None = Field(default=None, ge=0, le=10_000_000)
     delivery_to_warehouse: str = "0"
     packaging: str = "0"
     other: str = "0"
@@ -1149,8 +1208,14 @@ def cost_bulk(shop_id: str, body: BulkCostIn, principal: Principal = Depends(get
         product = db.get(Product, item.product_id)
         if product is None or product.shop_id != shop.id:
             raise ApiError(404, "not_found")
-        _add_cost(db, shop, product, CostIn(**item.model_dump(exclude={"product_id"}),
-                                            apply_to_history=body.apply_to_history), "manual")
+        if item.purchase is None and item.stock_qty is None:
+            raise ApiError(422, "validation", "Укажите себестоимость или остаток.")
+        if item.purchase is not None:
+            _add_cost(db, shop, product, CostIn(**item.model_dump(exclude={"product_id", "stock_qty", "purchase"}),
+                                                purchase=item.purchase,
+                                                apply_to_history=body.apply_to_history), "manual")
+        if item.stock_qty is not None:
+            _record_inventory(db, shop, product.id, item.stock_qty)
         created += 1
     db.commit()
     reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
@@ -1253,6 +1318,7 @@ def tax_set(shop_id: str, body: TaxIn, principal: Principal = Depends(get_princi
     row = TaxRate(shop_id=shop.id, rate_bp=rate_bp, effective_from=body.effective_from)
     db.add(row)
     db.commit()
+    analytics_service.record_safe("tax_rate_saved", _now())  # 3.9
     reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
     return _tax_row(row)
 
@@ -1667,9 +1733,43 @@ class PushIn(BaseModel):
 
 
 @api.post("/devices/push-token", status_code=204, tags=["уведомления"])
-def push_token(body: PushIn, principal: Principal = Depends(get_principal)) -> Response:
-    # Отправка push-уведомлений включается на этапе B (раздел 3.8 ТЗ). Токен сейчас не сохраняется.
+def push_token(body: PushIn, principal: Principal = Depends(get_principal),
+               db: DbSession = Depends(get_session)) -> Response:
+    """3.4: Expo push token устройства — к аккаунту (демо уведомлений не получает). Повтор — обновление владельца."""
+    from . import push as push_service
+
+    user = current_user(principal, db)
+    row = db.get(push_service.DeviceToken, body.token)
+    if row is None:
+        db.add(push_service.DeviceToken(token=body.token, user_id=user.id, platform=body.platform))
+    else:
+        row.user_id, row.platform = user.id, body.platform
+    db.commit()
     return Response(status_code=204)
+
+
+@api.delete("/devices/push-token", status_code=204, tags=["уведомления"])
+def push_token_delete(body: PushIn, principal: Principal = Depends(get_principal),
+                      db: DbSession = Depends(get_session)) -> Response:
+    """Выход из аккаунта: телефон больше не получает уведомления этого аккаунта."""
+    from . import push as push_service
+
+    user = current_user(principal, db)
+    row = db.get(push_service.DeviceToken, body.token)
+    if row is not None and row.user_id == user.id:
+        db.delete(row)
+        db.commit()
+    return Response(status_code=204)
+
+
+@api.get("/notification-settings", tags=["уведомления"])
+def notification_settings_get(principal: Principal = Depends(get_principal),
+                              db: DbSession = Depends(get_session)) -> dict:
+    """3.4: текущие настройки — экран показывает их, а не «всё выключено»."""
+    user = current_user(principal, db)
+    row = db.get(NotificationSettings, user.id)
+    return {"product_in_minus": bool(row and row.product_in_minus), "weekly_summary": bool(row and row.weekly_summary),
+            "quiet_hours": bool(row and row.quiet_hours)}
 
 
 class NotifIn(BaseModel):

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session as DbSession
 from .models import AnalyticsDaily
 
 ALLOWED_EVENTS = frozenset({
-    "auth_method_used", "device_transfer_started", "device_transfer_completed", "paywall_shown", "trial_started",
+    "auth_method_used", "paywall_shown", "trial_started",
     "subscription_started", "subscription_renewed", "subscription_expired", "restore_tapped", "lock_screen_shown",
     "data_export_requested", "excel_exported", "tax_rate_saved", "notification_opened", "kaspi_connect_started",
     "kaspi_connect_succeeded", "kaspi_connect_failed", "support_access_granted",
@@ -46,6 +46,20 @@ def record(db: DbSession, event: str, now: datetime) -> None:
             # другая транзакция вставила строку раньше: во второй попытке — обновление
             db.rollback()
     raise RuntimeError("analytics counter not updated")
+
+
+def record_safe(event: str, now: datetime) -> None:
+    """Счётчик в отдельной сессии: не фиксирует и не откатывает транзакцию вызывающего кода; сбой счётчика
+    не ломает основное действие (3.9)."""
+    import logging
+
+    from .db import SessionLocal
+
+    try:
+        with SessionLocal() as own:
+            record(own, event, now)
+    except Exception:  # noqa: BLE001 — аналитика второстепенна
+        logging.getLogger("satti.analytics").warning("analytics event %s not recorded", event)
 
 
 def summary(db: DbSession, since_day: str) -> list[dict]:

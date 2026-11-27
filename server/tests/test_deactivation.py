@@ -55,16 +55,19 @@ def _shift_deactivation(email, days_ago):
         db.commit()
 
 
-def test_deactivation_closes_access_and_keeps_deletion(client, stores):
+def test_deactivation_closes_access_and_keeps_deletion(client, stores):  # noqa: F811
     email = "d1@example.com"
     headers, shop_id = _seller(client, email)
     stores.apple_sub("3000000000000001", shop_id, days=30)
     assert _verify(client, headers, shop_id, "apple", "3000000000000001").json()["state"] == "active"
     assert client.post("/v1/me/deactivation/confirm", headers=headers, json={"code": "000000"}).status_code == 400
 
+    # время — в момент деактивации, а не при импорте модуля: в полном прогоне тест идёт через минуты (1.15)
+    before = datetime.now(timezone.utc)
     out = _deactivate(client, headers, email)
+    after = datetime.now(timezone.utc)
     delete_on = datetime.fromisoformat(out["delete_on"])
-    assert timedelta(days=29, hours=23) < delete_on - NOW <= timedelta(days=30, minutes=1)
+    assert before + timedelta(days=30) <= delete_on <= after + timedelta(days=30)
     me = client.get("/v1/me", headers=headers).json()
     assert me["deactivated"] is True and me["delete_on"]
 
@@ -114,7 +117,7 @@ def test_retention_letters_do_not_go_while_deactivated(client):
         assert [d for d in run_retention(db, NOW) if d[0] == shop_id] == []
 
 
-def test_restore_on_day_29_with_paid_subscription(client, stores):
+def test_restore_on_day_29_with_paid_subscription(client, stores):  # noqa: F811
     email = "d4@example.com"
     headers, shop_id = _seller(client, email, seller="D-400")
     _deactivate(client, headers, email)
@@ -128,7 +131,7 @@ def test_restore_on_day_29_with_paid_subscription(client, stores):
     assert client.get(f"/v1/shops/{shop_id}/overview", headers=headers).status_code == 200
 
 
-def test_trial_from_store_does_not_restore(client, stores):
+def test_trial_from_store_does_not_restore(client, stores):  # noqa: F811
     """Магазин дал пробный период (новый Apple ID) — восстановление не происходит: нужна оплата (вопрос владельцу)."""
     email = "d5@example.com"
     headers, shop_id = _seller(client, email, seller="D-500")
@@ -138,7 +141,7 @@ def test_trial_from_store_does_not_restore(client, stores):
     assert client.get("/v1/me", headers=headers).json()["deactivated"] is True
 
 
-def test_still_paid_subscription_restores_immediately(client, stores):
+def test_still_paid_subscription_restores_immediately(client, stores):  # noqa: F811
     """Подписка в магазине сама не отменяется: если она ещё оплачена, восстановление сразу."""
     email = "d6@example.com"
     headers, shop_id = _seller(client, email, seller="D-600")

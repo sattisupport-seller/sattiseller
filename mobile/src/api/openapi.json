@@ -179,6 +179,11 @@
           "no_cost_count": {
             "title": "No Cost Count",
             "type": "integer"
+          },
+          "not_configured_count": {
+            "default": 0,
+            "title": "Not Configured Count",
+            "type": "integer"
           }
         },
         "required": [
@@ -388,13 +393,32 @@
             "type": "string"
           },
           "purchase": {
-            "title": "Purchase",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchase"
+          },
+          "stock_qty": {
+            "anyOf": [
+              {
+                "maximum": 10000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Qty"
           }
         },
         "required": [
-          "product_id",
-          "purchase"
+          "product_id"
         ],
         "title": "BulkCostItem",
         "type": "object"
@@ -579,21 +603,6 @@
         "title": "CommissionsOut",
         "type": "object"
       },
-      "ConfirmIn": {
-        "properties": {
-          "code": {
-            "maxLength": 6,
-            "minLength": 6,
-            "title": "Code",
-            "type": "string"
-          }
-        },
-        "required": [
-          "code"
-        ],
-        "title": "ConfirmIn",
-        "type": "object"
-      },
       "ConsentIn": {
         "properties": {
           "granted": {
@@ -685,6 +694,19 @@
           "purchase": {
             "title": "Purchase",
             "type": "string"
+          },
+          "stock_qty": {
+            "anyOf": [
+              {
+                "maximum": 10000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Qty"
           }
         },
         "required": [
@@ -1410,6 +1432,22 @@
             ],
             "title": "Age Confirmed"
           },
+          "deactivated": {
+            "default": false,
+            "title": "Deactivated",
+            "type": "boolean"
+          },
+          "delete_on": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delete On"
+          },
           "demo": {
             "title": "Demo",
             "type": "boolean"
@@ -1452,6 +1490,17 @@
             ],
             "title": "Name"
           },
+          "seller_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seller Number"
+          },
           "terms_consent_required": {
             "default": false,
             "title": "Terms Consent Required",
@@ -1474,6 +1523,16 @@
             "title": "Name",
             "type": "string"
           },
+          "needs_cost": {
+            "default": true,
+            "title": "Needs Cost",
+            "type": "boolean"
+          },
+          "needs_stock": {
+            "default": true,
+            "title": "Needs Stock",
+            "type": "boolean"
+          },
           "product_id": {
             "title": "Product Id",
             "type": "string"
@@ -1481,6 +1540,17 @@
           "sku": {
             "title": "Sku",
             "type": "string"
+          },
+          "stock_hint": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Hint"
           }
         },
         "required": [
@@ -2411,6 +2481,24 @@
         "title": "ReturnOut",
         "type": "object"
       },
+      "SellerBlockIn": {
+        "properties": {
+          "blocked": {
+            "title": "Blocked",
+            "type": "boolean"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "blocked"
+        ],
+        "title": "SellerBlockIn",
+        "type": "object"
+      },
       "SeriesOut": {
         "properties": {
           "days": {
@@ -2603,6 +2691,29 @@
           "id_token"
         ],
         "title": "SocialIn",
+        "type": "object"
+      },
+      "SpecialIn": {
+        "properties": {
+          "comment": {
+            "default": "",
+            "title": "Comment",
+            "type": "string"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "months": {
+            "title": "Months",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "months"
+        ],
+        "title": "SpecialIn",
         "type": "object"
       },
       "StockIn": {
@@ -2871,6 +2982,32 @@
           "code"
         ],
         "title": "VerifyIn",
+        "type": "object"
+      },
+      "app__admin__ConfirmIn": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "title": "ConfirmIn",
+        "type": "object"
+      },
+      "app__api__ConfirmIn": {
+        "properties": {
+          "code": {
+            "maxLength": 6,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "ConfirmIn",
         "type": "object"
       }
     }
@@ -3354,6 +3491,425 @@
         ]
       }
     },
+    "/v1/admin/sellers/{number}": {
+      "get": {
+        "description": "Поиск по номеру продавца: аккаунт, магазин, подписка, особые условия.",
+        "operationId": "seller_get_v1_admin_sellers__number__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Session"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Seller Get V1 Admin Sellers  Number  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Seller Get",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/sellers/{number}/block": {
+      "post": {
+        "description": "Блокировка: продавец видит сообщение с контактом поддержки; удалить аккаунт может всегда (правила магазинов).\nБлокировка хранится на номере продавца и переживает удаление аккаунта.",
+        "operationId": "seller_block_v1_admin_sellers__number__block_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Session"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SellerBlockIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Seller Block V1 Admin Sellers  Number  Block Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Seller Block",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/sellers/{number}/reconnect": {
+      "post": {
+        "description": "«Возобновить доступ» к Kaspi: одноразовое окно на 24 часа, чтобы продавец ввёл новый токен того же магазина.",
+        "operationId": "seller_reconnect_v1_admin_sellers__number__reconnect_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Session"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__admin__ConfirmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Seller Reconnect V1 Admin Sellers  Number  Reconnect Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Seller Reconnect",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/sellers/{number}/special-access": {
+      "post": {
+        "description": "Доступ без подписки на 1, 3 или 6 месяцев. Только бесплатно (OPERATIONS.md: продавать в обход магазинов нельзя).",
+        "operationId": "seller_special_grant_v1_admin_sellers__number__special_access_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Session"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpecialIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Seller Special Grant V1 Admin Sellers  Number  Special Access Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Seller Special Grant",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/sellers/{number}/special-access/cancel": {
+      "post": {
+        "operationId": "seller_special_cancel_v1_admin_sellers__number__special_access_cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Session"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__admin__ConfirmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Seller Special Cancel V1 Admin Sellers  Number  Special Access Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Seller Special Cancel",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
     "/v1/admin/session": {
       "post": {
         "description": "Код двухфакторной защиты меняется на сессию на 30 минут. Один и тот же код второй раз не принимается.",
@@ -3410,6 +3966,73 @@
           }
         },
         "summary": "Open Session",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/special-access": {
+      "get": {
+        "description": "Вкладка «Особые условия»: магазин, ID продавца, с какого по какое число, комментарий владельца.",
+        "operationId": "special_access_list_v1_admin_special_access_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Admin-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Session"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Special Access List V1 Admin Special Access Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Special Access List",
         "tags": [
           "админ"
         ]
@@ -4838,6 +5461,67 @@
         ]
       }
     },
+    "/v1/me/deactivation/confirm": {
+      "post": {
+        "description": "К-21: «Деактивировать на 30 дней» — тот же код из письма, что и для удаления (/me/deletion/start).",
+        "operationId": "deactivation_confirm_v1_me_deactivation_confirm_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__api__ConfirmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Deactivation Confirm V1 Me Deactivation Confirm Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deactivation Confirm",
+        "tags": [
+          "пользователь"
+        ]
+      }
+    },
     "/v1/me/deletion/confirm": {
       "post": {
         "operationId": "deletion_confirm_v1_me_deletion_confirm_post",
@@ -4863,7 +5547,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ConfirmIn"
+                "$ref": "#/components/schemas/app__api__ConfirmIn"
               }
             }
           },
@@ -5007,6 +5691,57 @@
           }
         },
         "summary": "Export My Data",
+        "tags": [
+          "пользователь"
+        ]
+      }
+    },
+    "/v1/me/reactivation": {
+      "post": {
+        "description": "К-21: восстановление до конца 30 дней — только при оплаченной подписке 9 900 ₸ (проверена сервером у магазина).\nПодписка в App Store или Google Play сама не отменяется: если она ещё оплачена, восстановление сразу.",
+        "operationId": "reactivation_v1_me_reactivation_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Reactivation V1 Me Reactivation Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reactivation",
         "tags": [
           "пользователь"
         ]
@@ -6489,6 +7224,7 @@
     },
     "/v1/shops/{shop_id}/kaspi/connection": {
       "delete": {
+        "description": "К-21 (решение владельца 01:24): отдельного отключения Kaspi нет — только удаление или деактивация аккаунта.\nИначе «отключить и подключить снова» обходило бы правило «токен подключается один раз».",
         "operationId": "kaspi_disconnect_v1_shops__shop_id__kaspi_connection_delete",
         "parameters": [
           {
@@ -8237,7 +8973,7 @@
     },
     "/v1/shops/{shop_id}/subscription/verify": {
       "post": {
-        "description": "Проверка покупки у магазина (App Store Server API, Google Play Developer API) и доступ по её состоянию.\nТот же вызов — для «Восстановить покупки»: приложение присылает каждую найденную покупку.",
+        "description": "Проверка покупки у магазина (App Store Server API, Google Play Developer API) и доступ по её состоянию.\nТот же вызов — для «Восстановить покупки»: приложение присылает каждую найденную покупку.\nДеактивированный аккаунт (К-21) восстанавливается здесь же — только оплаченной подпиской, не пробным периодом.",
         "operationId": "post_verify_purchase_v1_shops__shop_id__subscription_verify_post",
         "parameters": [
           {

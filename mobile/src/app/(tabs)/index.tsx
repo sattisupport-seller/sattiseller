@@ -219,9 +219,9 @@ export default function OverviewScreen() {
                         onPress={() => router.push(`/product/${p.product_id}`)}
                       />
                     ))}
-                    {data.attention.no_cost_count > 0 ? (
+                    {(data.attention.not_configured_count ?? data.attention.no_cost_count) > 0 ? (
                       <ListRow
-                        title={t('overview.attentionNoCost', { count: data.attention.no_cost_count })}
+                        title={t('overview.attentionNoCost', { count: data.attention.not_configured_count ?? data.attention.no_cost_count })}
                         subtitle={t('overview.attentionNoCostHint')}
                         right={<Txt variant="buttonS" tone="primaryText">{t('overview.fill')}</Txt>}
                         onPress={() => router.push('/quick-cost')}

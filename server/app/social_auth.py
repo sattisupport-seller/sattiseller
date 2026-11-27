@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 import jwt
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import DateTime, String, select
+from sqlalchemy import DateTime, String, Text, select
 from sqlalchemy.orm import Mapped, Session as DbSession, mapped_column
 
 from .auth import issue_tokens
@@ -45,6 +45,8 @@ class SocialIdentity(Base):
     provider: Mapped[str] = mapped_column(String(16), primary_key=True)
     subject: Mapped[str] = mapped_column(String(128), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(32), index=True)
+    # 3.3: refresh token Apple (зашифрован) — только чтобы отозвать его при удалении аккаунта
+    refresh_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
@@ -130,6 +132,7 @@ def user_for_identity(db: DbSession, provider: str, claims: dict) -> User:
 class SocialIn(BaseModel):
     id_token: str
     nonce: str | None = None
+    authorization_code: str | None = None  # 3.3: Apple — для обмена на refresh token (отзыв при удалении)
     accept_terms: bool = False  # 1.19: галочка на экране входа (без неё — согласие не фиксируется)
 
 
@@ -139,11 +142,23 @@ router = APIRouter(tags=["вход"])
 def _login_response(db: DbSession, provider: str, body: SocialIn) -> dict:
     claims = verify_identity_token(provider, body.id_token, nonce=body.nonce)
     user = user_for_identity(db, provider, claims)
+    if provider == "apple" and body.authorization_code:
+        from . import apple_tokens
+        from .kaspi import encrypt_token
+
+        refresh = apple_tokens.exchange_code(body.authorization_code)
+        if refresh:
+            link = db.get(SocialIdentity, ("apple", str(claims["sub"])))
+            if link is not None:
+                link.refresh_token_enc = encrypt_token(refresh)
     if body.accept_terms:
         user.terms_version = settings.legal_version
         user.terms_accepted_at = datetime.now(timezone.utc)
     tokens = issue_tokens(db, user_id=user.id)
+    from . import analytics as analytics_service
+
     db.commit()
+    analytics_service.record_safe("auth_method_used", datetime.now(timezone.utc))  # 3.9: после commit
     has_shop = db.scalar(select(Shop.id).where(Shop.owner_user_id == user.id).limit(1)) is not None
     return {**tokens, "user": {"id": user.id, "email": user.email}, "terms_consent_required": user.terms_version != settings.legal_version, "needs_shop_setup": not has_shop}
 

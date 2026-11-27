@@ -100,7 +100,8 @@ export default function Login() {
         nonce: hashed,
       });
       if (!cred.identityToken) throw new Error('no-token');
-      await signInWithIdToken('apple', cred.identityToken, raw, accepted);
+      // 3.3: authorizationCode — сервер обменяет его на refresh token, чтобы отозвать при удалении аккаунта
+      await signInWithIdToken('apple', cred.identityToken, raw, accepted, cred.authorizationCode ?? undefined);
       router.replace('/');
     } catch (e) {
       // Отмена пользователем — не ошибка.

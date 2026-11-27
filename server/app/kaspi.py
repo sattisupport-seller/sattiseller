@@ -267,6 +267,38 @@ def _needs_refresh(order: Order, status: str, now: datetime) -> bool:
     return return_window_open(order, status, now)
 
 
+def _ensure_full_return(db: DbSession, order: Order, now: datetime, to_warehouse: bool | None) -> int:
+    """2.5: заказ Kaspi в статусе RETURNED — возврат по каждой позиции на всё оставшееся количество.
+    Без этого возвращённый заказ считался продажей: прибыль завышалась, остаток уменьшался.
+    Повторный вызов ничего не добавляет. Комиссия считается возвращённой по ставке позиции (сверить на реальном магазине);
+    годность товара — по returnedToWarehouse; неизвестно — None (остаток не увеличиваем, пока продавец не подтвердит)."""
+    from sqlalchemy import func
+
+    from .models import ReturnEvent
+    from .money import apply_bp
+
+    db.flush()  # позиции только что добавлены _reconcile; сессия без автосброса
+    added = 0
+    for item in db.scalars(select(OrderItem).where(OrderItem.order_id == order.id)).all():
+        already = db.scalar(select(func.coalesce(func.sum(ReturnEvent.returned_qty), 0))
+                            .where(ReturnEvent.item_id == item.id)) or 0
+        left = item.qty - already
+        if left <= 0:
+            continue
+        gross = item.unit_price_minor * left
+        db.add(ReturnEvent(item_id=item.id, shop_id=order.shop_id, returned_qty=left, confirmed_at=now,
+                           refund_minor=gross,
+                           commission_returned_minor=(apply_bp(gross, item.commission_rate_bp)
+                                                      if item.commission_rate_bp is not None else None),
+                           delivery_returned_minor=0, reverse_delivery_minor=0,
+                           goods_sellable=True if to_warehouse else None))
+        added += 1
+    if added:
+        db.flush()
+        reportcache.invalidate(order.shop_id)
+    return added
+
+
 def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: dict[str, Product],
                 now: datetime, client: KaspiClient, force_refresh: bool = False) -> tuple[int, int, int]:
     """Добавляет новые заказы, обновляет статусы и позиции. Возвращает (добавлено, обновлено статусы, изменено позиций)."""
@@ -284,6 +316,8 @@ def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: d
             db.add(order)
             db.flush()
             _reconcile(db, shop, order, _lines(client, ko.code), products, now, ko.seller_delivery, ko.credit)
+            if status == "returned":
+                _ensure_full_return(db, order, now, ko.returned_to_warehouse)
             added += 1
             continue
         if order.status != status:
@@ -294,6 +328,8 @@ def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: d
         if force_refresh or _needs_refresh(order, status, now):
             if _reconcile(db, shop, order, _lines(client, ko.code), products, now, ko.seller_delivery, ko.credit):
                 items_changed += 1
+        if status == "returned":
+            _ensure_full_return(db, order, now, ko.returned_to_warehouse)
     return added, updated, items_changed
 
 
@@ -490,6 +526,25 @@ def get_catalog(db: DbSession, shop_id: str) -> KaspiCatalog | None:
     return db.get(KaspiCatalog, shop_id)
 
 
+def catalog_stock_hints(db: DbSession, shop_id: str) -> dict[str, int]:
+    """К-24: остатки из прайса продавца (stockCount по всем складам предложения) — подсказка для поля остатка."""
+    row = db.get(KaspiCatalog, shop_id)
+    if row is None:
+        return {}
+    try:
+        root = ET.fromstring(row.xml_text)
+    except ET.ParseError:
+        return {}
+    hints: dict[str, int] = {}
+    for offer in (el for el in root.iter() if _local(el.tag) == "offer"):
+        sku = (offer.get("sku") or "").strip()
+        counts = [a.get("stockCount") for a in offer.iter() if _local(a.tag) == "availability"]
+        nums = [int(c) for c in counts if c is not None and c.strip().isdigit()]
+        if sku and nums:
+            hints[sku] = sum(nums)
+    return hints
+
+
 def price_list_xml(db: DbSession, shop: Shop, conn: KaspiConnection, today: date | None = None) -> bytes:
     """Наш файл для кабинета Kaspi: весь импортированный каталог продавца с его ценами и названиями.
     Меняем только наличие и остатки по складам (если указаны коды складов). Снятые с продажи — available="no", stockCount="0".
@@ -608,6 +663,8 @@ def _refresh_open_locked(db: DbSession, conn: KaspiConnection, client: KaspiClie
             if return_window_open(order, status, now) and _reconcile(
                     db, shop, order, _lines(client, order.number), products, now, ko.seller_delivery, ko.credit):
                 items_changed += 1
+            if status == "returned":
+                _ensure_full_return(db, order, now, ko.returned_to_warehouse)
             db.commit()
     except KaspiAuthError:
         db.rollback()

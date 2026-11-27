@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { Image, Pressable, ScrollView, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
-import { useProductDraft } from '@/api/hooks';
+import { useFeedback, useProductDraft } from '@/api/hooks';
 import { draftErrorText } from '@/api/aiErrors';
 import type { ProductDraft } from '@/api/types';
 import { Button } from '@/components/ui/Button';
@@ -40,6 +40,8 @@ export default function ProductDraftScreen() {
   const toast = useToast();
   const { shopId } = useSession();
   const draft = useProductDraft(shopId);
+  const feedback = useFeedback();
+  const [flagged, setFlagged] = useState(false);
   const [facts, setFacts] = useState('');
   const [photos, setPhotos] = useState<{ uri: string; name: string; type: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +77,7 @@ export default function ProductDraftScreen() {
     photos.forEach((p) => form.append('photos', { uri: p.uri, name: p.name, type: p.type } as unknown as Blob));
     try {
       setResult(await draft.mutateAsync(form));
+      setFlagged(false);
     } catch (e) {
       setError(draftErrorText(e, t));
     }
@@ -160,6 +163,21 @@ export default function ProductDraftScreen() {
             </Card>
           </Section>
           {result.warnings.map((w) => <Banner key={w} text={w} tone="info" />)}
+          {/* Google Play: жалоба на созданный ИИ текст — прямо в приложении */}
+          {(result as { generatedBy?: string }).generatedBy !== 'template' ? (
+            <Button
+              title={flagged ? t('assistant.flagSent') : t('assistant.flagDraft')}
+              variant="text"
+              disabled={flagged || !shopId}
+              onPress={() => {
+                if (!shopId) return;
+                feedback.mutate({ shop_id: shopId, turn_id: null, kind: 'flag', reason: 'product_draft' });
+                setFlagged(true);
+                toast.show(t('assistant.flagSent'));
+              }}
+              fullWidth
+            />
+          ) : null}
           <Button title={t('assistant.copyAll')} onPress={copyAll} fullWidth />
         </>
       ) : null}

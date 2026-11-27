@@ -2,10 +2,10 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, Switch, View } from 'react-native';
 
-import { useBulkCost, useMissingCosts } from '@/api/hooks';
+import { useBulkCost, useMissingCosts, type UnconfiguredProduct } from '@/api/hooks';
 import { ApiError } from '@/api/client';
 import { Button } from '@/components/ui/Button';
-import { MoneyField } from '@/components/ui/Inputs';
+import { MoneyField, TextField } from '@/components/ui/Inputs';
 import { EmptyState, ErrorState, Skeleton, useToast } from '@/components/ui/Overlays';
 import { Txt } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Surfaces';
@@ -14,7 +14,8 @@ import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
 import { isMoneyInput } from '@/lib/format';
 
-// Быстрый ввод закупки с телефона (docs/spec.md, раздел 3.4): список товаров без закупки и поля цены у каждого.
+// Быстрый ввод с телефона (docs/spec.md, 3.4; К-24): товары без себестоимости или остатка — два обязательных поля.
+// Остаток из прайса продавца (stockCount) подставляется, продавец подтверждает.
 export default function QuickCostScreen() {
   const { t } = useI18n();
   const { colors, spacing } = useTheme();
@@ -24,14 +25,21 @@ export default function QuickCostScreen() {
   const missing = useMissingCosts(shopId);
   const save = useBulkCost(shopId);
   const [prices, setPrices] = useState<Record<string, string>>({});
+  const [stocks, setStocks] = useState<Record<string, string>>({});
   const [applyAll, setApplyAll] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const items = missing.data?.items ?? [];
-  const filled = items.filter((i) => (prices[i.product_id] ?? '').trim() !== '');
+  const needsCost = (i: UnconfiguredProduct) => i.needs_cost !== false;
+  const needsStock = (i: UnconfiguredProduct) => i.needs_stock !== false;
+  const stockOf = (i: UnconfiguredProduct) =>
+    stocks[i.product_id] ?? (i.stock_hint !== null && i.stock_hint !== undefined ? String(i.stock_hint) : '');
+  // товар готов к сохранению, когда заполнены все его обязательные поля
+  const filled = items.filter((i) =>
+    (!needsCost(i) || (prices[i.product_id] ?? '').trim() !== '') && (!needsStock(i) || stockOf(i).trim() !== ''));
 
   const submit = async () => {
-    const bad = filled.find((i) => !isMoneyInput(prices[i.product_id]));
+    const bad = filled.find((i) => needsCost(i) && !isMoneyInput(prices[i.product_id]));
     if (bad) {
       setError(t('cost.invalid'));
       return;
@@ -39,7 +47,11 @@ export default function QuickCostScreen() {
     if (filled.length === 0) return;
     try {
       await save.mutateAsync({
-        items: filled.map((i) => ({ product_id: i.product_id, purchase: prices[i.product_id].replace(/\s/g, '').replace(',', '.') })),
+        items: filled.map((i) => ({
+          product_id: i.product_id,
+          ...(needsCost(i) ? { purchase: prices[i.product_id].replace(/\s/g, '').replace(',', '.') } : {}),
+          ...(needsStock(i) ? { stock_qty: Number(stockOf(i)) } : {}),
+        })),
         apply_to_history: applyAll,
       });
       toast.show(t('quickCost.saved'));
@@ -68,15 +80,33 @@ export default function QuickCostScreen() {
         <Card key={i.product_id} style={{ gap: spacing.sm }}>
           <Txt variant="bodyMedium">{i.name}</Txt>
           <Txt variant="footnote" tone="tertiary">{i.sku}</Txt>
-          <MoneyField
-            value={prices[i.product_id] ?? ''}
-            onChangeText={(v) => {
-              setPrices((p) => ({ ...p, [i.product_id]: v }));
-              setError(null);
-            }}
-            placeholder="0"
-            accessibilityLabel={`${i.name}: ${t('cost.purchase')}`}
-          />
+          {needsCost(i) ? (
+            <MoneyField
+              label={t('cost.purchase')}
+              value={prices[i.product_id] ?? ''}
+              onChangeText={(v) => {
+                setPrices((p) => ({ ...p, [i.product_id]: v }));
+                setError(null);
+              }}
+              placeholder="0"
+              accessibilityLabel={`${i.name}: ${t('cost.purchase')}`}
+            />
+          ) : null}
+          {needsStock(i) ? (
+            <TextField
+              label={t('cost.stock')}
+              value={stockOf(i)}
+              onChangeText={(v) => {
+                setStocks((p) => ({ ...p, [i.product_id]: v.replace(/\D/g, '').slice(0, 7) }));
+                setError(null);
+              }}
+              keyboardType="number-pad"
+              placeholder="0"
+              accessibilityLabel={`${i.name}: ${t('cost.stock')}`}
+              hint={stocks[i.product_id] === undefined && i.stock_hint !== null && i.stock_hint !== undefined
+                ? t('cost.stockFromPrice') : undefined}
+            />
+          ) : null}
         </Card>
       ))}
 

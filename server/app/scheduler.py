@@ -170,6 +170,28 @@ def _kaspi_loop() -> None:
         _stop.wait(SYNC_EVERY)
 
 
+def run_push_once(now: datetime | None = None) -> int:
+    """3.4: сводка по понедельникам (сама проверяет час) и отправка созревших уведомлений."""
+    from .push import dispatch_due, weekly_summary_due
+
+    now = now or datetime.now(timezone.utc)
+    db = SessionLocal()
+    try:
+        weekly_summary_due(db, now)
+        return dispatch_due(db, now)
+    finally:
+        db.close()
+
+
+def _push_loop() -> None:
+    while not _stop.is_set():
+        try:
+            run_push_once()
+        except Exception:  # noqa: BLE001 — задача не должна валить сервер
+            log.exception("push loop failed")
+        _stop.wait(300)
+
+
 def start_builtin_scheduler() -> threading.Thread | None:
     """Запускает поток, если SATTI_SCHEDULER=1. Возвращает поток или None."""
     if os.environ.get("SATTI_SCHEDULER", "0") != "1":
@@ -182,6 +204,7 @@ def start_builtin_scheduler() -> threading.Thread | None:
         threading.Thread(target=_kaspi_loop, name="satti-kaspi-sync", daemon=True).start()
         threading.Thread(target=_kaspi_nightly_loop, name="satti-kaspi-nightly", daemon=True).start()
     threading.Thread(target=_owner_loop, name="satti-owner-checks", daemon=True).start()
+    threading.Thread(target=_push_loop, name="satti-push", daemon=True).start()  # 3.4
     return thread
 
 

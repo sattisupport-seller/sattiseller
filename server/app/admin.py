@@ -510,7 +510,10 @@ def grant_support_access(principal: Principal = Depends(get_principal), db: DbSe
     user = current_user(principal, db)
     until = _now() + timedelta(hours=SUPPORT_ACCESS_HOURS)
     user.support_access_until = until
+    from . import analytics as analytics_service
+
     db.commit()
+    analytics_service.record_safe("support_access_granted", _now())  # 3.9: после commit
     return {"access_until": until.isoformat()}
 
 

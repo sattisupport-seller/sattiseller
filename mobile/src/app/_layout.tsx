@@ -1,3 +1,4 @@
+import { listenForTaps } from '@/lib/push';
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -85,6 +86,9 @@ function Shell() {
     setAccountBlockedHandler(() => router.replace('/account-blocked' as never));
     setAccountDeactivatedHandler(() => router.replace('/account-deactivated' as never));
   }, [router]);
+
+  // 3.4: нажатие на уведомление — нужный экран (склад, обзор, товар)
+  useEffect(() => listenForTaps((path) => router.push(path as never)), [router]);
 
   // Смена статуса сессии (вход, выход, истёкшая сессия) — переход на стартовый маршрут.
   useEffect(() => {

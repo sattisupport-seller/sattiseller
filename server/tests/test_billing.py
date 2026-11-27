@@ -54,6 +54,18 @@ def test_without_flag_nothing_is_blocked(client, demo):
     assert r.status_code == 200
 
 
+def _extra_shop(existing_shop_id: str, name: str) -> str:
+    """Ещё один магазин того же владельца напрямую в базе: проверяем защиту пробного периода на уровне аккаунта."""
+    from app.models import Shop
+
+    with DbSession(engine) as db:
+        owner = db.get(Shop, existing_shop_id).owner_user_id
+        shop = Shop(owner_user_id=owner, name=name, timezone="Asia/Almaty", language="ru")
+        db.add(shop)
+        db.commit()
+        return shop.id
+
+
 def _kaspi(shop_id: str, seller: str) -> None:
     """Подключённый магазин Kaspi (без сети): пробный период — только после подключения (К-21)."""
     with DbSession(engine) as db:
@@ -155,7 +167,7 @@ def test_same_email_cannot_get_second_trial(client, enforced):
     second = _shop(client, headers, name="Второй")
     _kaspi(second, "S-3c-2")
     assert _trial(client, headers, second, phone="c1").status_code == 201
-    third = _shop(client, headers, name="Третий")
+    third = _extra_shop(second, name="Третий")  # через API второй магазин создать нельзя (К-25)
     _kaspi(third, "S-3c-3")
     r = _trial(client, headers, third, phone="c2")
     assert r.status_code == 409

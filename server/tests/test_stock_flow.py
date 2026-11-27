@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
-from app.config import settings
 from app.db import engine
 from app.kaspi import price_list_xml
 from app.models import Order, OrderItem, Product, ProductStock, Shop
@@ -60,17 +59,20 @@ def test_receipt_adds_to_current_and_resets_sales_count(client, demo):
     assert after["soldSince"] == before["soldSince"]  # приход не сбрасывает учёт продаж (журнал, К-1)
 
 
-def test_alerts_fire_once_per_threshold(client, demo):
+def test_alerts_fire_once_per_threshold(client, demo, monkeypatch):
+    """Уведомление склада — один раз на порог (3.4: дальше — общая очередь пушей; демо пушей не получает)."""
+    from app import api as api_module
+
+    calls = []
+    monkeypatch.setattr(api_module, "stock_push_mock", lambda shop, st: calls.append((st.product_id, st.level)))
     shop = demo["shop_id"]
     pid, _, _ = _pid(demo)
     now = datetime.now(timezone.utc)
     _set_baseline(demo, pid, 8, now)  # 8 шт. — порог 10
-    before = len(list((settings.outbox_dir / "push").glob("*.json"))) if (settings.outbox_dir / "push").exists() else 0
     a1 = client.get(f"/v1/shops/{shop}/stock/alerts", headers=demo["headers"]).json()
     assert any(i["productId"] == pid and i["level"] == "t10" for i in a1["items"])
     client.get(f"/v1/shops/{shop}/stock/alerts", headers=demo["headers"])  # второй раз — без нового push
-    after = len(list((settings.outbox_dir / "push").glob("*.json")))
-    assert after == before + 1
+    assert calls.count((pid, "t10")) == 1
 
 
 def test_delist_only_at_zero_and_only_after_confirmation(client, demo):

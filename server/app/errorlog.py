@@ -60,9 +60,14 @@ OVERFLOW_FP = "overflow"
 def record_error(db: DbSession, *, kind: str, exc_type: str, where: str, message: str,
                  app_version: str | None = None, platform: str | None = None) -> str:
     """Сохраняет или обновляет группу ошибок. Возвращает идентификатор группы (отпечаток)."""
-    exc_type, where = exc_type[:120], where[:160]
+    # PostgreSQL не принимает нулевой байт в тексте (фаззинг 27.11 дал 500) — убираем его из всех полей
+    def _clean(value: str | None) -> str | None:
+        return value.replace("\x00", "") if value is not None else None
+
+    exc_type, where = _clean(exc_type)[:120], _clean(where)[:160]
+    app_version, platform = _clean(app_version), _clean(platform)
     fp = fingerprint(kind, exc_type, where)
-    safe_message = mask_text(message or "")[:MAX_MESSAGE]
+    safe_message = mask_text(_clean(message) or "")[:MAX_MESSAGE]
     now = _now()
     row = db.get(AppError, fp)
     if row is None and (db.scalar(select(func.count()).select_from(AppError)) or 0) >= MAX_GROUPS:

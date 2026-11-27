@@ -48,6 +48,7 @@ class AttentionOut(BaseModel):
     in_minus: list[InMinusItem]
     no_cost_count: int
     many_returns: list[ManyReturnsItem]
+    not_configured_count: int = 0  # К-24: товаров без себестоимости или без остатка — «введите себестоимость и остаток»
 
 
 class BestProductOut(BaseModel):
@@ -210,6 +211,10 @@ class MissingCostProductOut(BaseModel):
     sku: str
     name: str
     category: str
+    # К-24: товар настроен, когда указаны и себестоимость, и остаток
+    needs_cost: bool = True
+    needs_stock: bool = True
+    stock_hint: int | None = None  # stockCount из прайса продавца — подставить, продавец подтверждает
 
 
 # ---------- комиссии, налог, расходы ----------

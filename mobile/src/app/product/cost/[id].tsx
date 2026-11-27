@@ -2,7 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
-import { useCostVersions, useProduct, useSaveCost, useCancelCost, type CostInput } from '@/api/hooks';
+import { useCostVersions, useMissingCosts, useProduct, useSaveCost, useCancelCost, type CostInput } from '@/api/hooks';
 import { ApiError } from '@/api/client';
 import { Button } from '@/components/ui/Button';
 import { MoneyField, TextField } from '@/components/ui/Inputs';
@@ -30,6 +30,12 @@ export default function CostScreen() {
   const save = useSaveCost(shopId, productId);
   const cancel = useCancelCost(shopId);
   const hasHistory = (versions.data?.items.length ?? 0) > 0;
+  // К-24: пока остаток не указан, он обязателен вместе с себестоимостью (0 — можно)
+  const unconfigured = useMissingCosts(shopId).data?.items.find((i) => i.product_id === productId);
+  const needsStock = unconfigured?.needs_stock === true;
+  const stockHint = unconfigured?.stock_hint ?? null;
+  const [stock, setStock] = useState<string | null>(null);
+  const stockValue = stock ?? (stockHint !== null ? String(stockHint) : '');
 
   const [purchase, setPurchase] = useState('');
   const [delivery, setDelivery] = useState('');
@@ -51,6 +57,10 @@ export default function CostScreen() {
       setError(t('common.errorBody'));
       return;
     }
+    if (needsStock && !/^\d{1,7}$/.test(stockValue.trim())) {
+      setError(t('cost.stockRequired'));
+      return;
+    }
     if (mode === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       setError(t('common.errorBody'));
       return;
@@ -62,6 +72,7 @@ export default function CostScreen() {
       other: (other || '0').replace(/\s/g, '').replace(',', '.'),
       apply_to_history: mode === 'all' ? true : mode === 'today' ? false : null,
       effective_from: mode === 'date' ? date : null,
+      stock_qty: needsStock ? Number(stockValue.trim()) : null,
     };
     setError(null);
     try {
@@ -83,6 +94,15 @@ export default function CostScreen() {
       <MoneyField label={t('cost.deliveryWh')} value={delivery} onChangeText={setDelivery} />
       <MoneyField label={t('cost.packaging')} value={packaging} onChangeText={setPackaging} />
       <MoneyField label={t('cost.other')} value={other} onChangeText={setOther} />
+      {needsStock ? (
+        <TextField
+          label={t('cost.stock')}
+          value={stockValue}
+          onChangeText={(v) => { setStock(v.replace(/\D/g, '').slice(0, 7)); setError(null); }}
+          keyboardType="number-pad"
+          hint={stockHint !== null && stock === null ? t('cost.stockFromPrice') : t('cost.stockHint')}
+        />
+      ) : null}
 
       <View style={{ gap: spacing.sm }}>
         <Txt variant="footnoteStrong" tone="secondary">{t('cost.effectiveFrom')}</Txt>

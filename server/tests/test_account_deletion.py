@@ -64,3 +64,16 @@ def test_account_deletion_leaves_no_personal_rows(client):
         assert _count(db, Shop, Shop.owner_user_id == user_id) == 0
         assert _count(db, Subscription, Subscription.shop_id == shop["id"]) == 0
         assert _count(db, RetentionEvent, RetentionEvent.shop_id == shop["id"]) == 0
+
+
+def test_deletion_sends_confirmation_letter(client):
+    """3.6: после удаления — письмо-подтверждение на адрес аккаунта."""
+    from app.config import settings
+
+    email = f"bye-{uuid.uuid4().hex[:8]}@example.invalid"
+    tokens = login(client, email)
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    assert client.post("/v1/me/deletion/start", headers=headers).status_code == 202
+    assert client.post("/v1/me/deletion/confirm", headers=headers, json={"code": _last_code(email)}).status_code == 200
+    letters = [f.read_text(encoding="utf-8") for f in settings.outbox_dir.glob("*.eml")]
+    assert any(f"To: {email}" in t and "Аккаунт Satti удалён" in t for t in letters)

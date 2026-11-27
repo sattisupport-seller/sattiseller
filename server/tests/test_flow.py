@@ -53,16 +53,17 @@ def test_demo_session_is_stable_per_device(client):
 
 def test_demo_missing_costs_and_quick_entry(client, demo):
     r = client.get(f"/v1/shops/{demo['shop_id']}/products/missing-costs", headers=demo["headers"])
-    assert len(r.json()["items"]) == 10
-    skus = {i["sku"] for i in r.json()["items"]}
+    no_cost = [i for i in r.json()["items"] if i["needs_cost"]]  # К-24: в списке и товары без остатка
+    assert len(no_cost) == 10
+    skus = {i["sku"] for i in no_cost}
     assert skus == {f"D{n:03d}" for n in range(31, 41)}
 
-    items = [{"product_id": i["product_id"], "purchase": "1000"} for i in r.json()["items"]]
+    items = [{"product_id": i["product_id"], "purchase": "1000"} for i in no_cost]
     r2 = client.post(f"/v1/shops/{demo['shop_id']}/cost-versions/bulk", headers=demo["headers"],
                      json={"items": items, "apply_to_history": True})
     assert r2.status_code == 200, r2.text
-    assert client.get(f"/v1/shops/{demo['shop_id']}/products/missing-costs",
-                      headers=demo["headers"]).json()["items"] == []
+    left = client.get(f"/v1/shops/{demo['shop_id']}/products/missing-costs", headers=demo["headers"]).json()["items"]
+    assert [i for i in left if i["needs_cost"]] == []
     ov = client.get(f"/v1/shops/{demo['shop_id']}/overview?period=90d", headers=demo["headers"]).json()
     assert ov["kpi"]["coverage_bp"] == 10000  # покрытие 100% после быстрого ввода
 
@@ -202,7 +203,7 @@ def test_import_flow_with_rules(client, demo):
     applied = client.post(f"/v1/shops/{shop}/imports/{imp}/apply", headers=demo["headers"], json={})
     assert applied.status_code == 200, applied.text
     missing = client.get(f"/v1/shops/{shop}/products/missing-costs", headers=demo["headers"]).json()["items"]
-    assert "D031" not in {m["sku"] for m in missing}
+    assert "D031" not in {m["sku"] for m in missing if m["needs_cost"]}
 
     undo = client.post(f"/v1/shops/{shop}/imports/{imp}/undo", headers=demo["headers"])
     assert undo.status_code == 200
