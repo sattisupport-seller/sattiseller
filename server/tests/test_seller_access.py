@@ -44,6 +44,7 @@ def _seller(client, email):
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     confirm_age(client, headers)
     shop_id = client.post("/v1/shops", headers=headers, json={"name": "Магазин"}).json()["id"]
+    client.post("/v1/me/onboarding/complete", headers=headers)  # часть 2, п.6: без обучения Kaspi не подключить
     return headers, shop_id
 
 

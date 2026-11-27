@@ -46,7 +46,7 @@ def test_public_endpoint_counts_without_login(client):
 
 
 def test_endpoint_is_rate_limited(client, monkeypatch):
-    monkeypatch.setattr(api_module, "allow", lambda key, limit, window=3600: False)
+    monkeypatch.setattr(api_module, "allow", lambda key, limit, window=3600, db=None: False)
     r = client.post("/v1/analytics/events", json={"event": "restore_tapped"})
     assert r.status_code == 429
 

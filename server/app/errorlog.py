@@ -102,7 +102,7 @@ class ClientErrorIn(BaseModel):
 def client_error(body: ClientErrorIn, request: Request, db: DbSession = Depends(get_session)) -> dict:
     """Ошибка из приложения. Анонимно, с лимитом на адрес: 60 в час."""
     ip = client_ip(request)
-    if not allow(f"errors:{ip}", 60):
+    if not allow(f"errors:{ip}", 60, db=db):  # 1.16: в сессии запроса
         return {"status": "throttled"}
     record_error(db, kind="client", exc_type=body.exc_type, where=body.where, message=body.message,
                  app_version=body.app_version, platform=body.platform)

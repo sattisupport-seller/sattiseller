@@ -285,6 +285,7 @@ class MeOut(BaseModel):
     terms_consent_required: bool = False  # 1.19: нужно принять обновлённые условия
     seller_number: str | None = None  # К-21: номер продавца (8 цифр) — назвать в поддержке
     deactivated: bool = False  # К-21: аккаунт деактивирован — в приложении только экран восстановления
+    onboarding_done: bool = False  # К-21, часть 2, п.6: обучение пройдено (на любом устройстве аккаунта)
     delete_on: str | None = None  # дата автоудаления при деактивации (ISO)
 
 

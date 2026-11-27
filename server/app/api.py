@@ -279,18 +279,17 @@ def demo_session(request: Request, x_device_id: str = Header(..., alias="X-Devic
     _purge_idle_demos(db)
     install_id = hash_device_id(x_device_id)
     inst = db.get(DemoInstallation, install_id)
-    # Лимиты (allow) открывают своё соединение. Если запрос держит своё, при наплыве пул исчерпывается
-    # и запросы ждут друг друга до таймаута (нагрузка 1.16: 41 из 50 отказов). Поэтому перед каждым лимитом — commit.
+    # 1.16: лимиты ведутся в сессии запроса (db=...) — второе соединение не открывается, пул не исчерпывается
     db.commit()
     if inst is None:
         # AUD-05: новая демо-установка создаёт магазин с данными — ограничиваем такие создания
-        if not allow(f"demo:{client_ip(request)}", settings.demo_new_per_ip_per_hour):
+        if not allow(f"demo:{client_ip(request)}", settings.demo_new_per_ip_per_hour, db=db):
             raise ApiError(429, "rate_limited", "Слишком много новых демо-сессий с этого адреса. Попробуйте позже.")
         total = db.scalar(select(func.count()).select_from(DemoInstallation)) or 0
         db.commit()
         if total >= settings.demo_max_installations:
             raise ApiError(503, "demo_full", "Демо-режим временно недоступен. Попробуйте позже.")
-        _check_device_demo_limit(install_id)
+        _check_device_demo_limit(install_id, db)
         shop = create_demo_from_template(db, today_in(settings.default_timezone))
         inst = DemoInstallation(id=install_id, shop_id=shop.id, created_at=utcnow())
         db.add(inst)
@@ -299,7 +298,7 @@ def demo_session(request: Request, x_device_id: str = Header(..., alias="X-Devic
         shop_missing = db.get(Shop, inst.shop_id) is None
         db.commit()
         if shop_missing:
-            _check_device_demo_limit(install_id)
+            _check_device_demo_limit(install_id, db)
             shop = create_demo_from_template(db, today_in(settings.default_timezone))
             inst.shop_id = shop.id
             inst.created_at = utcnow()
@@ -316,7 +315,7 @@ def demo_reset(principal: Principal = Depends(get_principal), db: DbSession = De
     ensure_template(db)
     db.commit()  # соединение — лимиту (см. demo_session)
     if principal.demo_install_id:
-        _check_device_demo_limit(principal.demo_install_id)  # сброс тоже считается в лимит 3 в сутки
+        _check_device_demo_limit(principal.demo_install_id, db)  # сброс тоже считается в лимит 3 в сутки
     shop = db.get(Shop, principal.demo_shop_id)
     _wipe_shop_data(db, shop.id)
     copy_template(db, shop.id, today_in(settings.default_timezone))
@@ -351,10 +350,10 @@ def costs_template() -> Response:
                     "spreadsheetml.sheet", headers={"Content-Disposition": "attachment; filename=costs-template.xlsx"})
 
 
-def _check_device_demo_limit(install_id: str) -> None:
+def _check_device_demo_limit(install_id: str, db: DbSession | None = None) -> None:
     """ADR-0005: не больше demo_per_device_per_day новых демо и сбросов в сутки с одного устройства.
     Счётчик в памяти процесса; при нескольких процессах его заменит общее хранилище лимитов (этап 1.15)."""
-    if not allow(f"demo-dev:{install_id}", settings.demo_per_device_per_day, window=86400):
+    if not allow(f"demo-dev:{install_id}", settings.demo_per_device_per_day, window=86400, db=db):
         raise ApiError(429, "rate_limited", "За сутки с этого устройства создано максимум демо-магазинов. Попробуйте завтра.")
 
 
@@ -399,6 +398,7 @@ def me(principal: Principal = Depends(get_principal), db: DbSession = Depends(ge
             "terms_consent_required": user.terms_version != settings.legal_version,
             "seller_number": (n.number if (n := seller_access.by_user(db, user.id)) else None),
             "deactivated": user.deactivated_at is not None,
+            "onboarding_done": user.onboarding_done_at is not None,
             "delete_on": (accounts_service._aware(user.delete_after).isoformat() if user.delete_after else None)}
 
 
@@ -468,6 +468,16 @@ def deletion_confirm(body: ConfirmIn, principal: Principal = Depends(get_princip
         raise ApiError(400, "code_invalid")
     delete_user_account(db, user)  # AUD-08: все записи аккаунта, одна реализация для приложения и веба
     return {"status": "deleted"}
+
+
+@api.post("/me/onboarding/complete", tags=["пользователь"])
+def onboarding_complete(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+    """Обучение пройдено до конца (часть 2, п.6). Повторное прохождение из профиля отметку не снимает."""
+    user = current_user(principal, db)
+    if user.onboarding_done_at is None:
+        user.onboarding_done_at = _now()
+        db.commit()
+    return {"onboarding_done": True}
 
 
 @api.post("/me/deactivation/confirm", tags=["пользователь"])
@@ -1886,6 +1896,11 @@ def kaspi_connect(shop_id: str, body: KaspiConnectIn, principal: Principal = Dep
         if body.seller_id.strip() != existing.seller_id:
             raise ApiError(409, "kaspi_other_shop", "Можно ввести только токен того же магазина Kaspi.")
     seller_access.check_can_connect(db, principal.user_id, body.seller_id)
+    if principal.user_id and existing is None:
+        owner = db.get(User, principal.user_id)
+        if owner is not None and owner.onboarding_done_at is None:
+            # решение владельца 02:19: без пройденного обучения подключение Kaspi недоступно
+            raise ApiError(403, "onboarding_required", "Сначала пройдите обучение по приложению — это займёт несколько минут.")
     client = KaspiClient(body.token)
     analytics_service.record(db, "kaspi_connect_started", now)
     try:
@@ -2008,9 +2023,9 @@ def analytics_batch(body: EventsIn, request: Request) -> Response:
         raise ApiError(404, "not_found")
     if any(e not in analytics_service.ALLOWED_EVENTS for e in body.events):
         raise ApiError(422, "validation", "Неизвестное событие.")
-    if not allow(f"analytics-batch:{client_ip(request)}", 120):
-        raise ApiError(429, "rate_limited", "Слишком много пакетов. Попробуйте позже.")
     with SessionLocal() as db:
+        if not allow(f"analytics-batch:{client_ip(request)}", 120, db=db):  # 1.16: одна сессия на запрос
+            raise ApiError(429, "rate_limited", "Слишком много пакетов. Попробуйте позже.")
         if not is_enabled(db, "analytics"):
             raise ApiError(404, "not_found")
         for event in body.events:
@@ -2023,11 +2038,11 @@ def analytics_event(body: EventIn, request: Request) -> Response:
     """3.9: счётчик события за день. Без входа, без адреса и устройства; не чаще 600 раз в час с одного адреса."""
     if body.event not in analytics_service.ALLOWED_EVENTS:
         raise ApiError(422, "validation", "Неизвестное событие.")
-    if not allow(f"analytics:{client_ip(request)}", 600):
-        raise ApiError(429, "rate_limited", "Слишком много событий. Попробуйте позже.")
     from .db import SessionLocal
 
     with SessionLocal() as db:
+        if not allow(f"analytics:{client_ip(request)}", 600, db=db):  # 1.16: одна сессия на запрос
+            raise ApiError(429, "rate_limited", "Слишком много событий. Попробуйте позже.")
         analytics_service.record(db, body.event, utcnow())
     return Response(status_code=204)
 

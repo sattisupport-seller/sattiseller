@@ -57,7 +57,7 @@ def fetch_jwks(provider: str) -> dict:
     if cached and now - cached[0] < _JWKS_TTL:
         return cached[1]
     try:
-        with urllib.request.urlopen(PROVIDERS[provider]["keys_url"], timeout=10) as resp:  # noqa: S310 — фиксированные адреса  # nosec B310 — адрес фиксированный https-адрес ключей Apple/Google, не из пользовательского ввода
+        with urllib.request.urlopen(PROVIDERS[provider]["keys_url"], timeout=5) as resp:  # noqa: S310 — фиксированные адреса  # nosec B310 — адрес фиксированный https-адрес ключей Apple/Google, не из пользовательского ввода
             data = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001
         raise ApiError(503, "provider_unavailable", "Не удалось проверить вход. Попробуйте позже.") from exc

@@ -123,6 +123,7 @@ export type AppConfig = {
   privacy_url: string;
   terms_url: string;
   flags: { kaspi_connection: boolean; ai_assistant: boolean; subscription: boolean; analytics?: boolean };
+  onboarding_restart_minutes?: number;  // К-21, часть 2, п.6: порог «начать обучение заново»
 };
 
 export type ApiErrorBody = { error: { code: string; message: string; error_id: string } };

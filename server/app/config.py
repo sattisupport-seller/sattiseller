@@ -184,6 +184,7 @@ class Settings:
     # 3.3: ключ Sign in with Apple — обмен authorizationCode на refresh token и отзыв при удалении аккаунта
     # 3.4: пуши — mock (файлы в outbox/push) или expo (Expo Push API → FCM/APNs по ключам EAS)
     push_mode: str = os.environ.get("SATTI_PUSH_MODE", "mock")
+    onboarding_restart_minutes: int = int(os.environ.get("SATTI_ONBOARDING_RESTART_MINUTES", "5"))
     expo_access_token: str = os.environ.get("SATTI_EXPO_ACCESS_TOKEN", "")
     apple_siwa_key_id: str = os.environ.get("SATTI_APPLE_SIWA_KEY_ID", "")
     apple_siwa_key_path: str = os.environ.get("SATTI_APPLE_SIWA_KEY_PATH", "")  # .p8 в server/data/secrets/
@@ -215,11 +216,14 @@ class AppConfig(BaseModel):
     privacy_url: str = f"{settings.public_base_url}/privacy" if settings.public_base_url else "https://example.invalid/privacy"
     terms_url: str = f"{settings.public_base_url}/terms" if settings.public_base_url else "https://example.invalid/terms"
     flags: FeatureFlags = FeatureFlags(kaspi_connection=settings.kaspi_connection_enabled)
+    # К-21 (решение владельца 02:24): свернул или закрыл приложение дольше N минут — обучение начинается заново
+    onboarding_restart_minutes: int = 5
 
 
 def get_app_config() -> AppConfig:
     cfg = AppConfig()
     cfg.legal_version = settings.legal_version
+    cfg.onboarding_restart_minutes = settings.onboarding_restart_minutes
     # адреса берутся на момент запроса: переменная может измениться без перезапуска модуля (QA-15)
     if settings.public_base_url:
         cfg.privacy_url = f"{settings.public_base_url}/privacy"

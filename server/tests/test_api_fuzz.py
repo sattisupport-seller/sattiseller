@@ -19,6 +19,14 @@ EXAMPLES = int(os.environ.get("SATTI_FUZZ_EXAMPLES", "15"))
 schema = schemathesis.openapi.from_asgi("/v1/openapi.json", app)
 
 
+@pytest.fixture(autouse=True)
+def no_network_keys(monkeypatch):
+    """Фаззинг не ходит в сеть за ключами Apple и Google: иначе результат зависит от сети (таймаут 27.11)."""
+    from app import social_auth
+
+    monkeypatch.setattr(social_auth, "fetch_jwks", lambda provider: {"keys": []})
+
+
 @pytest.fixture(scope="module")
 def auth_headers():
     with TestClient(app) as c:

@@ -47,6 +47,8 @@ class User(Base):
     # К-21: деактивация на 30 дней — доступ закрыт, фоновое остановлено; delete_after — дата автоудаления
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     delete_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    # К-21, часть 2, п.6: обучение пройдено — на втором устройстве того же аккаунта не повторяется
+    onboarding_done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     ai_consent_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     ai_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

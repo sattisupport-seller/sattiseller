@@ -143,7 +143,7 @@ def delete_account_page() -> HTMLResponse:
 @router.post("/delete-account/start", response_class=HTMLResponse)
 def delete_account_start(request: Request, email: str = Form(...), db: DbSession = Depends(get_session)) -> HTMLResponse:
     address = email.strip().lower()
-    if allow(f"webdelete:{address}", 5):
+    if allow(f"webdelete:{address}", 5, db=db):  # 1.16: в сессии запроса
         user = db.scalar(select(User).where(User.email == address))
         if user is not None:
             code = new_code()
@@ -162,7 +162,7 @@ def delete_account_confirm(email: str = Form(...), code: str = Form(...),
                            db: DbSession = Depends(get_session)) -> HTMLResponse:
     address = email.strip().lower()
     user = db.scalar(select(User).where(User.email == address))
-    if user is None or not allow(f"webdelete-confirm:{address}", 10):
+    if user is None or not allow(f"webdelete-confirm:{address}", 10, db=db):
         return _page("Не удалось", "<h1>Код неверный или истёк</h1><p><a href='/delete-account'>Начать сначала</a></p>")
     row = db.scalar(select(AuthCode).where(AuthCode.user_id == user.id, AuthCode.purpose == "delete",
                                            AuthCode.used.is_(False)).order_by(AuthCode.expires_at.desc()))

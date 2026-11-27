@@ -1,3 +1,4 @@
+import { OnboardingProvider } from '@/onboarding/OnboardingProvider';
 import { listenForTaps } from '@/lib/push';
 import {
   Inter_400Regular,
@@ -106,6 +107,7 @@ function Shell() {
   return (
     <>
       <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
+      <OnboardingProvider>
       <Stack
         screenOptions={{
           headerShown: false,
@@ -142,6 +144,7 @@ function Shell() {
         <Stack.Screen name="settings/kaspi" options={{ headerShown: true, title: t('settings.kaspiTitle'), headerBackTitle: t('common.back') }} />
         <Stack.Screen name="catalog" options={{ headerShown: true, title: t('catalog.title'), headerBackTitle: t('common.back') }} />
       </Stack>
+      </OnboardingProvider>
     </>
   );
 }

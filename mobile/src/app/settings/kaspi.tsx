@@ -13,6 +13,7 @@ import { Badge, Banner, Card } from '@/components/ui/Surfaces';
 import { TextField } from '@/components/ui/Inputs';
 import { Txt } from '@/components/ui/Text';
 import { SUPPORT_EMAIL } from '@/config';
+import { useTour } from '@/onboarding/OnboardingProvider';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
@@ -59,6 +60,7 @@ export default function KaspiScreen() {
   const { t, locale } = useI18n();
   const { colors, spacing, radii } = useTheme();
   const { shopId, isDemo } = useSession();
+  const tour = useTour();
   const config = useAppConfig();
   const qc = useQueryClient();
   const [sellerId, setSellerId] = useState('');
@@ -166,6 +168,15 @@ export default function KaspiScreen() {
   }
   if (isDemo) {
     return wrap(<Card><Txt variant="body" tone="secondary">{t('kaspi.demoOnly')}</Txt></Card>);
+  }
+  if (!tour.done && !(status.data && status.data.status !== 'not_connected')) {
+    // решение владельца 02:19: без пройденного обучения подключение Kaspi недоступно
+    return wrap(
+      <Card style={{ gap: spacing.md }}>
+        <Txt variant="body" tone="secondary">{t('kaspi.onboardingFirst')}</Txt>
+        {tour.active ? null : <Button title={t('kaspi.onboardingStart')} onPress={tour.start} fullWidth />}
+      </Card>,
+    );
   }
 
   const data = status.data;

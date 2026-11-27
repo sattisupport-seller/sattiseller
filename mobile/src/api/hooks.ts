@@ -430,7 +430,8 @@ export function invalidateShop(qc: ReturnType<typeof useQueryClient>, shopId: st
 
 
 // Аккаунт (К-21): номер продавца — 8 цифр, его называют в поддержке.
-export type MeView = { email?: string | null; seller_number?: string | null; deactivated?: boolean; delete_on?: string | null };
+export type MeView = { email?: string | null; seller_number?: string | null; deactivated?: boolean; delete_on?: string | null;
+  onboarding_done?: boolean };
 
 export function useMe(enabled = true) {
   return useQuery({ queryKey: ['me'], queryFn: () => request<MeView>('/me'), enabled });

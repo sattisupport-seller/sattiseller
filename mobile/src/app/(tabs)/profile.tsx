@@ -10,6 +10,7 @@ import { TabHeader } from '@/components/ui/Header';
 import { Txt } from '@/components/ui/Text';
 import { Badge, GroupCard, ListRow, Section, Card } from '@/components/ui/Surfaces';
 import { Sheet, useToast } from '@/components/ui/Overlays';
+import { useTour } from '@/onboarding/OnboardingProvider';
 import { useSession, type Locale, type ThemeMode } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
@@ -25,6 +26,7 @@ export default function ProfileScreen() {
   const { isDemo, email, themeMode, setThemeMode, logout, shopId } = useSession();
   const config = useAppConfig();
   const reset = useResetDemo();
+  const tour = useTour();
   const me = useMe(!isDemo);
   const sub = useSubscription(isDemo ? null : shopId);
   const sellerNumber = me.data?.seller_number ?? null;
@@ -106,6 +108,7 @@ export default function ProfileScreen() {
 
       <Section title={t('profile.help')}>
         <GroupCard>
+          {!isDemo ? <ListRow title={t('profile.onboarding')} onPress={tour.start} /> : null}
           <ListRow title={t('profile.howProfit')} onPress={() => router.push('/settings/how-profit')} />
           <ListRow title={t('profile.support')} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} />
           <ListRow title={t('profile.privacy')} onPress={() => config.data && Linking.openURL(config.data.privacy_url)} />
