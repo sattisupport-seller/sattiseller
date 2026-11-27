@@ -210,7 +210,9 @@ def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, i
         q0, _p0 = fresh.get(product.id, (0, price))
         fresh[product.id] = (q0 + qty, price)
     # К-17.3/К-18: доставка продавца — расход заказа. Ставим её на первую позицию (сумма по заказу верна).
-    delivery_by_pid: dict[str, int | None] = {pid: None for pid in fresh}
+    # К-30 (найдено ручной сверкой): нет deliveryCostForSeller — продавец доставку не оплачивает, это 0, а не
+    # «неизвестно». Иначе прибыль большинства заказов Kaspi не считалась. Сверить на реальном магазине (KASPI_TEST.md).
+    delivery_by_pid: dict[str, int | None] = {pid: 0 for pid in fresh}
     if fresh and seller_delivery is not None:
         for i, pid in enumerate(fresh):
             delivery_by_pid[pid] = seller_delivery * 100 if i == 0 else 0

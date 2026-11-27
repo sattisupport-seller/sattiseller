@@ -524,9 +524,9 @@ def test_overview_says_when_period_is_older_than_kaspi_history(client, demo, kas
     assert r.json()["history_note"] is None
 
 
-def test_seller_delivery_is_an_expense_and_credit_orders_have_unknown_profit(client, demo, kaspi_on, mock):
-    """К-17.3: доставка, которую оплачивает продавец (deliveryCostForSeller), — расход заказа.
-    Рассрочка (PAY_WITH_CREDIT): комиссия отличается, поэтому прибыль по таким позициям не считаем (delivery = None)."""
+def test_seller_delivery_is_an_expense_and_credit_orders_use_installment_rate(client, demo, kaspi_on, mock):
+    """К-17.3: доставка, которую оплачивает продавец (deliveryCostForSeller), — расход заказа; нет поля — 0.
+    К-18 (заменило К-17): рассрочка (PAY_WITH_CREDIT) — комиссия по тарифу рассрочки продавца, прибыль считается."""
     from app.models import OrderItem as _OI
 
     _connect(client, demo)
@@ -538,7 +538,8 @@ def test_seller_delivery_is_an_expense_and_credit_orders_have_unknown_profit(cli
         assert first_item.buyer_delivery_minor == 50_000  # 500 тенге на первой позиции
         credit_order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000001").one()
         items = db.query(_OI).filter(_OI.order_id == credit_order.id).all()
-        assert items and all(it.buyer_delivery_minor is None for it in items)  # рассрочка — прибыль неизвестна
+        assert items and all(it.buyer_delivery_minor == 0 for it in items)  # без поля доставки — 0 (К-30)
+        assert all(it.commission_rate_bp == 1090 for it in items)  # рассрочка — тариф 10,9 % (К-18)
         plain = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000002").one()
         assert all(it.buyer_delivery_minor == 0 for it in db.query(_OI).filter(_OI.order_id == plain.id).all()[1:])
 

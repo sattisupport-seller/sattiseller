@@ -270,10 +270,15 @@ def build_facts(data: ShopData) -> list[ItemFact]:
             sale = sale_result(line)
             returns: list[ReturnFact] = []
             for ev in item.returns:
+                # К-30: комиссия к возврату не указана (возврат Kaspi по обычному заказу) — по ставке продажи на дату
+                # заказа. Ставка известна на момент отчёта, даже если продавец задал её после синхронизации.
+                commission_back = ev.commission_returned_minor
+                if commission_back is None and ev.refund_minor is not None and rate is not None:
+                    commission_back = apply_bp(ev.refund_minor, rate)
                 raw = Return(
                     returned_qty=ev.returned_qty,
                     refund_minor=ev.refund_minor,
-                    commission_returned_minor=ev.commission_returned_minor,
+                    commission_returned_minor=commission_back,
                     delivery_returned_minor=ev.delivery_returned_minor,
                     reverse_delivery_minor=ev.reverse_delivery_minor,
                     goods_sellable=ev.goods_sellable,
