@@ -40,3 +40,23 @@ def _real_server_error_only(ctx, response, case):
 @settings(max_examples=EXAMPLES, deadline=None, suppress_health_check=list(HealthCheck))
 def test_no_server_errors(case, auth_headers):
     case.call_and_validate(headers=auth_headers, checks=[_real_server_error_only, response_schema_conformance])
+
+
+@pytest.fixture(scope="module")
+def account_headers():
+    """6.3 (К-21): фаззинг с входом в настоящий аккаунт — эндпоинты аккаунта (удаление, деактивация, пуши, настройки,
+    подписка), которые демо-сессии отвечают 403. Аккаунт с магазином и подтверждённым возрастом."""
+    from tests.conftest import confirm_age, login
+
+    with TestClient(app) as c:
+        tokens = login(c, "fuzz-account@example.invalid")
+        headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+        confirm_age(c, headers)
+        c.post("/v1/shops", headers=headers, json={"name": "Фаззинг"})
+        return headers
+
+
+@schema.parametrize()
+@settings(max_examples=EXAMPLES, deadline=None, suppress_health_check=list(HealthCheck))
+def test_no_server_errors_with_account(case, account_headers):
+    case.call_and_validate(headers=account_headers, checks=[_real_server_error_only, response_schema_conformance])

@@ -69,3 +69,43 @@ def test_returned_order_does_not_inflate_sales_and_restores_stock(client, demo, 
         rets = db.scalars(select(ReturnEvent).where(ReturnEvent.item_id.in_([i.id for i in items]))).all()
         assert sum(r.returned_qty for r in rets) == sum(i.qty for i in items)
         assert all(r.goods_sellable is True for r in rets)
+
+
+def test_return_without_warehouse_mark_waits_for_seller_confirmation(client, demo, kaspi_on, mock):  # noqa: F811
+    """К-26: без returnedToWarehouse остаток не растёт; на складе — «Подтвердите возврат», после подтверждения — растёт."""
+    from app.models import Product, ProductStock, StockMovement
+
+    assert _connect(client, demo).status_code == 201
+    mock.generate(1, now=datetime.now(timezone.utc), days=1, state_cycle=["COMPLETED"], products=1)
+    client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
+    with DbSession(engine) as db:
+        k0 = db.scalar(select(Product).where(Product.shop_id == demo["shop_id"], Product.sku == "K0"))
+        pid = k0.id
+    # остаток внесён до выдачи заказа: инвентаризация задним числом на 10 шт.
+    past = datetime(2000, 1, 1, tzinfo=timezone.utc)
+    with DbSession(engine) as db:
+        db.add(ProductStock(shop_id=demo["shop_id"], product_id=pid, qty=10, updated_at=past))
+        db.add(StockMovement(shop_id=demo["shop_id"], product_id=pid, kind="inventory", qty=10, occurred_at=past,
+                             created_at=past))
+        db.commit()
+    code = mock.orders[0]["id"]
+    mock.set_state(code, "RETURNED")
+    from app import kaspi as kaspi_service
+    from app.kaspi_client import KaspiClient
+    from app.models import KaspiConnection
+
+    with DbSession(engine) as db:
+        conn = db.get(KaspiConnection, demo["shop_id"])
+        kaspi_service.refresh_open_orders(db, conn, KaspiClient(mock.token, transport=mock.transport(),
+                                                                sleep=lambda s: None, min_interval=0),
+                                          datetime.now(timezone.utc))
+    stock = {i["productId"]: i for i in client.get(f"/v1/shops/{demo['shop_id']}/stock",
+                                                   headers=demo["headers"]).json()["items"]}[pid]
+    sold = stock["soldSince"]
+    assert stock["pendingReturns"] == sold and stock["current"] == 10 - sold  # остаток не вырос
+    r = client.post(f"/v1/shops/{demo['shop_id']}/products/{pid}/stock/returns", headers=demo["headers"],
+                    json={"sellable": True})
+    assert r.status_code == 200 and r.json()["confirmed"] == sold
+    stock = {i["productId"]: i for i in client.get(f"/v1/shops/{demo['shop_id']}/stock",
+                                                   headers=demo["headers"]).json()["items"]}[pid]
+    assert stock["pendingReturns"] == 0 and stock["current"] == 10

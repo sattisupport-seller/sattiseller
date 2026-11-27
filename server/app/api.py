@@ -1021,7 +1021,8 @@ def _product_of_shop(db: DbSession, shop: Shop, product_id: str) -> Product:
 def _stock_json(st) -> dict:
     return {"productId": st.product_id, "sku": st.sku, "name": st.name, "current": st.current, "baseQty": st.base_qty,
             "soldSince": st.sold_since, "returnedSince": st.returned_since, "avgDaily": st.avg_daily,
-            "daysLeft": st.days_left, "level": st.level, "delisted": st.delisted}
+            "daysLeft": st.days_left, "level": st.level, "delisted": st.delisted,
+            "pendingReturns": st.pending_returns}
 
 
 @api.get("/shops/{shop_id}/products/{product_id}/stock", tags=["склад"])
@@ -1076,6 +1077,28 @@ def put_stock_row(shop_id: str, product_id: str, body: StockIn, principal: Princ
     db.commit()
     reportcache.invalidate(shop.id)  # список «не настроенных» товаров изменился
     return {"qty": row.qty, "updatedAt": row.updated_at.isoformat()}
+
+
+class ReturnConfirmIn(BaseModel):
+    sellable: bool  # True — товар вернулся на склад и годен; False — не вернулся или брак
+
+
+@api.post("/shops/{shop_id}/products/{product_id}/stock/returns", tags=["склад"])
+def stock_confirm_returns(shop_id: str, product_id: str, body: ReturnConfirmIn,
+                          principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+    """К-26: возвраты Kaspi без отметки «вернулся на склад» — продавец подтверждает; годный товар увеличивает остаток."""
+    from .models import OrderItem, ReturnEvent
+
+    shop = shop_for(db, principal, shop_id)
+    _product_of_shop(db, shop, product_id)
+    item_ids = select(OrderItem.id).where(OrderItem.shop_id == shop.id, OrderItem.product_id == product_id)
+    rows = db.scalars(select(ReturnEvent).where(ReturnEvent.shop_id == shop.id, ReturnEvent.goods_sellable.is_(None),
+                                                ReturnEvent.item_id.in_(item_ids))).all()
+    for r in rows:
+        r.goods_sellable = body.sellable
+    db.commit()
+    reportcache.invalidate(shop.id)
+    return {"confirmed": sum(r.returned_qty for r in rows), "sellable": body.sellable}
 
 
 @api.post("/shops/{shop_id}/products/{product_id}/stock/receipt", tags=["склад"])

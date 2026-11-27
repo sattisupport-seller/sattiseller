@@ -172,6 +172,9 @@ export default function Login() {
             />
           ) : null}
 
+          {/* К-26: вход Apple есть только на iPhone — с Android тот же аккаунт открывается через Google */}
+          <Txt variant="footnote" tone="secondary" align="center">{t('login.androidHint')}</Txt>
+
           {GOOGLE_CONFIGURED ? (
             <GoogleSignInButton
               disabled={busy || !accepted}

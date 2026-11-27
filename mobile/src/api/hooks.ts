@@ -488,6 +488,7 @@ export function useVerifyPurchase(shopId: string | null) {
 export type StockItem = {
   productId: string; sku: string; name: string; current: number; baseQty: number; soldSince: number;
   returnedSince: number; avgDaily: number; daysLeft: number | null; level: 'out' | 't3' | 't5' | 't10' | null; delisted: boolean;
+  pendingReturns?: number;  // К-26: возвраты без подтверждения «вернулся на склад»
 };
 
 export function useStockList(shopId: string | null) {
@@ -532,5 +533,10 @@ export function useStockMutations(shopId: string | null) {
       request(`/shops/${shopId}/products/${productId}/stock/relist`, { method: 'POST' }),
     onSuccess: refresh,
   });
-  return { receipt, inventory, delist, relist };
+  const confirmReturns = useMutation({
+    mutationFn: (v: { productId: string; sellable: boolean }) =>
+      request(`/shops/${shopId}/products/${v.productId}/stock/returns`, { method: 'POST', body: { sellable: v.sellable } }),
+    onSuccess: refresh,
+  });
+  return { receipt, inventory, delist, relist, confirmReturns };
 }

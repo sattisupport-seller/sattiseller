@@ -101,6 +101,17 @@ export default function StockScreen() {
                 <Txt variant="body">{s.current} шт.</Txt>
                 {levelText(s) && <Txt variant="body" tone="danger">{levelText(s)}</Txt>}
                 {s.daysLeft !== null && s.current > 0 && <Txt variant="footnote" tone="secondary">{t('stock.daysLeft', { days: s.daysLeft })}</Txt>}
+                {(s.pendingReturns ?? 0) > 0 && (
+                  <View style={{ gap: spacing.xs }}>
+                    <Txt variant="footnote" tone="secondary">{t('stock.confirmReturn', { qty: s.pendingReturns ?? 0 })}</Txt>
+                    <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
+                      <Button title={t('stock.returnBack')} size="S" variant="secondary"
+                        onPress={() => mut.confirmReturns.mutate({ productId: p.product_id, sellable: true })} />
+                      <Button title={t('stock.returnNotBack')} size="S" variant="text"
+                        onPress={() => mut.confirmReturns.mutate({ productId: p.product_id, sellable: false })} />
+                    </View>
+                  </View>
+                )}
               </>
             ) : (
               <Txt variant="footnote" tone="secondary">{t('stock.empty')}</Txt>

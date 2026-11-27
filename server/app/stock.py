@@ -31,6 +31,7 @@ class StockState:
     days_left: int | None
     level: str | None  # out | t3 | t5 | t10 | None
     delisted: bool
+    pending_returns: int = 0  # К-26: вернулось, но годность не подтверждена — остаток не увеличен
 
 
 def _level(current: int) -> str | None:
@@ -90,6 +91,8 @@ def stock_states(db: DbSession, shop: Shop, now: datetime | None = None) -> dict
         sold_gross = sold + cancelled
         returned = sum(q for rpid, q, confirmed, sellable in returns
                        if rpid == pid and sellable and _aware(confirmed) >= base_at)
+        pending = sum(q for rpid, q, confirmed, sellable in returns
+                      if rpid == pid and sellable is None and _aware(confirmed) >= base_at)
         current = base_qty + receipts - sold + returned
         recent = sum(q for ipid, q, created, status in items
                      if ipid == pid and status not in CANCEL and _aware(created) >= recent_cut)
@@ -97,7 +100,7 @@ def stock_states(db: DbSession, shop: Shop, now: datetime | None = None) -> dict
         days = int(current / avg) if avg > 0 and current > 0 else (0 if current <= 0 else None)
         row = legacy.get(pid)
         out[pid] = StockState(pid, p.sku, p.name, base_qty, base_at, sold_gross, returned, current,
-                              round(avg, 2), days, _level(current), bool(row.delisted) if row else False)
+                              round(avg, 2), days, _level(current), bool(row.delisted) if row else False, pending)
     return out
 
 
