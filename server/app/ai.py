@@ -1134,7 +1134,12 @@ def confidence(plan: Plan, estimates: bool = False) -> tuple[str | None, str | N
 # ---------- сервис ----------
 
 def check_quota(db: DbSession, user_id: str | None, shop_id: str, now: datetime) -> int:
-    start = datetime.combine(now.date(), datetime.min.time(), tzinfo=timezone.utc)
+    # К-30, D9: сутки лимита — по Алматы (полночь продавца), а не по UTC (было: сброс в 05:00 по Алматы)
+    from zoneinfo import ZoneInfo
+
+    almaty = ZoneInfo("Asia/Almaty")
+    local = (now if now.tzinfo else now.replace(tzinfo=timezone.utc)).astimezone(almaty)
+    start = datetime.combine(local.date(), datetime.min.time(), tzinfo=almaty).astimezone(timezone.utc)
     if user_id:
         used = db.scalar(select(func.count()).select_from(AIUsageEvent).where(
             AIUsageEvent.user_id == user_id, AIUsageEvent.created_at >= start))

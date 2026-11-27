@@ -487,6 +487,10 @@ def seller_special_grant(number: str, body: SpecialIn, admin: User = Depends(req
     if row.user_id is None:
         raise ApiError(409, "account_deleted", "Аккаунт этого продавца удалён.")
     sa = grant_special(db, row.number, body.months, body.comment)
+    if row.shop_id:  # К-30, D3: отсчёт хранения и письма начнутся заново после окончания этого доступа
+        from .billing import reset_retention
+
+        reset_retention(db, row.shop_id)
     db.commit()
     _audit(db, admin, "special_access_grant", f"seller:{row.number}:{_aware(sa.ends_at).date().isoformat()}",
            row.shop_id)
@@ -501,6 +505,10 @@ def seller_special_cancel(number: str, body: ConfirmIn, admin: User = Depends(re
     _confirmed(body)
     row = _seller(db, number)
     cancel_special(db, row.number)
+    if row.shop_id:  # К-30, D3: отсчёт 90 дней — от отмены, а не от старого окончания подписки
+        from .billing import reset_retention
+
+        reset_retention(db, row.shop_id)
     db.commit()
     _audit(db, admin, "special_access_cancel", f"seller:{row.number}", row.shop_id)
     return _seller_view(db, row)

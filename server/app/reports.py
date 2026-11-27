@@ -454,6 +454,7 @@ def product_stats(data: ShopData, facts: list[ItemFact], period: Period) -> dict
                 if f.complete:
                     a["net_c"] -= r.refund
                     a["profit"] += r.delta or 0
+                    a["complete_any"] = True  # К-30, D7: период только с возвратом — прибыль известна (минус)
                 else:
                     a["unknown"] = True
 

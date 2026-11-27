@@ -238,14 +238,44 @@ def special_until(db: DbSession, shop: Shop, now: datetime | None = None) -> dat
     return _aware(sa.ends_at) if sa is not None else None
 
 
+def special_ended_at(db: DbSession, shop_id: str, now: datetime) -> datetime | None:
+    """Когда закончился последний доступ без подписки от владельца (или его досрочная отмена)."""
+    from . import seller_access
+
+    row = seller_access.for_shop(db, shop_id)
+    if row is None:
+        return None
+    ends = []
+    for sa in db.scalars(select(seller_access.SpecialAccess).where(seller_access.SpecialAccess.number == row.number)).all():
+        end = _aware(sa.cancelled_at) if sa.cancelled_at is not None else _aware(sa.ends_at)
+        end = min(end, _aware(sa.ends_at))
+        if end <= now:
+            ends.append(end)
+    return max(ends) if ends else None
+
+
+def reset_retention(db: DbSession, shop_id: str) -> None:
+    """К-30, D3: доступ открыт заново (особые условия) — отсчёт 90 дней и письма начинаются с нуля."""
+    sub = get_subscription(db, shop_id)
+    if sub is not None:
+        sub.lapsed_at = None
+    db.execute(delete(RetentionEvent).where(RetentionEvent.shop_id == shop_id))
+
+
 def mark_lapsed(db: DbSession, now: datetime | None = None) -> int:
-    """Фиксирует момент окончания доступа: от него считаются 90 дней хранения."""
+    """Фиксирует момент окончания доступа: от него считаются 90 дней хранения.
+    К-30, D3: если после подписки был доступ без подписки от владельца — отсчёт от его окончания."""
     now = now or _now()
     count = 0
     for sub in db.scalars(select(Subscription).where(Subscription.lapsed_at.is_(None),
                                                      Subscription.deleted_at.is_(None))).all():
         if not has_access(sub, now):
-            sub.lapsed_at = _aware(sub.access_until) or now
+            shop = db.get(Shop, sub.shop_id)
+            if shop is not None and special_until(db, shop, now) is not None:
+                continue  # доступ открыт владельцем — хранение не начинается
+            lapsed = _aware(sub.access_until) or now
+            special_end = special_ended_at(db, sub.shop_id, now)
+            sub.lapsed_at = max(lapsed, special_end) if special_end else lapsed
             count += 1
     db.commit()
     return count

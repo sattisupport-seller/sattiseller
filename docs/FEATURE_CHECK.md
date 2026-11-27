@@ -11,17 +11,17 @@
 | Токен один раз, предупреждение «Понятно, подключить»; отключения нет | `api.py` kaspi_connect/kaspi_disconnect; `kaspi.tsx` | `test_seller_access.py` (`test_token_can_be_connected_only_once`, `test_kaspi_cannot_be_disconnected_separately`); jest `kaspi-connect-flow` | ✅ тесты |
 | Без обучения подключение закрыто | `api.py` (onboarding_required); `kaspi.tsx` | `test_onboarding.py`; jest `kaspi-onboarding-gate` | ✅ тесты |
 | Первая загрузка: 7 дней сразу, догрузка 90 дней, прогресс | `kaspi.py` sync/_backfill_pass | `test_kaspi_first_load.py`, `test_e2e_seller_journey.py` (а) | 🟡 моки |
-| Синхронизация раз в 15 минут без дублей, ночное перечитывание 60 дней | `kaspi.py` sync_due, refresh_open_orders; `scheduler.py` | `test_kaspi.py`, `test_scheduler.py` | 🟡 моки |
+| Синхронизация раз в 15 минут без дублей; ночное перечитывание (03:00 по Алматы) заказов с открытым окном возврата (не выданы или выданы ≤ 17 дней), свежие первыми | `kaspi.py` sync_due, refresh_open_orders; `scheduler.py` nightly_due | `test_kaspi.py`, `test_independent_check_fixes.py` (D1, D2) | 🟡 моки |
 | Коды складов (storeId) | `kaspi.py` set_store_ids; `kaspi.tsx` | `test_kaspi.py`; jest `kaspi-store-flow` | 🟡 моки |
 | Названия и категории товаров из Kaspi | `kaspi.py` _product_for | `test_kaspi.py` | 🟡 моки |
 
 ## 2. Прибыль
 | Функция | Код | Тесты | Статус |
 |---|---|---|---|
-| Формула продажи и возврата (до тенге) | `app/finance.py` | `test_units.py`, `test_golden.py`, `test_finance_properties.py`, **`test_e2e_profit_by_hand.py`** | ✅ тесты |
+| Формула продажи и возврата (округление до тиына по строке, показ — в тенге) | `app/finance.py` | `test_units.py`, `test_golden.py`, `test_finance_properties.py`, **`test_e2e_profit_by_hand.py`** | ✅ тесты |
 | Себестоимость с датой (ко всей истории / с даты) | `api.py` cost_version_create; `reports.py` unit_cost_on; `product/cost/[id].tsx` | `test_qa_full.py`, `test_api.py`; jest `product-cost-flow` | ✅ тесты |
 | Комиссии по категориям с датой | `api.py` commissions; `reports.py` rate_on; `settings/commissions.tsx` | `test_flow.py`, `test_tax_api.py`; jest `commissions-settings` | ✅ тесты |
-| Рассрочка и кредит — тариф 10,9 % (меняется продавцом) | `kaspi.py` installment_rate_bp | `test_kaspi.py`, `test_e2e_profit_by_hand.py` | ✅ тесты |
+| Рассрочка и кредит — тариф 10,9 % (меняется продавцом, по дате заказа; записанная ставка задним числом не меняется) | `kaspi.py` installment_rate_bp | `test_kaspi.py`, `test_e2e_profit_by_hand.py`, `test_independent_check_fixes.py` (D5) | ✅ тесты |
 | Kaspi Доставка за счёт продавца — расход; нет поля — 0 | `kaspi.py` _reconcile | `test_kaspi.py`, `test_e2e_profit_by_hand.py` | ✅ тесты (реальное поле — KASPI_TEST.md) |
 | Реклама и прочие расходы (прибыль магазина) | `api.py` expenses; `settings/expenses.tsx` | `test_flow.py`, `test_qa_security.py`; jest `expenses-settings` | ✅ тесты |
 | Налог (ставка с датой, возврат налога при возврате) | `api.py` tax; `reports.py` tax_rate_bp_on; `settings/tax.tsx` | `test_tax.py`, `test_tax_api.py`, `test_e2e_profit_by_hand.py`; jest `tax-settings` | ✅ тесты |
@@ -41,8 +41,8 @@
 ## 3. Отмены и возвраты
 | Функция | Код | Тесты | Статус |
 |---|---|---|---|
-| Отмена и частичная отмена Kaspi (движение склада «cancel») | `kaspi.py` _reconcile, _log_cancel | `test_kaspi.py`, `test_stock_scenarios.py` | 🟡 моки |
-| Возврат Kaspi — по каждой позиции (RETURNED) | `kaspi.py` _ensure_full_return | `test_kaspi_returns.py` | 🟡 моки |
+| Отмена и частичная отмена Kaspi (движение склада «cancel»); пустой ответ позиций не удаляет заказ | `kaspi.py` _reconcile, _log_cancel | `test_kaspi.py` (partial_cancel), `test_stock_kaspi.py`, `test_independent_check_fixes.py` (D8) | 🟡 моки |
+| Возврат Kaspi — по каждой позиции (RETURNED); старый возврат при первой загрузке датируется выдачей, новый — временем синхронизации (Kaspi не даёт дату возврата) | `kaspi.py` _ensure_full_return | `test_kaspi_returns.py`, `test_independent_check_fixes.py` (D4) | 🟡 моки |
 | Окно возврата 14 дней от выдачи + 3 дня | `kaspi.py` return_window_open | `test_kaspi.py` | 🟡 моки |
 | Подтверждение возврата на склад | `api.py` stock_confirm_returns; `stock.tsx` | `test_kaspi_returns.py`; jest `stock-return-confirm`, `seller-journey` | ✅ тесты |
 
@@ -73,7 +73,7 @@
 | Функция | Код | Тесты | Статус |
 |---|---|---|---|
 | Помощник: ответы по данным, отказы, маскировка покупателей | `ai.py`, `privacy.py` | `test_ai_*.py`, `test_buyer_masking.py`, `test_privacy.py` | ✅ тесты (живая модель — по ключу) |
-| 30 запросов в день на аккаунт (все устройства) | `ai.py` check_quota | `test_ai_quota_per_account.py`, `test_ai_quota_race.py`, `test_e2e_seller_journey.py` (б) | ✅ тесты |
+| 30 запросов в день на аккаунт (все устройства), сутки — по Алматы; вопросы и черновики вместе | `ai.py` check_quota | `test_ai_quota_per_account.py` (лимит 30, два устройства), `test_ai_quota_race.py`, `test_independent_check_fixes.py` (D9), `test_e2e_seller_journey.py` (б) | ✅ тесты |
 | Бюджет ИИ, письма 80/100 % | `ai.py` require_budget, check_budget_alerts | `test_ai_budget.py`, `test_ai_budget_thresholds.py` | ✅ тесты |
 | Карточка товара (фото, проверка чисел, шаблон при сбое, резерв квоты) | `draft_ai.py`, `api.py` ai_product_draft | `test_draft_ai.py`, `test_ai_drafts_k12.py`, `test_security_audit_fixes.py`; jest `product-draft-flow`, `draft-consent-flow` | ✅ тесты |
 | Ответ покупателю (шаблон) | `ai.py` reply_draft | `test_flow.py`; jest `reply-draft-flow` | ✅ тесты |
@@ -99,8 +99,8 @@
 | Покупки App Store и Google Play, уведомления, восстановление | `store_billing.py`; `paywall.tsx`, `lib/purchases.ts` | `test_store_billing.py`; jest `paywall-store`, `paywall-flow` | 🟡 моки (аккаунты, dev build) |
 | Пробный период: только после Kaspi; один на телефон, магазин, аккаунт | `billing.py` trial_decision; `device_trust.py` | `test_store_billing.py`, `test_billing.py`, `test_billing_marks.py`, `test_e2e_seller_journey.py` (в) | 🟡 моки (DeviceCheck/Play Integrity) |
 | Номер продавца, один магазин — один аккаунт, второй магазин запрещён | `seller_access.py`; `api.py` shops_create | `test_seller_access.py` | ✅ тесты |
-| Несколько устройств — те же данные | `auth.py` shop_for | `test_e2e_seller_journey.py` (б) | ✅ тесты |
-| Конец подписки: экран, хранение 90 дней | `billing.py`; `subscription-ended.tsx` | `test_billing.py`, `test_qa_money_scheduler.py`; jest `subscription-ended-flow` | ✅ тесты |
+| Несколько устройств — те же данные (расход с одного телефона виден на другом) | `auth.py` shop_for | `test_e2e_seller_journey.py` (б) | ✅ тесты |
+| Конец подписки: экран, хранение 90 дней; доступ от владельца перезапускает отсчёт | `billing.py`; `subscription-ended.tsx` | `test_billing.py`, `test_qa_money_scheduler.py`, `test_independent_check_fixes.py` (D3); jest `subscription-ended-flow` | ✅ тесты |
 
 ## 11. Удаление и деактивация
 | Функция | Код | Тесты | Статус |
@@ -125,7 +125,25 @@
 
 ## Добавлено в этой проверке
 - Сквозные сценарии а–г и ручная сверка прибыли (раньше не было).
-- Функций «без теста» не найдено: каждая из списка покрыта хотя бы одним тестом сервера или jest.
+- Ночной цикл перечитывания Kaspi тестами не был покрыт и **не работал** (D1) — теперь покрыт.
+
+## Независимая перепроверка (К-30 п.3, отдельный агент, не писал этот код)
+Ручная сверка прибыли **подтверждена** его собственным расчётом (7 888 ₸, 18 000 ₸, покрытие 100 %). Найдено и исправлено с тестами (`test_independent_check_fixes.py`):
+
+| ID | Уровень | Что было | Исправление |
+|---|---|---|---|
+| D1 | CRITICAL | ночной поток перечитывания Kaspi падал на импорте несуществующей константы — в бою не запускался ни разу; поздние возвраты и выдачи не попадали в Satti | константа `NIGHTLY_HOUR`, решение «пора ли» — отдельной функцией с тестом |
+| D2 | HIGH | перечитывались 2000 **самых старых** заказов — у крупного магазина свежие не проверялись | в выборке только заказы с открытым окном возврата, свежие первыми |
+| D3 | HIGH | после доступа от владельца отсчёт 90 дней шёл от старого окончания подписки — данные могли удалиться сразу | выдача и отмена доступа сбрасывают отсчёт; 90 дней — от окончания доступа |
+| D4 | MEDIUM | все старые возвраты при первой загрузке ложились на день подключения | старый возврат датируется выдачей заказа |
+| D5 | MEDIUM | тариф рассрочки с будущей даты применялся сразу и переписывал старые заказы | ставка — на дату заказа; записанная не меняется |
+| D7 | MEDIUM | товар с одним возвратом в периоде показывался «нет данных», бейдж «в минусе» пропадал | прибыль известна и отрицательна |
+| D8 | LOW–MEDIUM | пустой ответ позиций Kaspi удалял позиции заказа вместе с возвратами | пустой ответ у неотменённого заказа игнорируется |
+| D9 | LOW | сутки лимита ИИ — по UTC (сброс в 05:00 по Алматы) | сутки по Алматы |
+
+Не исправлено (решение владельца или ТЗ):
+- **D6** — налог при возврате берётся по ставке на дату возврата, как прямо требует ТЗ 2.1, раздел 7.1. Если ставка налога меняется между продажей и возвратом, итог заказа не равен нулю (пример: продажа без налога, возврат после введения 3 % → +150 ₸ на 5 000 ₸). Вопрос владельцу: оставить по ТЗ или возвращать налог по ставке продажи (рекомендация — по ставке продажи).
+- **D10** (LOW, только показ «продано всего» при частичной отмене старого заказа) и **D11** (магазин, ни разу не оформивший подписку, не попадает под удаление через 90 дней — правило хранения 0/60/83/90 не меняем по К-21) — записаны в LAUNCH_PLAN.
 
 ## Что нельзя проверить без аккаунтов и сервера — когда и как
 | Что | Когда | Как |

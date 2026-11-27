@@ -88,9 +88,16 @@ def test_a_new_seller_full_journey(client, env, stores):  # noqa: F811
     assert client.post(f"/v1/shops/{shop_id}/cost-versions/bulk", headers=headers,
                        json={"items": items, "apply_to_history": True}).status_code == 200
     assert client.get(f"/v1/shops/{shop_id}/products/missing-costs", headers=headers).json()["items"] == []
+    # без ставки комиссии категории прибыль «неизвестна» (уточнить комиссию) — продавец задаёт ставку
+    cov = client.get(f"/v1/shops/{shop_id}/overview?period=90d", headers=headers).json()["kpi"]["coverage_bp"]
+    assert cov < 10000
+    assert client.post(f"/v1/shops/{shop_id}/commissions", headers=headers,
+                       json={"category": "Посуда для кухни", "rate_percent": "12"}).status_code == 201
     # прибыль по магазину и по товарам
     ov = client.get(f"/v1/shops/{shop_id}/overview?period=90d", headers=headers).json()
-    assert ov["kpi"]["profit_minor"] is not None and ov["kpi"]["orders_count"] > 0
+    # все 40 заказов загружены и посчитаны полностью; прибыль положительная (цена 1000–1010 ₸, себестоимость 500 ₸)
+    assert ov["kpi"]["orders_count"] == 40, ov["kpi"]
+    assert ov["kpi"]["coverage_bp"] == 10000 and ov["kpi"]["profit_minor"] > 0, ov["kpi"]
     products = client.get(f"/v1/shops/{shop_id}/products?period=90d", headers=headers).json()["items"]
     assert products and all(p.get("profit_minor") is not None for p in products)
 
@@ -120,14 +127,24 @@ def test_a_new_seller_full_journey(client, env, stores):  # noqa: F811
     assert _stock(client, headers, shop_id, pid)["current"] == 12
 
     # отчёт и выгрузки
+    import io
+    import zipfile
+
     x = client.get(f"/v1/shops/{shop_id}/exports/profit.xlsx?period=90d", headers=headers)
     assert x.status_code == 200 and x.content[:2] == b"PK"
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(x.content))
+    assert sum(ws.max_row for ws in wb.worksheets) > 40  # строки по заказам и товарам, а не пустой файл
     z = client.get("/v1/me/export", headers=headers)
-    assert z.status_code == 200 and z.content[:2] == b"PK"
+    assert z.status_code == 200
+    names = zipfile.ZipFile(io.BytesIO(z.content)).namelist()
+    assert {"profile.json", "shop.xlsx", "subscription.json"} <= set(names), names  # данные аккаунта и магазина
 
     # помощник и карточка ИИ (без ключа модели — правила и шаблон)
     a = client.post(f"/v1/shops/{shop_id}/ai/ask", headers=headers, json={"question": "Сколько заказов за неделю?"})
     assert a.status_code == 200, a.text
+    assert a.json().get("renderedAnswer"), a.json()  # ответ с цифрами из данных магазина
     d = client.post("/v1/ai/product-drafts", headers=headers, data={"shop_id": shop_id, "facts": "Кружка 350 мл"})
     assert d.status_code == 201
 
@@ -161,6 +178,11 @@ def test_b_second_device_same_data_and_shared_quota(client, monkeypatch):
     assert [s["id"] for s in client.get("/v1/shops", headers=phone_b).json()["items"]] == [shop_id]
     assert client.get(f"/v1/shops/{shop_id}/overview", headers=phone_a).json() == \
         client.get(f"/v1/shops/{shop_id}/overview", headers=phone_b).json()
+    # те же данные: расход, внесённый на первом телефоне, виден на втором
+    assert client.post(f"/v1/shops/{shop_id}/expenses", headers=phone_a, json={
+        "kind": "ads", "amount": "45000", "period_start": "2026-11-01", "period_end": "2026-11-30"}).status_code == 201
+    exp_b = client.get(f"/v1/shops/{shop_id}/expenses", headers=phone_b).json()["items"]
+    assert len(exp_b) == 1 and exp_b[0]["amount_minor"] == 4_500_000
     ask = {"question": "Когда доставка?", "tone": "polite"}
     assert client.post("/v1/ai/reply-drafts", params={"shop_id": shop_id}, headers=phone_a, json=ask).status_code == 201
     assert client.post("/v1/ai/reply-drafts", params={"shop_id": shop_id}, headers=phone_b, json=ask).status_code == 201

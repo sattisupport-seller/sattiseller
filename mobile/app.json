@@ -137,7 +137,7 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Satti Seller использует камеру, чтобы снять фото товара для описания. / Satti Seller тауар суретін описание үшін түсіру үшін камераны пайдаланады.",
+          "cameraPermission": "Satti Seller использует камеру, чтобы снять фото товара для описания.",
           "photosPermission": false,
           "microphonePermission": false
         }
@@ -160,7 +160,8 @@
       [
         "expo-notifications",
         {
-          "color": "#0E7C66"
+          "color": "#0E7C66",
+          "icon": "./assets/notification-icon.png"
         }
       ]
     ],

@@ -123,16 +123,28 @@ def run_kaspi_nightly_reread(now: datetime | None = None) -> list[tuple[str, str
     return done
 
 
+NIGHTLY_HOUR = 3  # ночное перечитывание заказов Kaspi — с 03:00 по Алматы
+
+
+def nightly_due(now_utc: datetime, last_day) -> bool:
+    """Пора ли ночное перечитывание: после 03:00 по Алматы и ещё не было сегодня (К-30, D1: раньше поток падал
+    на импорте несуществующей константы и в бою не запускался ни разу)."""
+    from zoneinfo import ZoneInfo
+
+    local = now_utc.astimezone(ZoneInfo("Asia/Almaty"))
+    return local.hour >= NIGHTLY_HOUR and last_day != local.date()
+
+
 def _kaspi_nightly_loop() -> None:
     """Проверка раз в час; задача запускается один раз в сутки в 03:00 по Алматы (UTC+5)."""
     from zoneinfo import ZoneInfo
-    from .kaspi import REREAD_TOOK_HOURS
 
     tz = ZoneInfo("Asia/Almaty")
     last_day = None
     while not _stop.is_set():
-        local = datetime.now(timezone.utc).astimezone(tz)
-        if local.hour >= REREAD_TOOK_HOURS and last_day != local.date():
+        now = datetime.now(timezone.utc)
+        local = now.astimezone(tz)
+        if nightly_due(now, last_day):
             try:
                 run_kaspi_nightly_reread()
                 last_day = local.date()

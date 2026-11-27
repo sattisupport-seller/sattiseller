@@ -204,6 +204,11 @@ def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, i
                credit: bool = False) -> bool:
     """Приводит позиции заказа к данным Kaspi: количество, цена, удаление позиций, которых больше нет.
     Частичная отмена уменьшает количество — прибыль и остатки пересчитываются по позициям. Возвращает, менялось ли."""
+    if not lines and order.status != "cancelled":
+        # К-30, D8: пустой список позиций у неотменённого заказа — скорее сбой Kaspi, чем «всё отменено»:
+        # не удаляем позиции (вместе с ними удалились бы возвраты и записался бы «cancel» в склад)
+        log.warning("kaspi order %s: empty entries ignored", order.number)
+        return False
     fresh: dict[str, tuple[int, int]] = {}  # product_id -> (количество, цена)
     for sku, qty, price, name, category in lines:
         product = _product_for(db, shop.id, products, sku, name or sku, category)
@@ -217,7 +222,8 @@ def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, i
         for i, pid in enumerate(fresh):
             delivery_by_pid[pid] = seller_delivery * 100 if i == 0 else 0
     # К-18: при рассрочке/кредите комиссия — ставка рассрочки (тариф продавца), а не ставка категории
-    rate_bp = installment_rate_bp(db, shop.id) if credit else None
+    order_day = order.created_at.date() if order.created_at else None
+    rate_bp = installment_rate_bp(db, shop.id, order_day) if credit else None
     existing: dict[str, list[OrderItem]] = {}
     for it in db.scalars(select(OrderItem).where(OrderItem.order_id == order.id)).all():
         existing.setdefault(it.product_id, []).append(it)
@@ -250,8 +256,12 @@ def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, i
         if keep.buyer_delivery_minor != delivery_by_pid.get(pid):
             keep.buyer_delivery_minor = delivery_by_pid.get(pid)
             changed = True
-        if keep.commission_rate_bp != rate_bp and (credit or keep.commission_rate_bp is not None):
+        # К-30, D5: ставку уже записанной позиции не переписываем задним числом (смена тарифа — только для новых)
+        if credit and keep.commission_rate_bp is None:
             keep.commission_rate_bp = rate_bp
+            changed = True
+        elif not credit and keep.commission_rate_bp is not None:
+            keep.commission_rate_bp = None  # заказ перестал быть рассрочкой — ставка категории
             changed = True
     return changed
 
@@ -274,7 +284,8 @@ def _needs_refresh(order: Order, status: str, now: datetime) -> bool:
     return return_window_open(order, status, now)
 
 
-def _ensure_full_return(db: DbSession, order: Order, now: datetime, to_warehouse: bool | None) -> int:
+def _ensure_full_return(db: DbSession, order: Order, now: datetime, to_warehouse: bool | None,
+                        historic: bool = False) -> int:
     """2.5: заказ Kaspi в статусе RETURNED — возврат по каждой позиции на всё оставшееся количество.
     Без этого возвращённый заказ считался продажей: прибыль завышалась, остаток уменьшался.
     Повторный вызов ничего не добавляет. Комиссия считается возвращённой по ставке позиции (сверить на реальном магазине);
@@ -293,7 +304,10 @@ def _ensure_full_return(db: DbSession, order: Order, now: datetime, to_warehouse
         if left <= 0:
             continue
         gross = item.unit_price_minor * left
-        db.add(ReturnEvent(item_id=item.id, shop_id=order.shop_id, returned_qty=left, confirmed_at=now,
+        # К-30, D4: Kaspi не даёт дату возврата. Заказ увидели уже возвращённым (первая загрузка, догрузка) —
+        # датируем выдачей, иначе все старые возвраты попали бы на день подключения; новый возврат — временем синхронизации
+        when = (order.completed_at or now) if historic else now
+        db.add(ReturnEvent(item_id=item.id, shop_id=order.shop_id, returned_qty=left, confirmed_at=when,
                            refund_minor=gross,
                            commission_returned_minor=(apply_bp(gross, item.commission_rate_bp)
                                                       if item.commission_rate_bp is not None else None),
@@ -324,7 +338,7 @@ def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: d
             db.flush()
             _reconcile(db, shop, order, _lines(client, ko.code), products, now, ko.seller_delivery, ko.credit)
             if status == "returned":
-                _ensure_full_return(db, order, now, ko.returned_to_warehouse)
+                _ensure_full_return(db, order, now, ko.returned_to_warehouse, historic=True)
             added += 1
             continue
         if order.status != status:
@@ -619,11 +633,14 @@ INSTALLMENT_CATEGORY = "Рассрочка Kaspi"  # категория тари
 INSTALLMENT_DEFAULT_BP = 1090  # 10,9% — ставка продажи в рассрочку по официальной странице Kaspi (К-18); продавец может изменить
 
 
-def installment_rate_bp(db: DbSession, shop_id: str) -> int:
+def installment_rate_bp(db: DbSession, shop_id: str, day: date | None = None) -> int:
+    """Тариф рассрочки продавца на дату заказа (К-30, D5: раньше бралась самая поздняя ставка, даже будущая)."""
     from .models import CommissionPreset
-    row = db.scalar(select(CommissionPreset).where(CommissionPreset.shop_id == shop_id,
-                                                   CommissionPreset.category == INSTALLMENT_CATEGORY)
-                    .order_by(CommissionPreset.effective_from.desc()).limit(1))
+    q = select(CommissionPreset).where(CommissionPreset.shop_id == shop_id,
+                                       CommissionPreset.category == INSTALLMENT_CATEGORY)
+    if day is not None:
+        q = q.where((CommissionPreset.effective_from.is_(None)) | (CommissionPreset.effective_from <= day))
+    row = db.scalar(q.order_by(CommissionPreset.effective_from.desc()).limit(1))
     return row.rate_bp if row is not None else INSTALLMENT_DEFAULT_BP
 
 
@@ -647,9 +664,16 @@ def _refresh_open_locked(db: DbSession, conn: KaspiConnection, client: KaspiClie
     shop = db.get(Shop, conn.shop_id)
     if shop is None:
         raise KaspiUnavailable("магазин не найден")
+    # К-30, D2: в SQL — только заказы, за которыми ещё следим (не выданы или выданы не раньше 14 + 3 дней),
+    # свежие первыми. Раньше брались 2000 самых старых неотменённых — у крупного магазина свежие не проверялись.
+    from sqlalchemy import or_
+
+    window_start = now - timedelta(days=RETURN_WINDOW_DAYS + RETURN_GRACE_DAYS)
     candidates = db.scalars(
-        select(Order).where(Order.shop_id == shop.id, Order.status != "cancelled")
-        .order_by(Order.created_at).limit(MAX_OPEN_REFRESH)
+        select(Order).where(Order.shop_id == shop.id, Order.status != "cancelled",
+                            or_(Order.status.in_(("pending", "in_progress")), Order.completed_at.is_(None),
+                                Order.completed_at >= window_start))
+        .order_by(Order.created_at.desc()).limit(MAX_OPEN_REFRESH)
     ).all()
     products: dict[str, Product] = {}
     checked = updated = items_changed = 0
