@@ -42,6 +42,9 @@ def delete_user_account(db: DbSession, user: User) -> None:
     if shop_ids:
         # подписка и отметки хранения относятся к магазину; сами магазины и их данные удаляются каскадно
         db.execute(delete(Subscription).where(Subscription.shop_id.in_(shop_ids)))
+        from .store_billing import StorePurchase  # аудит 27.11, L1: ключ покупки магазина — тоже данные аккаунта
+
+        db.execute(delete(StorePurchase).where(StorePurchase.shop_id.in_(shop_ids)))
         db.execute(delete(RetentionEvent).where(RetentionEvent.shop_id.in_(shop_ids)))
         db.execute(delete(AIFeedback).where(AIFeedback.shop_id.in_(shop_ids)))  # оценки и жалобы — сразу при удалении аккаунта (решение владельца 22.11)
         db.execute(delete(Shop).where(Shop.id.in_(shop_ids)))
@@ -134,3 +137,27 @@ def purge_deactivated(db: DbSession, now: datetime) -> int:
     for user in users:
         delete_user_account(db, user)
     return len(users)
+
+
+def check_delete_code(db: DbSession, user: User, code: str) -> bool:
+    """Код удаления или деактивации из письма (аудит 27.11, M1/M2): верный — True и код погашен.
+    Неверный — атомарно +1 к попыткам; после settings.code_max_attempts код сгорает (нужен новый из письма)."""
+    from sqlalchemy import update
+
+    from .config import settings
+    from .security import hash_code
+
+    row = db.scalar(select(AuthCode).where(AuthCode.user_id == user.id, AuthCode.purpose == "delete",
+                                           AuthCode.used.is_(False)).order_by(AuthCode.expires_at.desc()))
+    if row is None or _aware(row.expires_at) < datetime.now(timezone.utc) or row.attempts >= settings.code_max_attempts:
+        return False
+    if hash_code(user.email, code.strip()) != row.code_hash:
+        db.execute(update(AuthCode).where(AuthCode.id == row.id).values(attempts=AuthCode.attempts + 1))
+        db.execute(update(AuthCode).where(AuthCode.id == row.id, AuthCode.attempts >= settings.code_max_attempts)
+                   .values(used=True))
+        db.commit()
+        return False
+    done = db.execute(update(AuthCode).where(AuthCode.id == row.id, AuthCode.used.is_(False))
+                      .values(used=True)).rowcount  # два параллельных запроса с верным кодом — проходит один
+    db.commit()
+    return bool(done)

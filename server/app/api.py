@@ -16,7 +16,7 @@ from fastapi.responses import PlainTextResponse
 from openpyxl import Workbook
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
@@ -77,7 +77,7 @@ from .periods import Period, PeriodError, resolve, today_in
 from . import billing, device_trust, push, seller_access, store_billing  # noqa: F401 — push: таблицы для create_all
 from .billing import get_subscription, start_trial, subscription_view, trial_decision, wipe_shop_content
 from .device_trust import DeviceVerdict
-from .models import AuditEvent
+from .models import AIUsageEvent, AuditEvent
 import hmac
 from .exports import profit_filename, profit_workbook, user_export_zip
 from . import reportcache
@@ -437,6 +437,8 @@ def me_update(body: MeIn, principal: Principal = Depends(get_principal), db: DbS
 def deletion_start(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session),
                    accept_language: str | None = Header(default=None)) -> dict:
     user = current_user(principal, db)
+    if not allow(f"delstart:{user.id}", 5, db=db):  # аудит 27.11, M2: письма с кодом не бесконечно
+        raise ApiError(429, "rate_limited", "Слишком много запросов кода. Попробуйте через час.")
     code = new_code()
     db.add(AuthCode(email=user.email, purpose="delete", user_id=user.id, code_hash=hash_code(user.email, code),
                     expires_at=utcnow() + timedelta(minutes=settings.code_ttl_minutes)))
@@ -459,12 +461,9 @@ class ConfirmIn(BaseModel):
 @api.post("/me/deletion/confirm", tags=["пользователь"])
 def deletion_confirm(body: ConfirmIn, principal: Principal = Depends(get_principal),
                      db: DbSession = Depends(get_session)) -> dict:
-    from .auth import aware
 
     user = current_user(principal, db)
-    row = db.scalar(select(AuthCode).where(AuthCode.user_id == user.id, AuthCode.purpose == "delete",
-                                           AuthCode.used.is_(False)).order_by(AuthCode.expires_at.desc()))
-    if row is None or aware(row.expires_at) < utcnow() or hash_code(user.email, body.code) != row.code_hash:
+    if not accounts_service.check_delete_code(db, user, body.code):  # аудит 27.11, M2: попытки ограничены
         raise ApiError(400, "code_invalid")
     delete_user_account(db, user)  # AUD-08: все записи аккаунта, одна реализация для приложения и веба
     return {"status": "deleted"}
@@ -484,14 +483,10 @@ def onboarding_complete(principal: Principal = Depends(get_principal), db: DbSes
 def deactivation_confirm(body: ConfirmIn, principal: Principal = Depends(get_principal),
                          db: DbSession = Depends(get_session)) -> dict:
     """К-21: «Деактивировать на 30 дней» — тот же код из письма, что и для удаления (/me/deletion/start)."""
-    from .auth import aware
 
     user = current_user(principal, db)
-    row = db.scalar(select(AuthCode).where(AuthCode.user_id == user.id, AuthCode.purpose == "delete",
-                                           AuthCode.used.is_(False)).order_by(AuthCode.expires_at.desc()))
-    if row is None or aware(row.expires_at) < utcnow() or hash_code(user.email, body.code) != row.code_hash:
+    if not accounts_service.check_delete_code(db, user, body.code):  # аудит 27.11, M2: попытки ограничены
         raise ApiError(400, "code_invalid")
-    row.used = True
     delete_on = accounts_service.deactivate_user(db, user, _now())
     return {"status": "deactivated", "delete_on": delete_on.isoformat()}
 
@@ -1696,11 +1691,13 @@ async def ai_product_draft(shop_id: str = Form(...), facts: str = Form(...), lan
     _, active = ai_consent_state(db, principal)
     if not active:  # К-24: согласие на ИИ — в галочке условий; старая версия условий — принять обновлённые
         raise ApiError(403, "terms_consent_required", "Примите обновлённые условия и политику конфиденциальности.")
+    if not facts.strip() or len(facts) > 1000:  # аудит 27.11, M3: до вызова модели, а не только в шаблоне
+        raise ApiError(422, "validation", "Опишите товар: от 1 до 1000 символов.")
     if len(photos) > 5:
         raise ApiError(422, "validation", "Можно добавить не больше 5 фото.")
     photo_bytes: list[bytes] = []
     for ph in photos:
-        data = await ph.read()
+        data = await ph.read(draft_ai.MAX_PHOTO_BYTES + 1)  # аудит 27.11, L7: не читаем больше лимита
         if not (data.startswith(b"\xff\xd8\xff") or data.startswith(b"\x89PNG") or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")):
             raise ApiError(422, "validation", "Фото должно быть в формате JPG, PNG или WebP.")
         if len(data) > draft_ai.MAX_PHOTO_BYTES:
@@ -1712,8 +1709,11 @@ async def ai_product_draft(shop_id: str = Form(...), facts: str = Form(...), lan
         reason = "помощник сейчас выключен"
     elif not (settings.ai_live and settings.anthropic_api_key):
         reason = "ИИ сейчас недоступен"
+    reserved_id = None
     if reason is None:
-        # квота и бюджет — как у помощника: ai_limit (429) показываем как есть, исчерпанный бюджет — шаблоном
+        # квота и бюджет — как у помощника: ai_limit (429) показываем как есть, исчерпанный бюджет — шаблоном.
+        # Аудит 27.11, M3: вызов резервируется под той же блокировкой, что и проверка квоты, — параллельные
+        # запросы не проходят квоту все сразу. Реальная стоимость записывается после ответа модели.
         with quota_guard(principal.user_id or shop.id):
             try:
                 ai_service.require_budget(db, _now())
@@ -1722,17 +1722,26 @@ async def ai_product_draft(shop_id: str = Form(...), facts: str = Form(...), lan
                 if exc.code != "ai_budget_exhausted":
                     raise
                 reason = "бюджет ИИ на сегодня исчерпан"
+            else:
+                reserve = AIUsageEvent(user_id=principal.user_id, shop_id=shop.id, created_at=_now(), tool_calls=0,
+                                       kind="draft", cost_micro_usd=settings.ai_cost_per_call_micro_usd)
+                db.add(reserve)
+                db.commit()
+                reserved_id = reserve.id
     if reason is None:
         try:
             result = await run_in_threadpool(draft_ai.live_draft, facts, photo_bytes)
         except draft_ai.DraftFallback as exc:
             log.warning("product draft fallback: %s", exc)  # причина без текста фактов
             reason = "ИИ не смог составить проверяемый черновик"
+            if reserved_id is not None:  # шаблон квоту не тратит — снимаем резерв
+                db.execute(delete(AIUsageEvent).where(AIUsageEvent.id == reserved_id))
+                db.commit()
         else:
             cost = ai_service.live_cost_micro(result.tin, result.tout, result.tcw, result.tcr)
-            with quota_guard(principal.user_id or shop.id):
-                ai_service.record_usage(db, principal.user_id, shop.id, _now(), "draft", cost_micro=cost)
-                db.commit()
+            db.execute(update(AIUsageEvent).where(AIUsageEvent.id == reserved_id).values(cost_micro_usd=cost))
+            db.commit()
+            ai_service.check_budget_alerts(db, _now())
             return {**result.draft, "generatedBy": "ai", "languages": "ru", "photosUsed": result.photos_sent,
                     "warnings": ["Черновик ИИ — проверьте перед публикацией. Satti ничего не публикует в Kaspi."]}
     # шаблон: тот же текст, что без ИИ, с понятной пометкой о причине

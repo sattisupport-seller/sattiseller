@@ -136,11 +136,36 @@ def _check_session_token(token: str | None, user_id: str) -> bool:
     return hmac.compare_digest(sig, hash_token(f"admin-session|{user_id}|{expires}"))
 
 
-def _accept_new_step(row: "AdminTotp", step: int) -> None:
-    """Шаг TOTP принимается один раз: повторный код (в пределах 90 с) отклоняется."""
-    if step <= (row.last_step or 0):
+def _accept_new_step(db: DbSession, row: "AdminTotp", step: int) -> None:
+    """Шаг TOTP принимается один раз: повторный код (в пределах 90 с) отклоняется.
+    Проверка атомарна (аудит 27.11, H1): два параллельных запроса с одним кодом не проходят оба."""
+    from sqlalchemy import or_, update
+
+    done = db.execute(update(AdminTotp).where(AdminTotp.user_id == row.user_id,
+                                              or_(AdminTotp.last_step.is_(None), AdminTotp.last_step < step))
+                      .values(last_step=step)).rowcount
+    if not done:
+        db.rollback()
         raise ApiError(403, "admin_code_used", "Этот код уже использован. Дождитесь нового кода в приложении.")
-    row.last_step = step
+
+
+TOTP_ATTEMPTS = 10  # попыток кода за 15 минут на администратора (аудит 27.11, H1: перебор 6 цифр)
+TOTP_WINDOW = 900
+
+
+def _limit_totp(db: DbSession, user_id: str) -> None:
+    from .ratelimit import allow
+
+    if not allow(f"admin-totp:{user_id}", TOTP_ATTEMPTS, TOTP_WINDOW, db=db):
+        try:
+            from .mailer import send_owner_alert
+
+            send_owner_alert("Satti: много неверных кодов входа в админку",
+                             "За 15 минут исчерпан лимит попыток кода двухфакторной защиты. Если это были не вы — "
+                             "смените пароль почты и выйдите из всех сессий.")
+        except Exception:  # noqa: BLE001 — оповещение не мешает отказу
+            pass
+        raise ApiError(429, "admin_code_locked", "Слишком много попыток. Подождите 15 минут.")
 
 
 def _admin_user(principal: Principal, db: DbSession) -> User:
@@ -204,11 +229,12 @@ def two_factor_enable(body: CodeIn, principal: Principal = Depends(get_principal
     row = db.get(AdminTotp, user.id)
     if row is None:
         raise ApiError(409, "not_setup", "Сначала создайте секрет: POST /admin/2fa/setup.")
+    _limit_totp(db, user.id)
     secret = _open(row.secret)
     step = totp_step_matched(secret, body.code) if secret is not None else None
     if step is None:
         raise ApiError(403, "admin_code_invalid", "Неверный код.")
-    _accept_new_step(row, step)
+    _accept_new_step(db, row, step)
     row.enabled = True
     db.commit()
     return {"enabled": True}
@@ -222,11 +248,12 @@ def open_session(body: CodeIn, principal: Principal = Depends(get_principal),
     row = db.get(AdminTotp, user.id)
     if row is None or not row.enabled:
         raise ApiError(403, "two_factor_required", "Включите двухфакторную защиту администратора.")
+    _limit_totp(db, user.id)
     secret = _open(row.secret)
     step = totp_step_matched(secret, body.code) if secret is not None else None
     if step is None:
         raise ApiError(403, "admin_code_invalid", "Неверный код двухфакторной защиты.")
-    _accept_new_step(row, step)
+    _accept_new_step(db, row, step)
     db.commit()
     expires = int(time.time()) + SESSION_TTL_SECONDS
     return {"admin_session": _session_token(user.id, expires), "expires_in": SESSION_TTL_SECONDS}

@@ -164,11 +164,9 @@ def delete_account_confirm(email: str = Form(...), code: str = Form(...),
     user = db.scalar(select(User).where(User.email == address))
     if user is None or not allow(f"webdelete-confirm:{address}", 10, db=db):
         return _page("Не удалось", "<h1>Код неверный или истёк</h1><p><a href='/delete-account'>Начать сначала</a></p>")
-    row = db.scalar(select(AuthCode).where(AuthCode.user_id == user.id, AuthCode.purpose == "delete",
-                                           AuthCode.used.is_(False)).order_by(AuthCode.expires_at.desc()))
-    from .auth import aware
+    from .accounts import check_delete_code
 
-    if row is None or aware(row.expires_at) < datetime.now(timezone.utc) or hash_code(user.email, code.strip()) != row.code_hash:
+    if not check_delete_code(db, user, code):  # аудит 27.11, M1: после 5 неверных попыток код сгорает
         return _page("Не удалось", "<h1>Код неверный или истёк</h1><p><a href='/delete-account'>Начать сначала</a></p>")
     delete_user_account(db, user)
     return _page("Аккаунт удалён", "<h1>Аккаунт удалён</h1><p>Данные магазина удалены. Спасибо, что были с нами.</p>")
