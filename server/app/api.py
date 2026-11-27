@@ -17,12 +17,14 @@ from openpyxl import Workbook
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
 from . import ai as ai_service
 from . import draft_ai
 from . import audit
 from .accounts import delete_user_account
+from . import accounts as accounts_service
 from .auth import (
     Principal,
     ai_consent_state,
@@ -72,7 +74,11 @@ from .models import (
     User,
 )
 from .periods import Period, PeriodError, resolve, today_in
-from .billing import get_subscription, start_trial, subscription_view, trial_eligible, wipe_shop_content
+from . import billing, device_trust, seller_access, store_billing
+from .billing import get_subscription, start_trial, subscription_view, trial_decision, wipe_shop_content
+from .device_trust import DeviceVerdict
+from .models import AuditEvent
+import hmac
 from .exports import profit_filename, profit_workbook, user_export_zip
 from . import reportcache
 from .quotalock import quota_guard
@@ -389,7 +395,10 @@ def me(principal: Principal = Depends(get_principal), db: DbSession = Depends(ge
     user = current_user(principal, db)
     return {"demo": False, "id": user.id, "email": user.email, "name": user.name, "locale": user.locale,
             "age_confirmed": user.age_confirmed_at is not None,
-            "terms_consent_required": user.terms_version != settings.legal_version}
+            "terms_consent_required": user.terms_version != settings.legal_version,
+            "seller_number": (n.number if (n := seller_access.by_user(db, user.id)) else None),
+            "deactivated": user.deactivated_at is not None,
+            "delete_on": (accounts_service._aware(user.delete_after).isoformat() if user.delete_after else None)}
 
 
 @api.post("/me/terms", tags=["пользователь"])
@@ -458,6 +467,43 @@ def deletion_confirm(body: ConfirmIn, principal: Principal = Depends(get_princip
         raise ApiError(400, "code_invalid")
     delete_user_account(db, user)  # AUD-08: все записи аккаунта, одна реализация для приложения и веба
     return {"status": "deleted"}
+
+
+@api.post("/me/deactivation/confirm", tags=["пользователь"])
+def deactivation_confirm(body: ConfirmIn, principal: Principal = Depends(get_principal),
+                         db: DbSession = Depends(get_session)) -> dict:
+    """К-21: «Деактивировать на 30 дней» — тот же код из письма, что и для удаления (/me/deletion/start)."""
+    from .auth import aware
+
+    user = current_user(principal, db)
+    row = db.scalar(select(AuthCode).where(AuthCode.user_id == user.id, AuthCode.purpose == "delete",
+                                           AuthCode.used.is_(False)).order_by(AuthCode.expires_at.desc()))
+    if row is None or aware(row.expires_at) < utcnow() or hash_code(user.email, body.code) != row.code_hash:
+        raise ApiError(400, "code_invalid")
+    row.used = True
+    delete_on = accounts_service.deactivate_user(db, user, _now())
+    return {"status": "deactivated", "delete_on": delete_on.isoformat()}
+
+
+def _paid_access(db: DbSession, shop: Shop) -> bool:
+    """Оплаченная подписка с доступом сейчас: не пробный период и не доступ без подписки от владельца."""
+    sub = get_subscription(db, shop.id)
+    return sub is not None and sub.state == "active" and billing.has_access(sub, _now())
+
+
+@api.post("/me/reactivation", tags=["пользователь"])
+def reactivation(principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+    """К-21: восстановление до конца 30 дней — только при оплаченной подписке 9 900 ₸ (проверена сервером у магазина).
+    Подписка в App Store или Google Play сама не отменяется: если она ещё оплачена, восстановление сразу."""
+    user = current_user(principal, db)
+    if not accounts_service.is_deactivated(user):
+        return {"status": "active"}
+    shops = db.scalars(select(Shop).where(Shop.owner_user_id == user.id)).all()
+    if not any(_paid_access(db, shop) for shop in shops):
+        raise ApiError(402, "subscription_required",
+                       "Восстановить аккаунт можно только с оплаченной подпиской. Оформите подписку.")
+    accounts_service.reactivate_user(db, user)
+    return {"status": "active"}
 
 
 # ---------- магазины ----------
@@ -621,13 +667,49 @@ def get_products(shop_id: str, period: str = Query("30d"), filter: str | None = 
 @api.get("/shops/{shop_id}/subscription", tags=["подписка"], response_model=SubscriptionOut)
 def get_subscription_state(shop_id: str, principal: Principal = Depends(get_principal),
                            db: DbSession = Depends(get_session)) -> dict:
-    shop = shop_for(db, principal, shop_id, guard_access=False)
+    shop = shop_for(db, principal, shop_id, guard_access=False, allow_deactivated=True)
     body = subscription_view(db, shop)
-    # Пробный период доступен, если подписки у магазина не было и отметки защиты отсутствуют (раздел 8.2).
-    account_key = _account_key(db, principal)
-    body["trial_available"] = (get_subscription(db, shop.id) is None
-                               and trial_eligible(db, account_key, None))
+    # Предварительно, без проверки телефона: Kaspi подключён, отметок аккаунта и магазина нет (К-21).
+    # Окончательно — POST /subscription/offer с токеном проверки телефона.
+    ok, _ = trial_decision(db, shop, _account_key(db, principal), DeviceVerdict(available=True, trial_used=False))
+    body["trial_available"] = ok
     return body
+
+
+class DeviceIn(BaseModel):
+    """Одноразовый токен проверки телефона: DeviceCheck (iOS) или Play Integrity (Android). Не сохраняется."""
+    platform: Literal["ios", "android"] | None = None
+    device_token: str | None = Field(default=None, max_length=8192)
+
+
+class OfferOut(BaseModel):
+    trial_available: bool
+    reason: str
+    reason_text: str | None
+    account_token: str  # appAccountToken (Apple) и obfuscatedAccountId (Google) для покупки
+    apple_product_id: str
+    google_subscription_id: str
+    google_offer_id: str | None  # None — предложение с пробным периодом не показывать
+    price_text: str
+    trial_days: int
+
+
+@api.post("/shops/{shop_id}/subscription/offer", tags=["подписка"], response_model=OfferOut)
+def post_subscription_offer(body: DeviceIn, shop_id: str, principal: Principal = Depends(get_principal),
+                            db: DbSession = Depends(get_session)) -> dict:
+    """Что предлагать к покупке (К-21): подписка с пробным периодом или без него — по правилам Satti."""
+    shop = shop_for(db, principal, shop_id, guard_access=False, allow_deactivated=True)
+    if shop.is_demo:
+        raise ApiError(409, "demo_purchase", "В демо-режиме подписку оформить нельзя. Войдите в аккаунт.")
+    verdict = device_trust.check(db, body.platform, body.device_token)
+    ok, reason = trial_decision(db, shop, _account_key(db, principal), verdict)
+    return {"trial_available": ok, "reason": reason,
+            "reason_text": None if ok else billing.TRIAL_REASON_TEXT.get(reason),
+            "account_token": store_billing.account_token(shop.id),
+            "apple_product_id": settings.apple_product_trial if ok else settings.apple_product_plain,
+            "google_subscription_id": settings.google_subscription_id,
+            "google_offer_id": settings.google_trial_offer_id if ok else None,
+            "price_text": settings.subscription_price_text, "trial_days": billing.TRIAL_DAYS}
 
 
 def _account_key(db: DbSession, principal: Principal) -> str | None:
@@ -638,23 +720,121 @@ def _account_key(db: DbSession, principal: Principal) -> str | None:
 
 
 @api.post("/shops/{shop_id}/subscription/trial", status_code=201, tags=["подписка"], response_model=SubscriptionOut)
-def post_start_trial(shop_id: str, principal: Principal = Depends(get_principal),
+def post_start_trial(shop_id: str, body: DeviceIn | None = None, principal: Principal = Depends(get_principal),
                      db: DbSession = Depends(get_session)) -> dict:
-    """Пробный период. В боевом режиме выдаётся только после подтверждения магазина приложений (раздел 8.2)."""
+    """Пробный период без магазина приложений — только SATTI_BILLING_TEST_MODE. В боевом режиме его даёт
+    App Store или Google Play (вводное предложение), а сервер видит его при проверке покупки."""
     shop = shop_for(db, principal, shop_id, guard_access=False)
     if not settings.billing_test_mode:
         raise ApiError(501, "store_not_configured", "Оформление через App Store и Google Play ещё не подключено.")
-    start_trial(db, shop, _account_key(db, principal), None)
+    body = body or DeviceIn()
+    verdict = device_trust.check(db, body.platform, body.device_token)
+    start_trial(db, shop, _account_key(db, principal), verdict, body.platform, body.device_token)
     return subscription_view(db, shop)
 
 
-@api.post("/shops/{shop_id}/subscription/verify", tags=["подписка"])
-def post_verify_purchase(shop_id: str, principal: Principal = Depends(get_principal),
+class PurchaseVerifyIn(DeviceIn):
+    store: Literal["apple", "google"]
+    # Apple — transactionId из StoreKit 2; Google — purchaseToken
+    purchase_id: str = Field(min_length=1, max_length=1024)
+
+
+def _trial_allowed(db: DbSession, shop, principal: Principal, platform: str | None, token: str | None) -> bool:
+    """Пробный период уже идёт (выдан раньше) — оставляем; иначе — решение по правилам Satti (К-21)."""
+    sub = get_subscription(db, shop.id)
+    if sub is not None and sub.trial_started_at is not None and sub.state == "trial":
+        return True
+    ok, reason = trial_decision(db, shop, _account_key(db, principal), device_trust.check(db, platform, token))
+    if not ok:
+        log.info("store trial refused: %s", reason)
+    return ok
+
+
+@api.post("/shops/{shop_id}/subscription/verify", tags=["подписка"], response_model=SubscriptionOut)
+def post_verify_purchase(body: PurchaseVerifyIn, shop_id: str, principal: Principal = Depends(get_principal),
                          db: DbSession = Depends(get_session)) -> dict:
-    """Проверка покупки через App Store Server API и Google Play Developer API (раздел 8.5).
-    Не подключено: нужны аккаунты владельца (spec-2.1, 19.3 и 19.10)."""
-    shop_for(db, principal, shop_id, guard_access=False)
-    raise ApiError(501, "store_not_configured", "Проверка покупок ещё не подключена.")
+    """Проверка покупки у магазина (App Store Server API, Google Play Developer API) и доступ по её состоянию.
+    Тот же вызов — для «Восстановить покупки»: приложение присылает каждую найденную покупку.
+    Деактивированный аккаунт (К-21) восстанавливается здесь же — только оплаченной подпиской, не пробным периодом."""
+    shop = shop_for(db, principal, shop_id, guard_access=False, allow_deactivated=True)
+    if shop.is_demo:
+        raise ApiError(409, "demo_purchase", "В демо-режиме подписку оформить нельзя. Войдите в аккаунт.")
+    owner = current_user(principal, db)
+    deactivated = accounts_service.is_deactivated(owner)
+    st = store_billing.fetch_state(body.store, body.purchase_id)
+    allowed = True
+    if st.in_trial and st.state == "trial":
+        # деактивированному пробный период не даёт доступа: восстановление — только с оплатой (решение владельца 01:17)
+        allowed = False if deactivated else _trial_allowed(db, shop, principal, body.platform, body.device_token)
+    sub_before = get_subscription(db, shop.id)
+    if allowed and st.in_trial and st.state == "trial" and (sub_before is None or sub_before.trial_started_at is None):
+        # отметки ставятся до выдачи доступа: параллельный запрос упрётся в уникальное ограничение (AUD-16)
+        billing.mark_trial_used(db, shop, _account_key(db, principal), body.platform, body.device_token)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            allowed = False
+    store_billing.bind_purchase(db, shop, st)
+    store_billing.apply_state(db, shop, st, trial_allowed=allowed)
+    db.add(AuditEvent(action="subscription_verify", entity=f"{st.store}:{st.state}", actor_id=principal.user_id,
+                      shop_id=shop.id))
+    db.commit()
+    if deactivated and _paid_access(db, shop):
+        accounts_service.reactivate_user(db, owner)
+    if st.store == "google" and st.needs_ack:
+        store_billing.google_acknowledge(st.purchase_key)
+    return subscription_view(db, shop)
+
+
+def _apply_store_event(db: DbSession, store: str, event_id: str, kind: str, key: str | None) -> str:
+    """Общая обработка уведомления: идемпотентно, состояние берётся у магазина, а не из уведомления."""
+    if not event_id:
+        raise ApiError(422, "validation", "Нет идентификатора уведомления.")
+    if db.scalar(select(store_billing.StoreNotification.id).where(
+            store_billing.StoreNotification.store == store,
+            store_billing.StoreNotification.event_id == event_id)) is not None:
+        return "duplicate"
+    result = "ignored"
+    if key:
+        st = store_billing.fetch_state(store, key)
+        shop_id = store_billing.shop_for_state(db, st)
+        shop = db.get(Shop, shop_id) if shop_id else None
+        if shop is None:
+            result = "unknown_purchase"  # приложение ещё не прислало покупку; привяжется при /verify
+        else:
+            store_billing.bind_purchase(db, shop, st)
+            sub = get_subscription(db, shop.id)
+            allowed = sub is not None and sub.trial_started_at is not None and sub.state == "trial"
+            store_billing.apply_state(db, shop, st, trial_allowed=allowed or not st.in_trial)
+            if st.store == "google" and st.needs_ack:
+                store_billing.google_acknowledge(st.purchase_key)
+            result = st.state
+    if not store_billing.record_notification(db, store, event_id, kind, result):
+        db.rollback()
+        return "duplicate"
+    db.commit()
+    return result
+
+
+class AppleNotificationIn(BaseModel):
+    signedPayload: str = Field(min_length=10, max_length=100_000)
+
+
+@api.post("/store/apple/notifications", tags=["подписка"], include_in_schema=False)
+def apple_notifications(body: AppleNotificationIn, db: DbSession = Depends(get_session)) -> dict:
+    """App Store Server Notifications V2: продление, отмена, возврат, льготный период (MASTER_PLAN 3.2)."""
+    event_id, kind, key = store_billing.apple_notification_key(body.signedPayload)
+    return {"result": _apply_store_event(db, "apple", event_id, kind, key)}
+
+
+@api.post("/store/google/rtdn", tags=["подписка"], include_in_schema=False)
+def google_rtdn(envelope: dict, token: str = Query(""), db: DbSession = Depends(get_session)) -> dict:
+    """Google Real-time developer notifications через push-подписку Pub/Sub (MASTER_PLAN 3.2)."""
+    if not settings.google_rtdn_token or not hmac.compare_digest(token, settings.google_rtdn_token):
+        raise ApiError(403, "forbidden", "Неверный ключ уведомления.")
+    event_id, kind, key = store_billing.google_notification_key(envelope)
+    return {"result": _apply_store_event(db, "google", event_id, kind, key)}
 
 
 XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -678,6 +858,8 @@ def export_my_data(principal: Principal = Depends(get_principal), db: DbSession 
     if principal.user_id is None:
         raise ApiError(403, "account_required", "Выгрузка доступна после входа по почте или через Apple/Google.")
     user = current_user(principal, db)
+    if accounts_service.is_deactivated(user):
+        raise ApiError(403, "account_deactivated", "Аккаунт деактивирован: данные недоступны до восстановления.")
     if not allow(f"export:{user.id}", 3, 86_400, db=db):
         raise ApiError(429, "rate_limited", "Выгрузок слишком много. Попробуйте завтра.")
     content = user_export_zip(db, user)
@@ -1529,6 +1711,10 @@ class KaspiStoresIn(BaseModel):
     store_ids: list[str] = Field(default_factory=list, max_length=20)
 
 
+def _aware_dt(dt: datetime) -> datetime:
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
 def _kaspi_view(shop: Shop, conn: KaspiConnection | None, db: DbSession | None = None) -> dict:
     if conn is None:
         return {"enabled": True, "status": "not_connected"}
@@ -1542,6 +1728,9 @@ def _kaspi_view(shop: Shop, conn: KaspiConnection | None, db: DbSession | None =
             "connected_at": conn.connected_at.isoformat(),
             "last_sync_at": conn.last_sync_at.isoformat() if conn.last_sync_at else None,
             "last_error": conn.last_error,
+            # К-21: окно восстановления токена, открытое владельцем в админке (24 часа)
+            "reconnect_until": (conn.reconnect_until.isoformat()
+                                if conn.reconnect_until is not None and _aware_dt(conn.reconnect_until) > utcnow() else None),
             "store_ids": kaspi_service.store_list(conn),
             "store_hint": conn.store_hint,
             "catalog": ({"offers_count": catalog.offers_count, "imported_at": catalog.imported_at.isoformat()}
@@ -1558,12 +1747,23 @@ def _kaspi_view(shop: Shop, conn: KaspiConnection | None, db: DbSession | None =
 def kaspi_connect(shop_id: str, body: KaspiConnectIn, principal: Principal = Depends(get_principal),
                   db: DbSession = Depends(get_session)) -> dict:
     _require_kaspi(db)
-    shop = shop_for(db, principal, shop_id)
+    shop = shop_for(db, principal, shop_id, guard_access=False)  # подключение Kaspi — до пробного периода (К-21)
     now = utcnow()
+    existing = db.get(KaspiConnection, shop.id)
+    if existing is not None:
+        # К-21 (решение владельца 01:31): токен подключается один раз; замена — только через поддержку
+        window = existing.reconnect_until
+        if window is None or (window if window.tzinfo else window.replace(tzinfo=timezone.utc)) <= now:
+            raise ApiError(409, "kaspi_already_connected",
+                           "Магазин Kaspi уже подключён. Сменить токен нельзя; если он перестал работать — "
+                           "напишите в поддержку.")
+        if body.seller_id.strip() != existing.seller_id:
+            raise ApiError(409, "kaspi_other_shop", "Можно ввести только токен того же магазина Kaspi.")
+    seller_access.check_can_connect(db, principal.user_id, body.seller_id)
     client = KaspiClient(body.token)
     analytics_service.record(db, "kaspi_connect_started", now)
     try:
-        conn = kaspi_service.connect(db, shop, body.seller_id, body.token, client, now)
+        conn = kaspi_service.connect(db, shop, body.seller_id.strip(), body.token, client, now)
     except KaspiAuthError as exc:
         analytics_service.record(db, "kaspi_connect_failed", now)
         raise ApiError(422, "kaspi_token_rejected", "Kaspi не принял этот ключ. Проверьте ключ и ID продавца.") from exc
@@ -1573,6 +1773,9 @@ def kaspi_connect(shop_id: str, body: KaspiConnectIn, principal: Principal = Dep
     finally:
         client.close()
     analytics_service.record(db, "kaspi_connect_succeeded", now)
+    if not shop.is_demo:
+        seller_access.bind(db, principal.user_id, shop.id, conn.seller_id)  # номер продавца — один раз (К-21)
+        db.commit()
     audit.record(db, "kaspi_connect", "kaspi_connection", actor_id=principal.user_id, shop_id=shop.id)
     return _kaspi_view(shop, conn, db)
 
@@ -1654,11 +1857,12 @@ def kaspi_sync_now(shop_id: str, principal: Principal = Depends(get_principal), 
 
 @api.delete("/shops/{shop_id}/kaspi/connection", tags=["Kaspi"])
 def kaspi_disconnect(shop_id: str, principal: Principal = Depends(get_principal), db: DbSession = Depends(get_session)) -> dict:
+    """К-21 (решение владельца 01:24): отдельного отключения Kaspi нет — только удаление или деактивация аккаунта.
+    Иначе «отключить и подключить снова» обходило бы правило «токен подключается один раз»."""
     _require_kaspi(db)
-    shop = shop_for(db, principal, shop_id)
-    kaspi_service.disconnect(db, shop.id)
-    audit.record(db, "kaspi_disconnect", "kaspi_connection", actor_id=principal.user_id, shop_id=shop.id)
-    return {"enabled": True, "status": "not_connected"}
+    shop_for(db, principal, shop_id, guard_access=False)
+    raise ApiError(409, "kaspi_disconnect_removed",
+                   "Отдельного отключения Kaspi нет. Прекратить работу можно удалением или деактивацией аккаунта.")
 
 
 class EventIn(BaseModel):
@@ -1710,6 +1914,9 @@ def kaspi_price_list(shop_id: str, price_key: str, db: DbSession = Depends(get_s
     conn = kaspi_service.find_by_price_key(db, shop_id, price_key) if shop else None
     if conn is None:
         raise ApiError(404, "not_found")
+    if shop.id in accounts_service.deactivated_shop_ids(db):
+        # К-21: пустой файл или available="no" сняли бы товары продавца с продажи. Отдаём временную ошибку без файла.
+        return Response(status_code=503, headers={"Retry-After": "3600"})
     try:
         body = kaspi_service.price_list_xml(db, shop, conn)
     except kaspi_service.KaspiNoCatalog as exc:

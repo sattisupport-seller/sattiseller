@@ -84,8 +84,8 @@
 
 | № | Задача | Статус |
 |---|---|---|
-| 3.1 | Покупки (react-native-iap), серверная проверка App Store и Google Play | ⬜ ⛔ нужны аккаунты и ключи для реальной проверки |
-| 3.2 | Вебхуки App Store Server Notifications v2 и Google RTDN | ⬜ ⛔ нужны аккаунты |
+| 3.1 | Покупки (expo-iap, ADR 0012), серверная проверка App Store и Google Play | 🟡 23.11 на моках: `server/app/store_billing.py` (App Store Server API, Play Developer API, acknowledge), `/subscription/offer` и `/verify` (и «Восстановить покупки»), привязка покупки к магазину; пробный период — только после Kaspi, один на телефон (DeviceCheck / Play Integrity, `device_trust.py`), магазин Kaspi и аккаунт; экран подписки (цена, период, автопродление, условия и политика, восстановление, управление). Тесты: `test_store_billing.py` (18), `test_billing.py`, jest `paywall-store`. ⛔ ждёт владельца: аккаунты и ключи (OWNER_TODO 7, 10), dev build для проверки expo-iap и модуля DeviceCheck |
+| 3.2 | Вебхуки App Store Server Notifications v2 и Google RTDN | 🟡 23.11 на моках: `/v1/store/apple/notifications`, `/v1/store/google/rtdn` — идемпотентно (`store_notifications`), состояние перечитывается у магазина; продление, отмена, возврат, льготный период, неудачное списание — тесты. ⛔ ждёт владельца: адреса в консолях магазинов после сервера и домена |
 | 3.3 | Вход Apple и Google из .env | ⬜ ⛔ нужны аккаунты для реальной проверки |
 | 3.4 | Пуши: сводка по понедельникам, тихие часы | ⬜ ⛔ нужен Firebase/APNs для реальной отправки |
 | 3.5 | Живой ИИ по ANTHROPIC_API_KEY, бюджет и выключатель | ✅ (локально; ключ на сервере — владелец) Живая модель `claude-haiku-5-5` подключена (`LiveRewriter` в `ai.py`): переписывает формулировку, факты и числа — сервер; ключ в server/.env, включается SATTI_AI_LIVE=1. Тестовый вызов сделан, маскировка номера проверена на реальном запросе. Тесты `test_ai_live.py` (4). Стоимость ≈0,009 USD за оба прогона оценки |

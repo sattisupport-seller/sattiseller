@@ -52,6 +52,13 @@ def production_config_problems() -> list[str]:
     if not settings.billing_enforced and not settings.free_access:
         problems.append("блокировка по подписке выключена: задайте SATTI_BILLING_ENFORCED=1 "
                         "или SATTI_FREE_ACCESS=1 для бесплатной беты")
+    # 4.4 (К-21): покупки и пробный период
+    if settings.device_check_mode == "fake":
+        problems.append("SATTI_DEVICE_CHECK_MODE=fake в продакшене: токен телефона не проверяется у Apple и Google")
+    if settings.billing_enforced and not (settings.apple_private_key_path or settings.google_service_account_path):
+        problems.append("SATTI_BILLING_ENFORCED=1, но ключи App Store / Google Play не заданы: покупки не проверить")
+    if settings.google_service_account_path and len(settings.google_rtdn_token) < 24:
+        problems.append("SATTI_GOOGLE_RTDN_TOKEN пустой или короче 24 знаков: адрес уведомлений Google легко подобрать")
     if os.environ.get("SATTI_SCHEDULER", "0") != "1":
         problems.append("SATTI_SCHEDULER не включён: удаление данных по хранению (90 дней) не запустится")
     if not settings.google_client_ids and not os.environ.get("SATTI_APPLE_CLIENT_ID") and not settings.email_login_enabled:
@@ -130,6 +137,28 @@ class Settings:
     # Ключ шифрования секрета 2FA администратора в базе (O2, QA). В продакшене обязателен.
     admin_totp_key: str = os.environ.get("SATTI_TOTP_KEY", "dev-only-change-me")
     subscription_price_text: str = "9 900 ₸ в месяц"
+    # 3.1–3.2 (К-21): проверка покупок через App Store Server API и Google Play Developer API.
+    # Без ключей проверка отвечает store_not_configured; в тестах — записанные ответы (httpx.MockTransport).
+    apple_bundle_id: str = os.environ.get("SATTI_APPLE_BUNDLE_ID", "kz.satti.seller")
+    apple_issuer_id: str = os.environ.get("SATTI_APPLE_ISSUER_ID", "")
+    apple_key_id: str = os.environ.get("SATTI_APPLE_KEY_ID", "")
+    apple_private_key_path: str = os.environ.get("SATTI_APPLE_PRIVATE_KEY_PATH", "")  # .p8 в server/data/secrets/
+    apple_environment: str = os.environ.get("SATTI_APPLE_ENVIRONMENT", "Sandbox")  # Sandbox | Production
+    # Две подписки одной группы: с вводным предложением (пробный период) и без него — для телефона с отметкой
+    apple_product_trial: str = os.environ.get("SATTI_APPLE_PRODUCT_TRIAL", "kz.satti.seller.monthly")
+    apple_product_plain: str = os.environ.get("SATTI_APPLE_PRODUCT_PLAIN", "kz.satti.seller.monthly.notrial")
+    google_package_name: str = os.environ.get("SATTI_GOOGLE_PACKAGE_NAME", "kz.satti.seller")
+    google_service_account_path: str = os.environ.get("SATTI_GOOGLE_SERVICE_ACCOUNT_PATH", "")  # JSON-ключ, не в git
+    google_subscription_id: str = os.environ.get("SATTI_GOOGLE_SUBSCRIPTION_ID", "satti_monthly")
+    google_trial_offer_id: str = os.environ.get("SATTI_GOOGLE_TRIAL_OFFER_ID", "trial14")
+    # секрет в адресе push-подписки Pub/Sub (RTDN); уведомление само доступ не даёт — сервер перечитывает покупку
+    google_rtdn_token: str = os.environ.get("SATTI_GOOGLE_RTDN_TOKEN", "")
+    # Пробный период — один на телефон (решение владельца 23.11): DeviceCheck (iOS) и Play Integrity device recall.
+    # Ключ DeviceCheck — отдельный ключ Apple (.p8). fake — только тесты и разработка: токен = метка телефона.
+    device_check_mode: str = os.environ.get("SATTI_DEVICE_CHECK_MODE", "off")  # off | fake | store
+    apple_team_id: str = os.environ.get("SATTI_APPLE_TEAM_ID", "")
+    apple_devicecheck_key_id: str = os.environ.get("SATTI_APPLE_DEVICECHECK_KEY_ID", "")
+    apple_devicecheck_key_path: str = os.environ.get("SATTI_APPLE_DEVICECHECK_KEY_PATH", "")
     # Администратор: только владелец (spec-2.1, 14.1). Пустое значение — панель закрыта.
     admin_email: str = os.environ.get("SATTI_ADMIN_EMAIL", "").strip().lower()
     # Вход: Apple и Google (ТЗ 2.1, раздел 5). Идентификаторы приложения у провайдеров — после аккаунтов владельца.

@@ -115,6 +115,8 @@ def effective_state(sub: Subscription | None, now: datetime) -> str:
         return "none"
     if has_access(sub, now):
         return sub.state
+    if sub.state in ("trial_denied", "on_hold", "revoked", "pending"):
+        return sub.state  # экрану важно отличать «ждём первую оплату» и «проблема со списанием» от «закончилась»
     return "expired"
 
 
@@ -136,20 +138,66 @@ def trial_eligible(db: DbSession, account_key: str | None, kaspi_key_id: str | N
     return True
 
 
-def start_trial(db: DbSession, shop: Shop, account_key: str | None, kaspi_key_id: str | None,
+def kaspi_seller_id(db: DbSession, shop: Shop) -> str | None:
+    """ID продавца Kaspi подключённого магазина: к нему привязан пробный период (решение владельца 23.11)."""
+    from .models import KaspiConnection
+
+    conn = db.get(KaspiConnection, shop.id)
+    return conn.seller_id if conn is not None else None
+
+
+def trial_decision(db: DbSession, shop: Shop, account_key: str | None, device) -> tuple[bool, str]:
+    """Можно ли дать пробный период (К-21): только после подключения Kaspi; один на магазин Kaspi, на аккаунт
+    и на телефон навсегда. device — device_trust.DeviceVerdict. Возвращает (можно, код причины)."""
+    sub = get_subscription(db, shop.id)
+    if sub is not None and sub.state != "trial_denied":  # отказ можно пересмотреть, когда придёт проверка телефона
+        return False, "trial_used"
+    seller = kaspi_seller_id(db, shop)
+    if seller is None:
+        return False, "kaspi_required"
+    if not trial_eligible(db, account_key, seller):
+        return False, "trial_used"
+    if not device.available:
+        return False, "device_unverified"
+    if device.trial_used:
+        return False, "trial_used_device"
+    return True, "ok"
+
+
+def mark_trial_used(db: DbSession, shop: Shop, account_key: str | None, platform: str | None,
+                    device_token: str | None) -> None:
+    """Отметки «пробный период был»: аккаунт, магазин Kaspi, телефон. Удаление аккаунта их не снимает.
+    Вызывается только после решения «можно», поэтому отметок ещё нет; если параллельный запрос успел раньше,
+    уникальное ограничение (AUD-16) даст IntegrityError при записи — второй пробный период не появится."""
+    from . import device_trust
+
+    for kind, value in (("user", account_key), ("shop", kaspi_seller_id(db, shop))):
+        if value:
+            db.add(BillingMark(kind=kind, key_hash=_hash(kind, value)))
+    device_trust.mark_trial(db, platform, device_token)
+
+
+TRIAL_REASON_TEXT = {
+    "trial_used": "Пробный период уже использован для этого аккаунта или магазина Kaspi.",
+    "trial_used_device": "Пробный период на этом телефоне уже был.",
+    "kaspi_required": "Пробный период доступен после подключения магазина Kaspi.",
+    "device_unverified": "Не удалось проверить телефон, поэтому пробный период недоступен. Подписка оформляется сразу.",
+}
+
+
+def start_trial(db: DbSession, shop: Shop, account_key: str | None, device,
+                platform: str | None = None, device_token: str | None = None,
                 now: datetime | None = None) -> Subscription:
-    """Пробный период 14 дней. account_key — нормализованный email аккаунта. Отметки ставятся сразу."""
+    """Пробный период 14 дней без магазина приложений — только в тестовом режиме (SATTI_BILLING_TEST_MODE).
+    В боевом режиме пробный период даёт App Store или Google Play (вводное предложение), см. store_billing."""
     now = now or _now()
-    if get_subscription(db, shop.id) is not None:
-        raise ApiError(409, "trial_used", "Подписка для этого магазина уже была.")
-    if not trial_eligible(db, account_key, kaspi_key_id):
-        raise ApiError(409, "trial_used", "Пробный период уже использован для этого аккаунта или магазина.")
+    ok, reason = trial_decision(db, shop, account_key, device)
+    if not ok:
+        raise ApiError(409, reason if reason != "device_unverified" else "trial_unavailable", TRIAL_REASON_TEXT[reason])
     sub = Subscription(shop_id=shop.id, state="trial", access_until=now + timedelta(days=TRIAL_DAYS),
                        trial_started_at=now, store="test" if settings.billing_test_mode else "none")
     db.add(sub)
-    for kind, value in (("user", account_key), ("shop", kaspi_key_id)):
-        if value:
-            db.add(BillingMark(kind=kind, key_hash=_hash(kind, value)))
+    mark_trial_used(db, shop, account_key, platform, device_token)
     try:
         db.commit()
     except IntegrityError:
@@ -177,8 +225,17 @@ def guard(db: DbSession, shop: Shop, now: datetime | None = None) -> None:
     """Блокировка данных магазина (ТЗ 2.1, 9.1). Демо и выключенный флаг — без проверок."""
     if not settings.billing_enforced or shop.is_demo:
         return
-    if not has_access(get_subscription(db, shop.id), now or _now()):
+    now = now or _now()
+    if not has_access(get_subscription(db, shop.id), now) and special_until(db, shop, now) is None:
         raise ApiError(403, "subscription_required", "Подписка закончилась. Оформите подписку, чтобы продолжить работу.")
+
+
+def special_until(db: DbSession, shop: Shop, now: datetime | None = None) -> datetime | None:
+    """Доступ без подписки, выданный владельцем через админку (К-21): дата окончания или None."""
+    from . import seller_access
+
+    sa = seller_access.active_special(db, shop.id, now)
+    return _aware(sa.ends_at) if sa is not None else None
 
 
 def mark_lapsed(db: DbSession, now: datetime | None = None) -> int:
@@ -255,8 +312,11 @@ def run_retention(db: DbSession, now: datetime | None = None) -> list[tuple[str,
         if has_access(sub, now):
             continue
         shop = db.get(Shop, sub.shop_id)
-        if shop is None or shop.is_demo:
-            continue
+        if shop is None or shop.is_demo or special_until(db, shop, now) is not None:
+            continue  # особые условия владельца: данные не удаляются, письма не идут
+        owner = db.get(User, shop.owner_user_id)
+        if owner is not None and owner.deactivated_at is not None:
+            continue  # К-21: при деактивации письма не идут; удаление — через 30 дней по правилу деактивации
         days = (now - _aware(sub.lapsed_at)).days
         sent = set(db.scalars(select(RetentionEvent.kind).where(RetentionEvent.shop_id == shop.id)).all())
         for kind, threshold in NOTICE_DAYS.items():
@@ -282,6 +342,11 @@ def _notify(db: DbSession, shop: Shop, sub: Subscription, kind: str, now: dateti
 def subscription_view(db: DbSession, shop: Shop, now: datetime | None = None) -> dict:
     now = now or _now()
     sub = get_subscription(db, shop.id)
+    granted = special_until(db, shop, now)
+    if granted is not None and not has_access(sub, now):
+        # «Доступ открыт до <дата>» — особые условия владельца; по окончании — обычная подписка
+        return {"state": "granted", "access_until": granted.isoformat(), "store": "owner",
+                "price_text": settings.subscription_price_text, "trial_days": TRIAL_DAYS, "data_delete_on": None}
     return {
         "state": effective_state(sub, now),
         "access_until": _aware(sub.access_until).isoformat() if sub and sub.access_until else None,

@@ -344,6 +344,161 @@ def user_shops(user_id: str, _: User = Depends(require_admin), db: DbSession = D
             "access_until": until.isoformat()}
 
 
+# ---------- доступ к аккаунтам по номеру продавца (К-21, решения владельца 23.11.2026) ----------
+# Каждое действие — только владелец, с подтверждением (confirm=true) и записью в audit_events: кто, что, до какой даты.
+
+class ConfirmIn(BaseModel):
+    confirm: bool = False
+
+
+class SellerBlockIn(ConfirmIn):
+    blocked: bool
+
+
+class SpecialIn(ConfirmIn):
+    months: int
+    comment: str = ""
+
+
+def _seller(db: DbSession, number: str):
+    from .seller_access import SellerNumber
+
+    row = db.get(SellerNumber, number.strip())
+    if row is None:
+        raise ApiError(404, "not_found", "Номер продавца не найден.")
+    return row
+
+
+def _confirmed(body: ConfirmIn) -> None:
+    if not body.confirm:
+        raise ApiError(422, "confirm_required", "Подтвердите действие.")
+
+
+def _audit(db: DbSession, admin: User, action: str, entity: str, shop_id: str | None) -> None:
+    from . import audit
+
+    audit.record(db, action, entity, actor_id=admin.id, shop_id=shop_id)
+
+
+def _seller_view(db: DbSession, row) -> dict:
+    from . import billing
+    from .models import KaspiConnection
+    from .seller_access import SpecialAccess
+
+    conn = db.get(KaspiConnection, row.shop_id) if row.shop_id else None
+    shop = db.get(Shop, row.shop_id) if row.shop_id else None
+    user = db.get(User, row.user_id) if row.user_id else None
+    specials = db.scalars(select(SpecialAccess).where(SpecialAccess.number == row.number)
+                          .order_by(SpecialAccess.created_at.desc())).all()
+    sub = billing.subscription_view(db, shop) if shop is not None else None
+    return {
+        "number": row.number,
+        "account": "deleted" if row.user_id is None else ("blocked" if row.blocked_at else "active"),
+        "email": user.email if user else None,
+        "shop_name": shop.name if shop else None,
+        "seller_id": conn.seller_id if conn else None,  # ID продавца Kaspi; токен в админке не показывается
+        "kaspi_status": conn.status if conn else None,
+        "reconnect_until": _aware(conn.reconnect_until).isoformat() if conn and conn.reconnect_until else None,
+        "subscription": sub,
+        "special_access": [{"from": _aware(s.starts_at).isoformat(), "until": _aware(s.ends_at).isoformat(),
+                            "cancelled_at": _aware(s.cancelled_at).isoformat() if s.cancelled_at else None,
+                            "comment": s.comment} for s in specials],
+    }
+
+
+@router.get("/sellers/{number}")
+def seller_get(number: str, _: User = Depends(require_admin), db: DbSession = Depends(get_session)) -> dict:
+    """Поиск по номеру продавца: аккаунт, магазин, подписка, особые условия."""
+    return _seller_view(db, _seller(db, number))
+
+
+@router.post("/sellers/{number}/block")
+def seller_block(number: str, body: SellerBlockIn, admin: User = Depends(require_admin),
+                 db: DbSession = Depends(get_session)) -> dict:
+    """Блокировка: продавец видит сообщение с контактом поддержки; удалить аккаунт может всегда (правила магазинов).
+    Блокировка хранится на номере продавца и переживает удаление аккаунта."""
+    _confirmed(body)
+    row = _seller(db, number)
+    now = _now()
+    row.blocked_at = now if body.blocked else None
+    user = db.get(User, row.user_id) if row.user_id else None
+    if user is not None:
+        user.blocked_at = now if body.blocked else None
+    db.commit()
+    _audit(db, admin, "seller_block" if body.blocked else "seller_unblock", f"seller:{row.number}", row.shop_id)
+    return _seller_view(db, row)
+
+
+@router.post("/sellers/{number}/reconnect")
+def seller_reconnect(number: str, body: ConfirmIn, admin: User = Depends(require_admin),
+                     db: DbSession = Depends(get_session)) -> dict:
+    """«Возобновить доступ» к Kaspi: одноразовое окно на 24 часа, чтобы продавец ввёл новый токен того же магазина."""
+    from .models import KaspiConnection
+    from .seller_access import RECONNECT_HOURS
+
+    _confirmed(body)
+    row = _seller(db, number)
+    conn = db.get(KaspiConnection, row.shop_id) if row.shop_id else None
+    if conn is None:
+        raise ApiError(409, "kaspi_not_connected", "У этого номера нет подключённого магазина Kaspi.")
+    until = _now() + timedelta(hours=RECONNECT_HOURS)
+    conn.reconnect_until = until
+    db.commit()
+    _audit(db, admin, "kaspi_reconnect_window", f"seller:{row.number}:{until.date().isoformat()}", row.shop_id)
+    return _seller_view(db, row)
+
+
+@router.post("/sellers/{number}/special-access")
+def seller_special_grant(number: str, body: SpecialIn, admin: User = Depends(require_admin),
+                         db: DbSession = Depends(get_session)) -> dict:
+    """Доступ без подписки на 1, 3 или 6 месяцев. Только бесплатно (OPERATIONS.md: продавать в обход магазинов нельзя)."""
+    from .seller_access import grant_special
+
+    _confirmed(body)
+    row = _seller(db, number)
+    if row.user_id is None:
+        raise ApiError(409, "account_deleted", "Аккаунт этого продавца удалён.")
+    sa = grant_special(db, row.number, body.months, body.comment)
+    db.commit()
+    _audit(db, admin, "special_access_grant", f"seller:{row.number}:{_aware(sa.ends_at).date().isoformat()}",
+           row.shop_id)
+    return _seller_view(db, row)
+
+
+@router.post("/sellers/{number}/special-access/cancel")
+def seller_special_cancel(number: str, body: ConfirmIn, admin: User = Depends(require_admin),
+                          db: DbSession = Depends(get_session)) -> dict:
+    from .seller_access import cancel_special
+
+    _confirmed(body)
+    row = _seller(db, number)
+    cancel_special(db, row.number)
+    db.commit()
+    _audit(db, admin, "special_access_cancel", f"seller:{row.number}", row.shop_id)
+    return _seller_view(db, row)
+
+
+@router.get("/special-access")
+def special_access_list(_: User = Depends(require_admin), db: DbSession = Depends(get_session)) -> dict:
+    """Вкладка «Особые условия»: магазин, ID продавца, с какого по какое число, комментарий владельца."""
+    from .models import KaspiConnection
+    from .seller_access import SellerNumber, SpecialAccess
+
+    now = _now()
+    items = []
+    for sa in db.scalars(select(SpecialAccess).order_by(SpecialAccess.created_at.desc()).limit(500)).all():
+        row = db.get(SellerNumber, sa.number)
+        shop = db.get(Shop, row.shop_id) if row and row.shop_id else None
+        conn = db.get(KaspiConnection, row.shop_id) if row and row.shop_id else None
+        active = sa.cancelled_at is None and _aware(sa.starts_at) <= now < _aware(sa.ends_at)
+        items.append({"number": sa.number, "shop_name": shop.name if shop else None,
+                      "seller_id": conn.seller_id if conn else None,
+                      "from": _aware(sa.starts_at).isoformat(), "until": _aware(sa.ends_at).isoformat(),
+                      "cancelled_at": _aware(sa.cancelled_at).isoformat() if sa.cancelled_at else None,
+                      "active": active, "comment": sa.comment})
+    return {"items": items}
+
+
 # ---------- разрешение пользователя на доступ поддержки (раздел 14.3) ----------
 
 me_router = APIRouter(tags=["пользователь"])

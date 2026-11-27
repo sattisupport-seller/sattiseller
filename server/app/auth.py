@@ -89,8 +89,10 @@ def current_user(principal: Principal, db: DbSession) -> User:
     return user
 
 
-def shop_for(db: DbSession, principal: Principal, shop_id: str, guard_access: bool = True) -> Shop:
-    """Магазин, доступный принципалу. guard_access=False — только для экранов подписки (ТЗ 2.1, 9.1)."""
+def shop_for(db: DbSession, principal: Principal, shop_id: str, guard_access: bool = True,
+             allow_deactivated: bool = False) -> Shop:
+    """Магазин, доступный принципалу. guard_access=False — только для экранов подписки (ТЗ 2.1, 9.1).
+    allow_deactivated=True — только подписка (восстановление деактивированного аккаунта, К-21)."""
     shop = db.get(Shop, shop_id)
     if shop is None:
         raise ApiError(404, "not_found")
@@ -105,6 +107,9 @@ def shop_for(db: DbSession, principal: Principal, shop_id: str, guard_access: bo
         owner = db.get(User, shop.owner_user_id)
         if owner is not None and owner.blocked_at is not None:
             raise ApiError(403, "account_blocked", "Аккаунт заблокирован. Напишите в поддержку.")
+        if owner is not None and owner.deactivated_at is not None and not allow_deactivated:
+            raise ApiError(403, "account_deactivated",
+                           "Аккаунт деактивирован. Восстановить его можно с оплаченной подпиской или удалить.")
     if guard_access:
         billing_guard(db, shop)
     return shop

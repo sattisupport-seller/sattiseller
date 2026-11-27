@@ -85,6 +85,9 @@ def _image_blocks(photos: list[bytes]) -> list[dict]:
     return blocks
 
 
+SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+
 def _allowed_numbers(facts: str) -> set[str]:
     return {n.replace(",", ".") for n in NUMBER.findall(facts)}
 
@@ -132,11 +135,23 @@ def check_draft(obj: dict, facts: str) -> dict:
             value = "Уточнить"
         chars.append({"name": row["name"].strip()[:60], "value": value})
 
+    # К-22 п.4 (решение координатора): число, которого нет в фактах, не отдаёт весь ответ в шаблон.
+    # В описании убираем только предложение с этим числом; название с таким числом берём из шаблона.
+    # Шаблон целиком — только если ответ не разобран или после проверки пуст.
+    sentences = [x for x in SENTENCE_SPLIT.split(description.strip()) if x.strip()]
+    kept = [x for x in sentences if not _has_unknown_number(x)]
+    if not kept:
+        raise DraftFallback("описание пустое после проверки чисел")
+    description = " ".join(kept)
+    if any(_has_unknown_number(t) for t in titles):
+        from .ai import product_draft  # отложенный импорт: ai.py большой и тянет отчёты
+
+        template = product_draft(facts, "ru", 0)["titles"]
+        titles = [template[i % len(template)] if _has_unknown_number(t) else t for i, t in enumerate(titles)]
+
     everything = " ".join([*titles, description, *(c["name"] + " " + c["value"] for c in chars)])
     if LINK.search(everything) or contains_pii(everything):
         raise DraftFallback("контакты или ссылки в ответе")
-    if _has_unknown_number(" ".join([*titles, description])):
-        raise DraftFallback("число, которого нет в фактах")
     lowered_facts = facts.lower()
     for claim in FORBIDDEN_CLAIMS.findall(everything):
         if claim.lower() not in lowered_facts:

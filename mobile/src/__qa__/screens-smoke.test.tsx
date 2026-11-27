@@ -28,6 +28,8 @@ import S21 from '@/app/assistant/reply-draft';
 import S22 from '@/app/order/[id]';
 import S23 from '@/app/product/[id]';
 import S24 from '@/app/product/cost/[id]';
+import S25 from '@/app/account-blocked';
+import S26 from '@/app/account-deactivated';
 
 jest.mock('expo-haptics', () => ({ selectionAsync: jest.fn(() => Promise.resolve()) }));
 jest.mock('expo-router', () => ({
@@ -85,6 +87,8 @@ const SCREENS: [string, React.ComponentType][] = [
   ['order', S22],
   ['product', S23],
   ['product-cost', S24],
+  ['account-blocked', S25],
+  ['account-deactivated', S26],
 ];
 
 describe.each(SCREENS)('экран %s отрисовывается', (_name, Screen) => {

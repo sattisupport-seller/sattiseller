@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge, Banner, Card } from '@/components/ui/Surfaces';
 import { TextField } from '@/components/ui/Inputs';
 import { Txt } from '@/components/ui/Text';
+import { SUPPORT_EMAIL } from '@/config';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
@@ -29,6 +30,7 @@ type KaspiStatus = {
   catalog?: { offers_count: number; imported_at: string } | null;
   load?: { done: number; total: number | null; complete: boolean } | null;
   price_hint?: string | null;
+  reconnect_until?: string | null;  // К-21: окно восстановления токена (открывает поддержка, 24 часа)
 };
 
 // Код склада Kaspi (storeId): латиница, цифры, «-» и «_», до 40 знаков (документация Kaspi, К-7).
@@ -45,6 +47,10 @@ function errorText(e: unknown, t: ReturnType<typeof useI18n>['t']): string {
     if (e.code === 'kaspi_unavailable') return t('kaspi.errUnavailable');
     if (e.code === 'rate_limited') return t('kaspi.errRateLimited');
     if (e.code === 'kaspi_sync_running') return t('kaspi.errSyncRunning');
+    if (e.code === 'kaspi_already_connected') return t('kaspi.errAlreadyConnected');
+    if (e.code === 'kaspi_shop_taken') return t('kaspi.errShopTaken');
+    if (e.code === 'kaspi_other_shop') return t('kaspi.errOtherShop');
+    if (e.code === 'account_blocked') return e.message;
   }
   return t('kaspi.errGeneric');
 }
@@ -70,8 +76,8 @@ export default function KaspiScreen() {
   });
 
   const connect = useMutation({
-    mutationFn: () => request<KaspiStatus>(`/shops/${shopId}/kaspi/connection`, {
-      method: 'POST', body: { seller_id: sellerId.trim(), token: token.trim() },
+    mutationFn: (sellerValue: string) => request<KaspiStatus>(`/shops/${shopId}/kaspi/connection`, {
+      method: 'POST', body: { seller_id: sellerValue.trim(), token: token.trim() },
     }),
     onMutate: () => { setError(null); setNotice(null); },
     onSuccess: () => { setToken(''); void qc.invalidateQueries({ queryKey: [KEY, shopId] }); },
@@ -124,16 +130,13 @@ export default function KaspiScreen() {
     },
   });
 
-  const disconnect = useMutation({
-    mutationFn: () => request(`/shops/${shopId}/kaspi/connection`, { method: 'DELETE' }),
-    onSuccess: () => { setNotice(null); void qc.invalidateQueries({ queryKey: [KEY, shopId] }); },
-    onError: (e) => setError(errorText(e, t)),
-  });
-
-  const confirmDisconnect = () => {
-    Alert.alert(t('kaspi.disconnectTitle'), t('kaspi.disconnectText'), [
+  // К-21 (решение владельца 01:31): токен подключается один раз — перед подключением предупреждение.
+  // Отдельного отключения Kaspi нет (01:24): только удаление или деактивация аккаунта.
+  const confirmConnect = (sellerValue: string) => {
+    if (!sellerValue.trim() || token.trim().length < 8) { setError(t('kaspi.requiredFields')); return; }
+    Alert.alert(t('kaspi.onceTitle'), t('kaspi.onceText'), [
       { text: t('common.cancel'), style: 'cancel' },
-      { text: t('kaspi.disconnectYes'), style: 'destructive', onPress: () => disconnect.mutate() },
+      { text: t('kaspi.onceYes'), onPress: () => connect.mutate(sellerValue) },
     ]);
   };
 
@@ -167,7 +170,7 @@ export default function KaspiScreen() {
 
   const data = status.data;
   const connected = data && data.status !== 'not_connected';
-  const busy = connect.isPending || sync.isPending || disconnect.isPending || saveStores.isPending;
+  const busy = connect.isPending || sync.isPending || saveStores.isPending;
   const lastSync = data?.last_sync_at
     ? new Date(data.last_sync_at).toLocaleString('ru-RU')
     : t('kaspi.never');
@@ -184,10 +187,7 @@ export default function KaspiScreen() {
           {error ? <Banner text={error} tone="danger" /> : null}
           <Button
             title={connect.isPending ? t('kaspi.connecting') : t('kaspi.connect')}
-            onPress={() => {
-              if (!sellerId.trim() || token.trim().length < 8) { setError(t('kaspi.requiredFields')); return; }
-              connect.mutate();
-            }}
+            onPress={() => confirmConnect(sellerId)}
             loading={connect.isPending}
             disabled={busy}
             fullWidth
@@ -210,7 +210,29 @@ export default function KaspiScreen() {
               </Txt>
             ) : null}
             {data?.last_error ? <Banner text={data.last_error} tone="warning" /> : null}
+            {data?.status === 'token_invalid' && !data.reconnect_until ? (
+              <Txt variant="footnote" tone="secondary" selectable>{t('kaspi.tokenBroken', { email: SUPPORT_EMAIL })}</Txt>
+            ) : null}
           </Card>
+
+          {data?.reconnect_until ? (
+            <Card style={{ gap: spacing.md }}>
+              <Txt variant="subheadMedium">{t('kaspi.reconnectTitle')}</Txt>
+              <Txt variant="footnote" tone="secondary">
+                {t('kaspi.reconnectText', { date: new Date(data.reconnect_until).toLocaleString('ru-RU') })}
+              </Txt>
+              <TextField label={t('kaspi.token')} value={token} onChangeText={setToken}
+                hint={t('kaspi.tokenHint')} secure maxLength={256} />
+              {error ? <Banner text={error} tone="danger" /> : null}
+              <Button
+                title={connect.isPending ? t('kaspi.connecting') : t('kaspi.reconnectButton')}
+                onPress={() => confirmConnect(data.seller_id ?? '')}
+                loading={connect.isPending}
+                disabled={busy}
+                fullWidth
+              />
+            </Card>
+          ) : null}
 
           <Card style={{ gap: spacing.sm }}>
             <Txt variant="subheadMedium">{t('kaspi.storeTitle')}</Txt>
@@ -272,7 +294,7 @@ export default function KaspiScreen() {
             disabled={busy || data?.status === 'token_invalid'}
             fullWidth
           />
-          <Button title={t('kaspi.disconnect')} variant="destructiveText" onPress={confirmDisconnect} disabled={busy} fullWidth />
+          <Txt variant="footnote" tone="tertiary">{t('kaspi.noDisconnect')}</Txt>
         </>
       )}
     </>,

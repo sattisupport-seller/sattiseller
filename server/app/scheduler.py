@@ -38,8 +38,12 @@ def run_daily_jobs(now: datetime | None = None) -> list[tuple[str, str]]:
     now = now or datetime.now(timezone.utc)
     db = SessionLocal()
     try:
+        from .accounts import purge_deactivated
+
         purge_old_ai_feedback(db, now)
+        purged = purge_deactivated(db, now)  # К-21: 30 дней деактивации прошли — полное удаление
         done = run_retention(db, now)
+        done += [("-", "deactivated_purged")] * purged
     finally:
         db.close()
     # в журнал — только идентификаторы магазинов и действия, без адресов и данных покупателей
@@ -87,8 +91,13 @@ def run_kaspi_nightly_reread(now: datetime | None = None) -> list[tuple[str, str
     db = SessionLocal()
     done: list[tuple[str, str]] = []
     try:
+        from .accounts import deactivated_shop_ids
+
+        paused = deactivated_shop_ids(db)  # К-21: деактивированные аккаунты не перечитываются
         conns = db.scalars(select(KaspiConnection).where(KaspiConnection.status == "active")).all()
         for conn in conns:
+            if conn.shop_id in paused:
+                continue
             client = None
             try:
                 client = client_for(conn)

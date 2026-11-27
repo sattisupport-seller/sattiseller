@@ -40,8 +40,21 @@ let onSubscriptionRequired: (() => void) | null = null;
 export function setSubscriptionRequiredHandler(fn: () => void) {
   onSubscriptionRequired = fn;
 }
+// Аккаунт заблокирован владельцем (К-21): экран с контактом поддержки, управлением подпиской и удалением.
+let onAccountBlocked: (() => void) | null = null;
+export function setAccountBlockedHandler(fn: () => void) {
+  onAccountBlocked = fn;
+}
 function notifyError(body: ApiErrorBody | null) {
   if (body?.error.code === 'subscription_required') onSubscriptionRequired?.();
+  if (body?.error.code === 'account_blocked') onAccountBlocked?.();
+  if (body?.error.code === 'account_deactivated') onAccountDeactivated?.();
+}
+
+// Аккаунт деактивирован (К-21): после входа — только экран восстановления.
+let onAccountDeactivated: (() => void) | null = null;
+export function setAccountDeactivatedHandler(fn: () => void) {
+  onAccountDeactivated = fn;
 }
 
 export function setSessionLostHandler(fn: () => void) {

@@ -4,7 +4,7 @@ import { LogOut, Sun } from 'lucide-react-native';
 import { useState, type ReactNode } from 'react';
 import { Linking, Pressable, ScrollView, View } from 'react-native';
 
-import { useAIConsent, useAIQuota, useAppConfig, useResetDemo } from '@/api/hooks';
+import { useAIConsent, useAIQuota, useAppConfig, useMe, useResetDemo, useSubscription } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import { TabHeader } from '@/components/ui/Header';
 import { Txt } from '@/components/ui/Text';
@@ -27,6 +27,11 @@ export default function ProfileScreen() {
   const quota = useAIQuota(shopId);
   const consent = useAIConsent();
   const reset = useResetDemo();
+  const me = useMe(!isDemo);
+  const sub = useSubscription(isDemo ? null : shopId);
+  const sellerNumber = me.data?.seller_number ?? null;
+  const grantedUntil = sub.data?.state === 'granted' && sub.data.access_until
+    ? new Date(sub.data.access_until).toLocaleDateString('ru-RU') : null;
   const [themeOpen, setThemeOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const version = (Constants.expoConfig?.version as string | undefined) ?? '1.0.0';
@@ -56,6 +61,12 @@ export default function ProfileScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Txt variant="headline">{email ?? ''}</Txt>
+            {sellerNumber ? (
+              <Txt variant="subhead" tone="secondary" numeric selectable>{t('profile.sellerNumber', { number: sellerNumber })}</Txt>
+            ) : null}
+            {grantedUntil ? (
+              <Txt variant="subhead" tone="secondary">{t('profile.grantedUntil', { date: grantedUntil })}</Txt>
+            ) : null}
           </View>
         </Card>
       )}

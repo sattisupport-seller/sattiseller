@@ -19,6 +19,16 @@ jest.mock('@/api/client', () => ({
 }));
 jest.mock('@/components/ui/Overlays', () => ({ ...jest.requireActual('@/components/ui/Overlays'), useToast: () => ({ show: jest.fn() }) }));
 jest.mock('@/session/SessionProvider', () => ({ useSession: () => ({ shopId: 'shop-1', isDemo: false, locale: 'ru' }) }));
+// Expo Go / разработка: покупок через магазин нет, кнопка идёт в тестовый пробный период сервера
+jest.mock('@/lib/purchases', () => ({
+  PurchaseCancelled: class extends Error {},
+  PurchasesUnavailable: class extends Error {},
+  purchasesAvailable: () => false,
+  deviceTrust: async () => ({}),
+  buySubscription: jest.fn(),
+  restorePurchases: jest.fn(async () => []),
+  openManageSubscriptions: jest.fn(),
+}));
 jest.mock('@/api/hooks', () => {
   const m = require('./screenMocks');
   return m.hooksMock({

@@ -22,7 +22,27 @@ def good_production(monkeypatch):
     monkeypatch.setattr(settings, "google_client_ids", "")
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.invalid")  # 3.6: письма с кодами идут по SMTP
     monkeypatch.setattr(settings, "owner_name", "Имя оператора")  # юридические тексты
+    monkeypatch.setattr(settings, "apple_private_key_path", "/srv/satti/secrets/apple.p8")  # К-21: проверка покупок
+    monkeypatch.setattr(settings, "google_service_account_path", "/srv/satti/secrets/google.json")
+    monkeypatch.setattr(settings, "google_rtdn_token", "x" * 32)
+    monkeypatch.setattr(settings, "device_check_mode", "store")
     return monkeypatch
+
+
+def test_fake_device_check_refused(good_production):
+    good_production.setattr(settings, "device_check_mode", "fake")
+    assert any("SATTI_DEVICE_CHECK_MODE" in p for p in production_config_problems())
+
+
+def test_enforced_billing_needs_store_keys(good_production):
+    good_production.setattr(settings, "apple_private_key_path", "")
+    good_production.setattr(settings, "google_service_account_path", "")
+    assert any("ключи App Store" in p for p in production_config_problems())
+
+
+def test_short_rtdn_token_refused(good_production):
+    good_production.setattr(settings, "google_rtdn_token", "short")
+    assert any("SATTI_GOOGLE_RTDN_TOKEN" in p for p in production_config_problems())
 
 
 def test_fully_configured_production_has_no_problems(good_production):

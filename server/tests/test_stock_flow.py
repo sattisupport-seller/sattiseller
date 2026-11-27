@@ -2,7 +2,6 @@
 снятие с продажи только при нуле и с подтверждением, помощник отвечает про остатки."""
 
 from datetime import datetime, timezone
-from types import SimpleNamespace
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession

@@ -85,7 +85,17 @@ def _aware(dt: datetime) -> datetime:
 def connect(db: DbSession, shop: Shop, seller_id: str, token: str, client: KaspiClient, now: datetime) -> KaspiConnection:
     """Проверяет токен запросом к Kaspi и сохраняет его зашифрованным. Бросает KaspiAuthError / KaspiUnavailable."""
     client.ping(_now_ms(now))
-    conn = db.get(KaspiConnection, shop.id) or KaspiConnection(shop_id=shop.id)
+    conn = db.get(KaspiConnection, shop.id)
+    if conn is not None:
+        # К-21: восстановление токена того же магазина в окно поддержки — данные и курсор синхронизации сохраняются
+        conn.token_enc = encrypt_token(token)
+        conn.status = "active"
+        conn.last_error = None
+        conn.reconnect_until = None
+        db.add(conn)
+        db.commit()
+        return conn
+    conn = KaspiConnection(shop_id=shop.id)
     conn.seller_id = seller_id
     conn.token_enc = encrypt_token(token)
     conn.price_key = secrets.token_urlsafe(24)
@@ -617,8 +627,13 @@ def sync_due(db: DbSession, now: datetime, limit: int = 50) -> list[tuple[str, s
             (KaspiConnection.last_sync_at.is_(None)) | (KaspiConnection.last_sync_at < cutoff),
         ).limit(limit)
     ).all()
+    from .accounts import deactivated_shop_ids
+
+    paused = deactivated_shop_ids(db)  # К-21: деактивированный аккаунт — синхронизация стоит
     done: list[tuple[str, str]] = []
     for conn in due:
+        if conn.shop_id in paused:
+            continue
         client = None
         try:
             client = client_for(conn)

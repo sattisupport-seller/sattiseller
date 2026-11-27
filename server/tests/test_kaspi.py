@@ -605,7 +605,6 @@ def test_return_window_closes_17_days_after_delivery(client, demo, kaspi_on, moc
     _order_dates(mock, code, created_days_ago=30, delivered_days_ago=18)
     total_before = sum(r["qty"] for r in mock.entries[code])
     _sync_and_open_refresh(client, demo, mock)
-    old_qty = mock.entries[code][0]["qty"]
     mock.partial_cancel(code, 0, 1)
     _sync_and_open_refresh(client, demo, mock)
     assert _entry_qty_sum(code) == total_before  # окно закрыто: изменение не подхватываем

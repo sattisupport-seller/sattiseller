@@ -38,9 +38,25 @@ def test_check_accepts_clean_output():
     assert len(out["titles"]) == 3 and out["characteristics"][1]["value"] == "450 мл"
 
 
-def test_check_rejects_number_not_in_facts():
-    with pytest.raises(draft_ai.DraftFallback, match="число"):
+def test_unknown_number_in_description_removes_only_that_sentence():
+    # К-22 п.4: предложение с числом не из фактов убирается, остальная карточка остаётся
+    out = draft_ai.check_draft(_good(description="Термокружка с двойными стенками. Вес 300 г. Объём 450 мл."), FACTS)
+    assert out["description"] == "Термокружка с двойными стенками. Объём 450 мл."
+    assert out["titles"][0] == "Термокружка стальная 450 мл"
+
+
+def test_description_with_only_unknown_numbers_goes_to_template():
+    with pytest.raises(draft_ai.DraftFallback, match="чисел"):
         draft_ai.check_draft(_good(description="Объём 450 мл, вес 300 г."), FACTS)
+
+
+def test_unknown_number_in_title_takes_template_title():
+    # К-22 п.4: название с числом не из фактов заменяется названием из шаблона, остальное — от модели
+    titles = ["Термокружка стальная 500 мл", "Термокружка с крышкой-непроливайкой 450 мл", "Термокружка для кофе и чая"]
+    out = draft_ai.check_draft(_good(titles=titles), FACTS)
+    assert "500" not in out["titles"][0] and out["titles"][0].startswith("Термокружка")
+    assert out["titles"][1:] == titles[1:]
+    assert out["description"].startswith("Термокружка из нержавеющей стали")
 
 
 def test_unknown_number_in_characteristic_becomes_clarify_not_template():

@@ -27,6 +27,7 @@ jest.mock('@/session/SessionProvider', () => ({
 jest.mock('@/api/hooks', () => ({
   useDeleteAccountStart: () => ({ mutate: mockStartMutate, isPending: false }),
   useDeleteAccountConfirm: () => ({ mutateAsync: mockConfirmAsync, isPending: false }),
+  useDeactivateConfirm: () => ({ mutateAsync: jest.fn(), isPending: false }),
   useAppConfig: () => ({ data: { flags: { kaspi_connection: mockFlags.kaspi } } }),
 }));
 
@@ -56,7 +57,7 @@ describe('удаление аккаунта', () => {
 
   test('кнопка неактивна, пока не введено 6 цифр; затем удаление, выход и переход на приветствие', async () => {
     await render(wrap(<DeleteAccountScreen />));
-    const button = 'Удалить аккаунт навсегда';
+    const button = 'Удалить аккаунт и все данные';
     fireEvent.changeText(screen.getByDisplayValue(''), '12345');
     await waitFor(() => expect(disabledOf(button)).toBeTruthy());
     fireEvent.changeText(screen.getByDisplayValue('12345'), '123456');
@@ -102,7 +103,15 @@ describe('подключение Kaspi', () => {
     fireEvent.changeText(tokenInput, 'token-0123456789');
     await waitFor(() => expect(screen.getByDisplayValue('S-1')).toBeTruthy());
     await waitFor(() => expect(screen.getByDisplayValue('token-0123456789')).toBeTruthy());
+    // К-21: сначала предупреждение «токен один раз» — нажимаем «Понятно, подключить»
+    const alertSpy = jest.spyOn(require('react-native').Alert, 'alert')
+      .mockImplementation((...args: unknown[]) => {
+        const buttons = args[2] as { text: string; onPress?: () => void }[];
+        buttons.find((b) => b.text === 'Понятно, подключить')?.onPress?.();
+      });
     fireEvent.press(screen.getByRole('button', { name: 'Подключить магазин' }));
+    expect(alertSpy).toHaveBeenCalledWith('Подключить магазин?', expect.stringContaining('только один раз'), expect.anything());
+    alertSpy.mockRestore();
     await waitFor(() =>
       expect(mockRequest).toHaveBeenCalledWith('/shops/shop-1/kaspi/connection', expect.objectContaining({
         method: 'POST', body: { seller_id: 'S-1', token: 'token-0123456789' },

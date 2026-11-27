@@ -17,7 +17,7 @@ import { ActivityIndicator, View } from 'react-native';
 // Нативный экран запуска (spec-2.1, раздел 15.2) держим, пока не загружены шрифты.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-import { reportClientError, setSubscriptionRequiredHandler } from '@/api/client';
+import { reportClientError, setAccountBlockedHandler, setAccountDeactivatedHandler, setSubscriptionRequiredHandler } from '@/api/client';
 import { SessionProvider, useSession } from '@/session/SessionProvider';
 import { ToastProvider } from '@/components/ui/Overlays';
 import { useTheme } from '@/theme/useTheme';
@@ -82,6 +82,8 @@ function Shell() {
   // Сервер ответил subscription_required — показываем экран блокировки (ТЗ 2.1, 9.2).
   useEffect(() => {
     setSubscriptionRequiredHandler(() => router.push('/subscription-ended'));
+    setAccountBlockedHandler(() => router.replace('/account-blocked' as never));
+    setAccountDeactivatedHandler(() => router.replace('/account-deactivated' as never));
   }, [router]);
 
   // Смена статуса сессии (вход, выход, истёкшая сессия) — переход на стартовый маршрут.
@@ -116,6 +118,8 @@ function Shell() {
         <Stack.Screen name="code" options={{ headerShown: true, title: t('code.title'), headerBackTitle: t('common.back') }} />
         <Stack.Screen name="shop-setup" options={{ headerShown: true, title: t('shopSetup.title'), headerBackVisible: false }} />
         <Stack.Screen name="update-required" options={{ headerShown: false }} />
+        <Stack.Screen name="account-blocked" options={{ headerShown: false, gestureEnabled: false }} />
+        <Stack.Screen name="account-deactivated" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="terms-consent" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="profit" options={{ headerShown: true, title: t('profit.title'), headerBackTitle: t('common.back') }} />

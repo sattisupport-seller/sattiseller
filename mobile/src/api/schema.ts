@@ -41,6 +41,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/ai-feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ai Feedback List
+         * @description Жалобы («Пожаловаться») и 👎 на ответы помощника — для проверки качества на бете. Вопрос уже с маскировкой.
+         */
+        get: operations["ai_feedback_list_v1_admin_ai_feedback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Analytics Summary
+         * @description 3.9: счётчики событий за последние дни (без пользователей и адресов).
+         */
+        get: operations["analytics_summary_v1_admin_analytics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/errors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Errors */
+        get: operations["admin_errors_v1_admin_errors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/flags": {
         parameters: {
             query?: never;
@@ -69,6 +126,26 @@ export interface paths {
         /** Flags Set */
         put: operations["flags_set_v1_admin_flags__key__put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Session
+         * @description Код двухфакторной защиты меняется на сессию на 30 минут. Один и тот же код второй раз не принимается.
+         */
+        post: operations["open_session_v1_admin_session_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -227,7 +304,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Ai Product Draft */
+        /**
+         * Ai Product Draft
+         * @description Карточка товара (К-14, ADR 0011): живая модель с фото; при выключателе, бюджете или сбое модели — шаблон с пометкой.
+         */
         post: operations["ai_product_draft_v1_ai_product_drafts_post"];
         delete?: never;
         options?: never;
@@ -269,6 +349,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/analytics/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Analytics Event
+         * @description 3.9: счётчик события за день. Без входа, без адреса и устройства; не чаще 600 раз в час с одного адреса.
+         */
+        post: operations["analytics_event_v1_analytics_events_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/app/config": {
         parameters: {
             query?: never;
@@ -280,6 +380,23 @@ export interface paths {
         get: operations["app_config_v1_app_config_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/apple": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Auth Apple */
+        post: operations["auth_apple_v1_auth_apple_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -314,6 +431,23 @@ export interface paths {
         put?: never;
         /** Auth Email Verify */
         post: operations["auth_email_verify_v1_auth_email_verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/google": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Auth Google */
+        post: operations["auth_google_v1_auth_google_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -547,6 +681,26 @@ export interface paths {
         post: operations["grant_support_access_v1_me_support_access_post"];
         /** Revoke Support Access */
         delete: operations["revoke_support_access_v1_me_support_access_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Me Terms
+         * @description 1.19: согласие с текущей версией условий и политики. Без accepted=true — отказ.
+         */
+        post: operations["me_terms_v1_me_terms_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -833,6 +987,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/shops/{shop_id}/kaspi/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Kaspi Upload Catalog
+         * @description Импорт прайс-листа продавца из кабинета Kaspi (К-16.3). Наш файл потом строится из него.
+         */
+        post: operations["kaspi_upload_catalog_v1_shops__shop_id__kaspi_catalog_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/shops/{shop_id}/kaspi/connection": {
         parameters: {
             query?: never;
@@ -847,6 +1021,43 @@ export interface paths {
         post: operations["kaspi_connect_v1_shops__shop_id__kaspi_connection_post"];
         /** Kaspi Disconnect */
         delete: operations["kaspi_disconnect_v1_shops__shop_id__kaspi_connection_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shops/{shop_id}/kaspi/stores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Kaspi Set Stores
+         * @description Коды складов Kaspi (storeId) — без переподключения и без сброса курсора синхронизации.
+         */
+        put: operations["kaspi_set_stores_v1_shops__shop_id__kaspi_stores_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shops/{shop_id}/kaspi/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Kaspi Sync Now */
+        post: operations["kaspi_sync_now_v1_shops__shop_id__kaspi_sync_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -972,6 +1183,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/shops/{shop_id}/products/{product_id}/stock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Stock Row */
+        get: operations["get_stock_row_v1_shops__shop_id__products__product_id__stock_get"];
+        /**
+         * Put Stock Row
+         * @description Инвентаризация: остаток на сейчас (событие журнала). Продажи и возвраты после неё уменьшают и увеличивают остаток.
+         */
+        put: operations["put_stock_row_v1_shops__shop_id__products__product_id__stock_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shops/{shop_id}/products/{product_id}/stock/delist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stock Delist
+         * @description Снятие с продажи (XML-прайс): только при нулевом остатке и после подтверждения (confirm=true).
+         */
+        post: operations["stock_delist_v1_shops__shop_id__products__product_id__stock_delist_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shops/{shop_id}/products/{product_id}/stock/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stock Receipt
+         * @description Приход. Дата события — occurred_at (по умолчанию сейчас); приход учитывается, если он позже последней инвентаризации.
+         *     Без инвентаризации остаток не ведётся: сначала пересчитайте товар.
+         */
+        post: operations["stock_receipt_v1_shops__shop_id__products__product_id__stock_receipt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shops/{shop_id}/products/{product_id}/stock/relist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stock Relist */
+        post: operations["stock_relist_v1_shops__shop_id__products__product_id__stock_relist_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/shops/{shop_id}/profit-breakdown": {
         parameters: {
             query?: never;
@@ -981,6 +1271,43 @@ export interface paths {
         };
         /** Get Profit Breakdown */
         get: operations["get_profit_breakdown_v1_shops__shop_id__profit_breakdown_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shops/{shop_id}/stock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Stock */
+        get: operations["list_stock_v1_shops__shop_id__stock_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shops/{shop_id}/stock/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stock Alerts
+         * @description Уведомления 10/5/3 шт. и 0 — в приложении (этот список) и push на моке (файл в outbox). Ниже порога — один раз.
+         */
+        get: operations["stock_alerts_v1_shops__shop_id__stock_alerts_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1006,6 +1333,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/shops/{shop_id}/subscription/offer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Subscription Offer
+         * @description Что предлагать к покупке (К-21): подписка с пробным периодом или без него — по правилам Satti.
+         */
+        post: operations["post_subscription_offer_v1_shops__shop_id__subscription_offer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/shops/{shop_id}/subscription/trial": {
         parameters: {
             query?: never;
@@ -1017,7 +1364,8 @@ export interface paths {
         put?: never;
         /**
          * Post Start Trial
-         * @description Пробный период. В боевом режиме выдаётся только после подтверждения магазина приложений (раздел 8.2).
+         * @description Пробный период без магазина приложений — только SATTI_BILLING_TEST_MODE. В боевом режиме его даёт
+         *     App Store или Google Play (вводное предложение), а сервер видит его при проверке покупки.
          */
         post: operations["post_start_trial_v1_shops__shop_id__subscription_trial_post"];
         delete?: never;
@@ -1037,8 +1385,8 @@ export interface paths {
         put?: never;
         /**
          * Post Verify Purchase
-         * @description Проверка покупки через App Store Server API и Google Play Developer API (раздел 8.5).
-         *     Не подключено: нужны аккаунты владельца (spec-2.1, 19.3 и 19.10).
+         * @description Проверка покупки у магазина (App Store Server API, Google Play Developer API) и доступ по её состоянию.
+         *     Тот же вызов — для «Восстановить покупки»: приложение присылает каждую найденную покупку.
          */
         post: operations["post_verify_purchase_v1_shops__shop_id__subscription_verify_post"];
         delete?: never;
@@ -1059,6 +1407,26 @@ export interface paths {
         put?: never;
         /** Tax Set */
         post: operations["tax_set_v1_shops__shop_id__tax_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/telemetry/errors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Client Error
+         * @description Ошибка из приложения. Анонимно, с лимитом на адрес: 60 в час.
+         */
+        post: operations["client_error_v1_telemetry_errors_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1112,11 +1480,17 @@ export interface components {
             /**
              * @default {
              *       "ai_assistant": true,
+             *       "analytics": false,
              *       "kaspi_connection": false,
              *       "subscription": false
              *     }
              */
             flags: components["schemas"]["FeatureFlags"];
+            /**
+             * Legal Version
+             * @default
+             */
+            legal_version: string;
             /** Maintenance Message */
             maintenance_message?: string | null;
             /**
@@ -1200,10 +1574,12 @@ export interface components {
         };
         /** Body_import_upload_v1_shops__shop_id__imports_post */
         Body_import_upload_v1_shops__shop_id__imports_post: {
-            /**
-             * File
-             * Format: binary
-             */
+            /** File */
+            file: string;
+        };
+        /** Body_kaspi_upload_catalog_v1_shops__shop_id__kaspi_catalog_post */
+        Body_kaspi_upload_catalog_v1_shops__shop_id__kaspi_catalog_post: {
+            /** File */
             file: string;
         };
         /** BreakdownStepOut */
@@ -1248,6 +1624,25 @@ export interface components {
             product_id: string;
             /** Purchase */
             purchase: string;
+        };
+        /** ClientErrorIn */
+        ClientErrorIn: {
+            /** App Version */
+            app_version?: string | null;
+            /**
+             * Exc Type
+             * @default ClientError
+             */
+            exc_type: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /** Platform */
+            platform?: string | null;
+            /** Where */
+            where: string;
         };
         /** CodeIn */
         CodeIn: {
@@ -1392,6 +1787,21 @@ export interface components {
             /** Qty */
             qty: number;
         };
+        /** DelistIn */
+        DelistIn: {
+            /** Confirm */
+            confirm: boolean;
+        };
+        /**
+         * DeviceIn
+         * @description Одноразовый токен проверки телефона: DeviceCheck (iOS) или Play Integrity (Android). Не сохраняется.
+         */
+        DeviceIn: {
+            /** Device Token */
+            device_token?: string | null;
+            /** Platform */
+            platform?: ("ios" | "android") | null;
+        };
         /** EconomicsOut */
         EconomicsOut: {
             /** Avg Price Minor */
@@ -1413,6 +1823,11 @@ export interface components {
         EmailIn: {
             /** Email */
             email: string;
+        };
+        /** EventIn */
+        EventIn: {
+            /** Event */
+            event: string;
         };
         /** ExpenseIn */
         ExpenseIn: {
@@ -1460,6 +1875,11 @@ export interface components {
              */
             ai_assistant: boolean;
             /**
+             * Analytics
+             * @default false
+             */
+            analytics: boolean;
+            /**
              * Kaspi Connection
              * @default false
              */
@@ -1506,6 +1926,18 @@ export interface components {
             profit_minor: number | null;
             /** Sku */
             sku: string;
+        };
+        /** KaspiConnectIn */
+        KaspiConnectIn: {
+            /** Seller Id */
+            seller_id: string;
+            /** Token */
+            token: string;
+        };
+        /** KaspiStoresIn */
+        KaspiStoresIn: {
+            /** Store Ids */
+            store_ids?: string[];
         };
         /** KpiOut */
         KpiOut: {
@@ -1555,7 +1987,7 @@ export interface components {
         /** MeIn */
         MeIn: {
             /** Locale */
-            locale?: ("ru" | "kk") | null;
+            locale?: "ru" | null;
             /** Name */
             name?: string | null;
         };
@@ -1576,6 +2008,11 @@ export interface components {
             locale: string;
             /** Name */
             name?: string | null;
+            /**
+             * Terms Consent Required
+             * @default false
+             */
+            terms_consent_required: boolean;
         };
         /** MissingCostProductOut */
         MissingCostProductOut: {
@@ -1612,6 +2049,27 @@ export interface components {
             quiet_hours?: boolean | null;
             /** Weekly Summary */
             weekly_summary?: boolean | null;
+        };
+        /** OfferOut */
+        OfferOut: {
+            /** Account Token */
+            account_token: string;
+            /** Apple Product Id */
+            apple_product_id: string;
+            /** Google Offer Id */
+            google_offer_id: string | null;
+            /** Google Subscription Id */
+            google_subscription_id: string;
+            /** Price Text */
+            price_text: string;
+            /** Reason */
+            reason: string;
+            /** Reason Text */
+            reason_text: string | null;
+            /** Trial Available */
+            trial_available: boolean;
+            /** Trial Days */
+            trial_days: number;
         };
         /** OrderDetailOut */
         OrderDetailOut: {
@@ -1693,6 +2151,10 @@ export interface components {
             comparison_period: components["schemas"]["PeriodOut"];
             /** Data As Of */
             data_as_of: string;
+            /** Data From */
+            data_from?: string | null;
+            /** History Note */
+            history_note?: string | null;
             /** Is Today In Period */
             is_today_in_period: boolean;
             kpi: components["schemas"]["KpiOut"];
@@ -1710,6 +2172,8 @@ export interface components {
         };
         /** ProductDetailOut */
         ProductDetailOut: {
+            /** Commission Note */
+            commission_note?: string | null;
             /** Cost History */
             cost_history: components["schemas"]["CostHistoryOut"][];
             current_cost: components["schemas"]["CurrentCostOut"] | null;
@@ -1764,6 +2228,11 @@ export interface components {
             items: components["schemas"]["ProductRowOut"][];
             /** Next Cursor */
             next_cursor: string | null;
+            /**
+             * No Cost Count
+             * @default 0
+             */
+            no_cost_count: number;
             /** Total */
             total: number;
         };
@@ -1781,6 +2250,20 @@ export interface components {
             /** Steps */
             steps: components["schemas"]["BreakdownStepOut"][];
         };
+        /** PurchaseVerifyIn */
+        PurchaseVerifyIn: {
+            /** Device Token */
+            device_token?: string | null;
+            /** Platform */
+            platform?: ("ios" | "android") | null;
+            /** Purchase Id */
+            purchase_id: string;
+            /**
+             * Store
+             * @enum {string}
+             */
+            store: "apple" | "google";
+        };
         /** PushIn */
         PushIn: {
             /**
@@ -1790,6 +2273,13 @@ export interface components {
             platform: "ios" | "android";
             /** Token */
             token: string;
+        };
+        /** ReceiptIn */
+        ReceiptIn: {
+            /** Occurred At */
+            occurred_at?: string | null;
+            /** Qty */
+            qty: number;
         };
         /** RefreshIn */
         RefreshIn: {
@@ -1836,9 +2326,9 @@ export interface components {
             /**
              * Language
              * @default ru
-             * @enum {string}
+             * @constant
              */
-            language: "ru" | "kk";
+            language: "ru";
             /** Name */
             name: string;
             /**
@@ -1863,7 +2353,7 @@ export interface components {
         /** ShopPatch */
         ShopPatch: {
             /** Language */
-            language?: ("ru" | "kk") | null;
+            language?: "ru" | null;
             /** Name */
             name?: string | null;
             /** Timezone */
@@ -1873,6 +2363,23 @@ export interface components {
         ShopsOut: {
             /** Items */
             items: components["schemas"]["ShopOut"][];
+        };
+        /** SocialIn */
+        SocialIn: {
+            /**
+             * Accept Terms
+             * @default false
+             */
+            accept_terms: boolean;
+            /** Id Token */
+            id_token: string;
+            /** Nonce */
+            nonce?: string | null;
+        };
+        /** StockIn */
+        StockIn: {
+            /** Qty */
+            qty: number;
         };
         /** SubscriptionOut */
         SubscriptionOut: {
@@ -1919,8 +2426,17 @@ export interface components {
             /** Rate Bp */
             rate_bp: number | null;
         };
+        /** TermsIn */
+        TermsIn: {
+            /** Accepted */
+            accepted: boolean;
+        };
         /** ValidationError */
         ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
@@ -1930,6 +2446,11 @@ export interface components {
         };
         /** VerifyIn */
         VerifyIn: {
+            /**
+             * Accept Terms
+             * @default false
+             */
+            accept_terms: boolean;
             /** Code */
             code: string;
             /** Email */
@@ -2010,11 +2531,109 @@ export interface operations {
             };
         };
     };
+    ai_feedback_list_v1_admin_ai_feedback_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Session"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analytics_summary_v1_admin_analytics_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: {
+                "X-Admin-Session"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_errors_v1_admin_errors_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Session"?: string | null;
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     flags_get_v1_admin_flags_get: {
         parameters: {
             query?: never;
             header?: {
-                "X-Admin-Code"?: string | null;
+                "X-Admin-Session"?: string | null;
                 authorization?: string | null;
             };
             path?: never;
@@ -2046,7 +2665,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                "X-Admin-Code"?: string | null;
+                "X-Admin-Session"?: string | null;
                 authorization?: string | null;
             };
             path: {
@@ -2080,11 +2699,46 @@ export interface operations {
             };
         };
     };
+    open_session_v1_admin_session_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stats_v1_admin_stats_get: {
         parameters: {
             query?: never;
             header?: {
-                "X-Admin-Code"?: string | null;
+                "X-Admin-Session"?: string | null;
                 authorization?: string | null;
             };
             path?: never;
@@ -2116,7 +2770,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                "X-Admin-Code"?: string | null;
+                "X-Admin-Session"?: string | null;
                 authorization?: string | null;
             };
             path?: never;
@@ -2148,7 +2802,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                "X-Admin-Code"?: string | null;
+                "X-Admin-Session"?: string | null;
                 authorization?: string | null;
             };
             path: {
@@ -2186,7 +2840,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                "X-Admin-Code"?: string | null;
+                "X-Admin-Session"?: string | null;
                 authorization?: string | null;
             };
             path: {
@@ -2488,6 +3142,37 @@ export interface operations {
             };
         };
     };
+    analytics_event_v1_analytics_events_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EventIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     app_config_v1_app_config_get: {
         parameters: {
             query?: never;
@@ -2504,6 +3189,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AppConfig"];
+                };
+            };
+        };
+    };
+    auth_apple_v1_auth_apple_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SocialIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2551,6 +3269,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["VerifyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_google_v1_auth_google_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SocialIn"];
             };
         };
         responses: {
@@ -2909,6 +3660,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                "accept-language"?: string | null;
                 authorization?: string | null;
             };
             path?: never;
@@ -3008,6 +3760,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_terms_v1_me_terms_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TermsIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -3697,6 +4484,43 @@ export interface operations {
             };
         };
     };
+    kaspi_upload_catalog_v1_shops__shop_id__kaspi_catalog_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_kaspi_upload_catalog_v1_shops__shop_id__kaspi_catalog_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     kaspi_status_v1_shops__shop_id__kaspi_connection_get: {
         parameters: {
             query?: never;
@@ -3741,6 +4565,43 @@ export interface operations {
             };
             cookie?: never;
         };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KaspiConnectIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    kaspi_disconnect_v1_shops__shop_id__kaspi_connection_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+            };
+            cookie?: never;
+        };
         requestBody?: never;
         responses: {
             /** @description Successful Response */
@@ -3763,7 +4624,44 @@ export interface operations {
             };
         };
     };
-    kaspi_disconnect_v1_shops__shop_id__kaspi_connection_delete: {
+    kaspi_set_stores_v1_shops__shop_id__kaspi_stores_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KaspiStoresIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    kaspi_sync_now_v1_shops__shop_id__kaspi_sync_post: {
         parameters: {
             query?: never;
             header?: {
@@ -4085,6 +4983,188 @@ export interface operations {
             };
         };
     };
+    get_stock_row_v1_shops__shop_id__products__product_id__stock_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_stock_row_v1_shops__shop_id__products__product_id__stock_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StockIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stock_delist_v1_shops__shop_id__products__product_id__stock_delist_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DelistIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stock_receipt_v1_shops__shop_id__products__product_id__stock_receipt_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReceiptIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stock_relist_v1_shops__shop_id__products__product_id__stock_relist_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_profit_breakdown_v1_shops__shop_id__profit_breakdown_get: {
         parameters: {
             query?: {
@@ -4107,6 +5187,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProfitBreakdownOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_stock_v1_shops__shop_id__stock_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stock_alerts_v1_shops__shop_id__stock_alerts_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
                 };
             };
             /** @description Validation Error */
@@ -4153,6 +5299,43 @@ export interface operations {
             };
         };
     };
+    post_subscription_offer_v1_shops__shop_id__subscription_offer_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfferOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     post_start_trial_v1_shops__shop_id__subscription_trial_post: {
         parameters: {
             query?: never;
@@ -4164,7 +5347,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DeviceIn"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             201: {
@@ -4197,7 +5384,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PurchaseVerifyIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -4205,7 +5396,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SubscriptionOut"];
                 };
             };
             /** @description Validation Error */
@@ -4271,6 +5462,39 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    client_error_v1_telemetry_errors_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientErrorIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };

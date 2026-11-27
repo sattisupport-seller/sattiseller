@@ -367,6 +367,22 @@ export function useDeleteAccountConfirm() {
   return useMutation({ mutationFn: (code: string) => request<{ status: string }>('/me/deletion/confirm', { method: 'POST', body: { code } }) });
 }
 
+// К-21: деактивация на 30 дней — тот же код из письма, что и для удаления.
+export function useDeactivateConfirm() {
+  return useMutation({
+    mutationFn: (code: string) => request<{ status: string; delete_on: string }>('/me/deactivation/confirm', { method: 'POST', body: { code } }),
+  });
+}
+
+// К-21: восстановление — сервер проверяет, что подписка оплачена.
+export function useReactivate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => request<{ status: string }>('/me/reactivation', { method: 'POST' }),
+    onSuccess: () => { void qc.invalidateQueries(); },
+  });
+}
+
 export function useNotificationSettings() {
   const qc = useQueryClient();
   return useMutation({
@@ -401,6 +417,13 @@ export function invalidateShop(qc: ReturnType<typeof useQueryClient>, shopId: st
 }
 
 
+// Аккаунт (К-21): номер продавца — 8 цифр, его называют в поддержке.
+export type MeView = { email?: string | null; seller_number?: string | null; deactivated?: boolean; delete_on?: string | null };
+
+export function useMe(enabled = true) {
+  return useQuery({ queryKey: ['me'], queryFn: () => request<MeView>('/me'), enabled });
+}
+
 // Подписка (ТЗ 2.1, раздел 8). Состояние хранит сервер.
 type SubscriptionView = components['schemas']['SubscriptionOut'];
 
@@ -412,10 +435,36 @@ export function useSubscription(shopId: string | null) {
   });
 }
 
+export type DeviceTrust = components['schemas']['DeviceIn'];
+export type SubscriptionOffer = components['schemas']['OfferOut'];
+export type PurchaseVerify = components['schemas']['PurchaseVerifyIn'];
+
 export function useStartTrial(shopId: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => request<SubscriptionView>(`/shops/${shopId}/subscription/trial`, { method: 'POST', body: {} }),
+    mutationFn: (device: DeviceTrust = {}) =>
+      request<SubscriptionView>(`/shops/${shopId}/subscription/trial`, { method: 'POST', body: device }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['subscription', shopId] });
+      invalidateShop(qc, shopId);
+    },
+  });
+}
+
+// 3.1 (К-21): что покупать — с пробным периодом или без (решает сервер по телефону, магазину Kaspi и аккаунту)
+export function useSubscriptionOffer(shopId: string | null) {
+  return useMutation({
+    mutationFn: (device: DeviceTrust) =>
+      request<SubscriptionOffer>(`/shops/${shopId}/subscription/offer`, { method: 'POST', body: device }),
+  });
+}
+
+// Проверка покупки сервером у App Store / Google Play; тот же вызов — для «Восстановить покупки»
+export function useVerifyPurchase(shopId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: PurchaseVerify) =>
+      request<SubscriptionView>(`/shops/${shopId}/subscription/verify`, { method: 'POST', body }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['subscription', shopId] });
       invalidateShop(qc, shopId);

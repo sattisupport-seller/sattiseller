@@ -44,6 +44,9 @@ class User(Base):
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # блокировка администратором
     support_access_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # доступ поддержки, 24 ч
+    # К-21: деактивация на 30 дней — доступ закрыт, фоновое остановлено; delete_after — дата автоудаления
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delete_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     ai_consent_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     ai_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -356,6 +359,8 @@ class KaspiConnection(Base):
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # К-21: токен подключается один раз; новый токен того же магазина — только в окно, которое открыл владелец (24 ч)
+    reconnect_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AIBudgetAlert(Base):

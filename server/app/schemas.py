@@ -278,6 +278,9 @@ class MeOut(BaseModel):
     locale: str = "ru"
     age_confirmed: bool | None = None
     terms_consent_required: bool = False  # 1.19: нужно принять обновлённые условия
+    seller_number: str | None = None  # К-21: номер продавца (8 цифр) — назвать в поддержке
+    deactivated: bool = False  # К-21: аккаунт деактивирован — в приложении только экран восстановления
+    delete_on: str | None = None  # дата автоудаления при деактивации (ISO)
 
 
 class AgeConfirmOut(BaseModel):

@@ -119,7 +119,8 @@
           }
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-iap"
     ],
     "scheme": "satti",
     "experiments": {

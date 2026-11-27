@@ -60,9 +60,15 @@
             "$ref": "#/components/schemas/FeatureFlags",
             "default": {
               "ai_assistant": true,
+              "analytics": false,
               "kaspi_connection": false,
               "subscription": false
             }
+          },
+          "legal_version": {
+            "default": "",
+            "title": "Legal Version",
+            "type": "string"
           },
           "maintenance_message": {
             "anyOf": [
@@ -257,7 +263,7 @@
           "photos": {
             "default": [],
             "items": {
-              "format": "binary",
+              "contentMediaType": "application/octet-stream",
               "type": "string"
             },
             "title": "Photos",
@@ -278,7 +284,7 @@
       "Body_import_upload_v1_shops__shop_id__imports_post": {
         "properties": {
           "file": {
-            "format": "binary",
+            "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
           }
@@ -287,6 +293,20 @@
           "file"
         ],
         "title": "Body_import_upload_v1_shops__shop_id__imports_post",
+        "type": "object"
+      },
+      "Body_kaspi_upload_catalog_v1_shops__shop_id__kaspi_catalog_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_kaspi_upload_catalog_v1_shops__shop_id__kaspi_catalog_post",
         "type": "object"
       },
       "BreakdownStepOut": {
@@ -377,6 +397,57 @@
           "purchase"
         ],
         "title": "BulkCostItem",
+        "type": "object"
+      },
+      "ClientErrorIn": {
+        "properties": {
+          "app_version": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version"
+          },
+          "exc_type": {
+            "default": "ClientError",
+            "maxLength": 120,
+            "title": "Exc Type",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "maxLength": 2000,
+            "title": "Message",
+            "type": "string"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "where": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Where",
+            "type": "string"
+          }
+        },
+        "required": [
+          "where"
+        ],
+        "title": "ClientErrorIn",
         "type": "object"
       },
       "CodeIn": {
@@ -779,6 +850,53 @@
         "title": "DailyUnitsOut",
         "type": "object"
       },
+      "DelistIn": {
+        "properties": {
+          "confirm": {
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "DelistIn",
+        "type": "object"
+      },
+      "DeviceIn": {
+        "description": "Одноразовый токен проверки телефона: DeviceCheck (iOS) или Play Integrity (Android). Не сохраняется.",
+        "properties": {
+          "device_token": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Token"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ios",
+                  "android"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          }
+        },
+        "title": "DeviceIn",
+        "type": "object"
+      },
       "EconomicsOut": {
         "properties": {
           "avg_price_minor": {
@@ -841,6 +959,21 @@
           "email"
         ],
         "title": "EmailIn",
+        "type": "object"
+      },
+      "EventIn": {
+        "properties": {
+          "event": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Event",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event"
+        ],
+        "title": "EventIn",
         "type": "object"
       },
       "ExpenseIn": {
@@ -931,6 +1064,11 @@
           "ai_assistant": {
             "default": true,
             "title": "Ai Assistant",
+            "type": "boolean"
+          },
+          "analytics": {
+            "default": false,
+            "title": "Analytics",
             "type": "boolean"
           },
           "kaspi_connection": {
@@ -1066,6 +1204,42 @@
         "title": "InMinusItem",
         "type": "object"
       },
+      "KaspiConnectIn": {
+        "properties": {
+          "seller_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Seller Id",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 256,
+            "minLength": 8,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "seller_id",
+          "token"
+        ],
+        "title": "KaspiConnectIn",
+        "type": "object"
+      },
+      "KaspiStoresIn": {
+        "properties": {
+          "store_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Store Ids",
+            "type": "array"
+          }
+        },
+        "title": "KaspiStoresIn",
+        "type": "object"
+      },
       "KpiOut": {
         "properties": {
           "coverage_bp": {
@@ -1198,10 +1372,7 @@
           "locale": {
             "anyOf": [
               {
-                "enum": [
-                  "ru",
-                  "kk"
-                ],
+                "const": "ru",
                 "type": "string"
               },
               {
@@ -1280,6 +1451,11 @@
               }
             ],
             "title": "Name"
+          },
+          "terms_consent_required": {
+            "default": false,
+            "title": "Terms Consent Required",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1397,6 +1573,73 @@
           }
         },
         "title": "NotifIn",
+        "type": "object"
+      },
+      "OfferOut": {
+        "properties": {
+          "account_token": {
+            "title": "Account Token",
+            "type": "string"
+          },
+          "apple_product_id": {
+            "title": "Apple Product Id",
+            "type": "string"
+          },
+          "google_offer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Google Offer Id"
+          },
+          "google_subscription_id": {
+            "title": "Google Subscription Id",
+            "type": "string"
+          },
+          "price_text": {
+            "title": "Price Text",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "reason_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Text"
+          },
+          "trial_available": {
+            "title": "Trial Available",
+            "type": "boolean"
+          },
+          "trial_days": {
+            "title": "Trial Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "trial_available",
+          "reason",
+          "reason_text",
+          "account_token",
+          "apple_product_id",
+          "google_subscription_id",
+          "google_offer_id",
+          "price_text",
+          "trial_days"
+        ],
+        "title": "OfferOut",
         "type": "object"
       },
       "OrderDetailOut": {
@@ -1656,6 +1899,28 @@
             "title": "Data As Of",
             "type": "string"
           },
+          "data_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data From"
+          },
+          "history_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Note"
+          },
           "is_today_in_period": {
             "title": "Is Today In Period",
             "type": "boolean"
@@ -1708,6 +1973,17 @@
       },
       "ProductDetailOut": {
         "properties": {
+          "commission_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commission Note"
+          },
           "cost_history": {
             "items": {
               "$ref": "#/components/schemas/CostHistoryOut"
@@ -1899,6 +2175,11 @@
             ],
             "title": "Next Cursor"
           },
+          "no_cost_count": {
+            "default": 0,
+            "title": "No Cost Count",
+            "type": "integer"
+          },
           "total": {
             "title": "Total",
             "type": "integer"
@@ -1956,6 +2237,57 @@
         "title": "ProfitBreakdownOut",
         "type": "object"
       },
+      "PurchaseVerifyIn": {
+        "properties": {
+          "device_token": {
+            "anyOf": [
+              {
+                "maxLength": 8192,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Token"
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ios",
+                  "android"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform"
+          },
+          "purchase_id": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Purchase Id",
+            "type": "string"
+          },
+          "store": {
+            "enum": [
+              "apple",
+              "google"
+            ],
+            "title": "Store",
+            "type": "string"
+          }
+        },
+        "required": [
+          "store",
+          "purchase_id"
+        ],
+        "title": "PurchaseVerifyIn",
+        "type": "object"
+      },
       "PushIn": {
         "properties": {
           "platform": {
@@ -1978,6 +2310,33 @@
           "platform"
         ],
         "title": "PushIn",
+        "type": "object"
+      },
+      "ReceiptIn": {
+        "properties": {
+          "occurred_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Occurred At"
+          },
+          "qty": {
+            "maximum": 10000000.0,
+            "minimum": 1.0,
+            "title": "Qty",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "qty"
+        ],
+        "title": "ReceiptIn",
         "type": "object"
       },
       "RefreshIn": {
@@ -2103,11 +2462,8 @@
       "ShopIn": {
         "properties": {
           "language": {
+            "const": "ru",
             "default": "ru",
-            "enum": [
-              "ru",
-              "kk"
-            ],
             "title": "Language",
             "type": "string"
           },
@@ -2167,10 +2523,7 @@
           "language": {
             "anyOf": [
               {
-                "enum": [
-                  "ru",
-                  "kk"
-                ],
+                "const": "ru",
                 "type": "string"
               },
               {
@@ -2221,6 +2574,50 @@
           "items"
         ],
         "title": "ShopsOut",
+        "type": "object"
+      },
+      "SocialIn": {
+        "properties": {
+          "accept_terms": {
+            "default": false,
+            "title": "Accept Terms",
+            "type": "boolean"
+          },
+          "id_token": {
+            "title": "Id Token",
+            "type": "string"
+          },
+          "nonce": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nonce"
+          }
+        },
+        "required": [
+          "id_token"
+        ],
+        "title": "SocialIn",
+        "type": "object"
+      },
+      "StockIn": {
+        "properties": {
+          "qty": {
+            "maximum": 10000000.0,
+            "minimum": 0.0,
+            "title": "Qty",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "qty"
+        ],
+        "title": "StockIn",
         "type": "object"
       },
       "SubscriptionOut": {
@@ -2396,8 +2793,28 @@
         "title": "TaxRowOut",
         "type": "object"
       },
+      "TermsIn": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accepted"
+        ],
+        "title": "TermsIn",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
           "loc": {
             "items": {
               "anyOf": [
@@ -2431,6 +2848,11 @@
       },
       "VerifyIn": {
         "properties": {
+          "accept_terms": {
+            "default": false,
+            "title": "Accept Terms",
+            "type": "boolean"
+          },
           "code": {
             "maxLength": 6,
             "minLength": 6,
@@ -2571,13 +2993,14 @@
         ]
       }
     },
-    "/v1/admin/flags": {
+    "/v1/admin/ai-feedback": {
       "get": {
-        "operationId": "flags_get_v1_admin_flags_get",
+        "description": "Жалобы («Пожаловаться») и 👎 на ответы помощника — для проверки качества на бете. Вопрос уже с маскировкой.",
+        "operationId": "ai_feedback_list_v1_admin_ai_feedback_get",
         "parameters": [
           {
             "in": "header",
-            "name": "X-Admin-Code",
+            "name": "X-Admin-Session",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2588,7 +3011,216 @@
                   "type": "null"
                 }
               ],
-              "title": "X-Admin-Code"
+              "title": "X-Admin-Session"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Ai Feedback List V1 Admin Ai Feedback Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ai Feedback List",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/analytics": {
+      "get": {
+        "description": "3.9: счётчики событий за последние дни (без пользователей и адресов).",
+        "operationId": "analytics_summary_v1_admin_analytics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Session"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Analytics Summary V1 Admin Analytics Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Analytics Summary",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/errors": {
+      "get": {
+        "operationId": "admin_errors_v1_admin_errors_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Admin-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Session"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Admin Errors V1 Admin Errors Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Errors",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/flags": {
+      "get": {
+        "operationId": "flags_get_v1_admin_flags_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Admin-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Session"
             }
           },
           {
@@ -2652,7 +3284,7 @@
           },
           {
             "in": "header",
-            "name": "X-Admin-Code",
+            "name": "X-Admin-Session",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2663,7 +3295,7 @@
                   "type": "null"
                 }
               ],
-              "title": "X-Admin-Code"
+              "title": "X-Admin-Session"
             }
           },
           {
@@ -2722,14 +3354,14 @@
         ]
       }
     },
-    "/v1/admin/stats": {
-      "get": {
-        "description": "Счётчики без персональных данных (раздел 14.1).",
-        "operationId": "stats_v1_admin_stats_get",
+    "/v1/admin/session": {
+      "post": {
+        "description": "Код двухфакторной защиты меняется на сессию на 30 минут. Один и тот же код второй раз не принимается.",
+        "operationId": "open_session_v1_admin_session_post",
         "parameters": [
           {
             "in": "header",
-            "name": "X-Admin-Code",
+            "name": "authorization",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2740,7 +3372,68 @@
                   "type": "null"
                 }
               ],
-              "title": "X-Admin-Code"
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Open Session V1 Admin Session Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Session",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/stats": {
+      "get": {
+        "description": "Счётчики без персональных данных (раздел 14.1).",
+        "operationId": "stats_v1_admin_stats_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Admin-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Session"
             }
           },
           {
@@ -2795,7 +3488,7 @@
         "parameters": [
           {
             "in": "header",
-            "name": "X-Admin-Code",
+            "name": "X-Admin-Session",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2806,7 +3499,7 @@
                   "type": "null"
                 }
               ],
-              "title": "X-Admin-Code"
+              "title": "X-Admin-Session"
             }
           },
           {
@@ -2870,7 +3563,7 @@
           },
           {
             "in": "header",
-            "name": "X-Admin-Code",
+            "name": "X-Admin-Session",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2881,7 +3574,7 @@
                   "type": "null"
                 }
               ],
-              "title": "X-Admin-Code"
+              "title": "X-Admin-Session"
             }
           },
           {
@@ -2956,7 +3649,7 @@
           },
           {
             "in": "header",
-            "name": "X-Admin-Code",
+            "name": "X-Admin-Session",
             "required": false,
             "schema": {
               "anyOf": [
@@ -2967,7 +3660,7 @@
                   "type": "null"
                 }
               ],
-              "title": "X-Admin-Code"
+              "title": "X-Admin-Session"
             }
           },
           {
@@ -3305,6 +3998,7 @@
     },
     "/v1/ai/product-drafts": {
       "post": {
+        "description": "Карточка товара (К-14, ADR 0011): живая модель с фото; при выключателе, бюджете или сбое модели — шаблон с пометкой.",
         "operationId": "ai_product_draft_v1_ai_product_drafts_post",
         "parameters": [
           {
@@ -3490,6 +4184,41 @@
         ]
       }
     },
+    "/v1/analytics/events": {
+      "post": {
+        "description": "3.9: счётчик события за день. Без входа, без адреса и устройства; не чаще 600 раз в час с одного адреса.",
+        "operationId": "analytics_event_v1_analytics_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Analytics Event",
+        "tags": [
+          "аналитика"
+        ]
+      }
+    },
     "/v1/app/config": {
       "get": {
         "operationId": "app_config_v1_app_config_get",
@@ -3508,6 +4237,48 @@
         "summary": "App Config",
         "tags": [
           "служебное"
+        ]
+      }
+    },
+    "/v1/auth/apple": {
+      "post": {
+        "operationId": "auth_apple_v1_auth_apple_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SocialIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Auth Apple V1 Auth Apple Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Auth Apple",
+        "tags": [
+          "вход"
         ]
       }
     },
@@ -3590,6 +4361,48 @@
           }
         },
         "summary": "Auth Email Verify",
+        "tags": [
+          "вход"
+        ]
+      }
+    },
+    "/v1/auth/google": {
+      "post": {
+        "operationId": "auth_google_v1_auth_google_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SocialIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Auth Google V1 Auth Google Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Auth Google",
         "tags": [
           "вход"
         ]
@@ -4091,6 +4904,22 @@
         "parameters": [
           {
             "in": "header",
+            "name": "accept-language",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Accept-Language"
+            }
+          },
+          {
+            "in": "header",
             "name": "authorization",
             "required": false,
             "schema": {
@@ -4277,6 +5106,67 @@
           }
         },
         "summary": "Grant Support Access",
+        "tags": [
+          "пользователь"
+        ]
+      }
+    },
+    "/v1/me/terms": {
+      "post": {
+        "description": "1.19: согласие с текущей версией условий и политики. Без accepted=true — отказ.",
+        "operationId": "me_terms_v1_me_terms_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TermsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Me Terms V1 Me Terms Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Me Terms",
         "tags": [
           "пользователь"
         ]
@@ -5527,6 +6417,76 @@
         ]
       }
     },
+    "/v1/shops/{shop_id}/kaspi/catalog": {
+      "post": {
+        "description": "Импорт прайс-листа продавца из кабинета Kaspi (К-16.3). Наш файл потом строится из него.",
+        "operationId": "kaspi_upload_catalog_v1_shops__shop_id__kaspi_catalog_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_kaspi_upload_catalog_v1_shops__shop_id__kaspi_catalog_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Kaspi Upload Catalog V1 Shops  Shop Id  Kaspi Catalog Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Kaspi Upload Catalog",
+        "tags": [
+          "Kaspi"
+        ]
+      }
+    },
     "/v1/shops/{shop_id}/kaspi/connection": {
       "delete": {
         "operationId": "kaspi_disconnect_v1_shops__shop_id__kaspi_connection_delete",
@@ -5671,8 +6631,18 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KaspiConnectIn"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -5695,6 +6665,135 @@
           }
         },
         "summary": "Kaspi Connect",
+        "tags": [
+          "Kaspi"
+        ]
+      }
+    },
+    "/v1/shops/{shop_id}/kaspi/stores": {
+      "put": {
+        "description": "Коды складов Kaspi (storeId) — без переподключения и без сброса курсора синхронизации.",
+        "operationId": "kaspi_set_stores_v1_shops__shop_id__kaspi_stores_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KaspiStoresIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Kaspi Set Stores V1 Shops  Shop Id  Kaspi Stores Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Kaspi Set Stores",
+        "tags": [
+          "Kaspi"
+        ]
+      }
+    },
+    "/v1/shops/{shop_id}/kaspi/sync": {
+      "post": {
+        "operationId": "kaspi_sync_now_v1_shops__shop_id__kaspi_sync_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Kaspi Sync Now V1 Shops  Shop Id  Kaspi Sync Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Kaspi Sync Now",
         "tags": [
           "Kaspi"
         ]
@@ -6005,7 +7104,7 @@
             "name": "sort",
             "required": false,
             "schema": {
-              "default": "profit_desc",
+              "default": "profit_asc",
               "title": "Sort",
               "type": "string"
             }
@@ -6375,6 +7474,377 @@
         ]
       }
     },
+    "/v1/shops/{shop_id}/products/{product_id}/stock": {
+      "get": {
+        "operationId": "get_stock_row_v1_shops__shop_id__products__product_id__stock_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "title": "Product Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Stock Row V1 Shops  Shop Id  Products  Product Id  Stock Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Stock Row",
+        "tags": [
+          "склад"
+        ]
+      },
+      "put": {
+        "description": "Инвентаризация: остаток на сейчас (событие журнала). Продажи и возвраты после неё уменьшают и увеличивают остаток.",
+        "operationId": "put_stock_row_v1_shops__shop_id__products__product_id__stock_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "title": "Product Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StockIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Put Stock Row V1 Shops  Shop Id  Products  Product Id  Stock Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Stock Row",
+        "tags": [
+          "склад"
+        ]
+      }
+    },
+    "/v1/shops/{shop_id}/products/{product_id}/stock/delist": {
+      "post": {
+        "description": "Снятие с продажи (XML-прайс): только при нулевом остатке и после подтверждения (confirm=true).",
+        "operationId": "stock_delist_v1_shops__shop_id__products__product_id__stock_delist_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "title": "Product Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DelistIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Stock Delist V1 Shops  Shop Id  Products  Product Id  Stock Delist Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stock Delist",
+        "tags": [
+          "склад"
+        ]
+      }
+    },
+    "/v1/shops/{shop_id}/products/{product_id}/stock/receipt": {
+      "post": {
+        "description": "Приход. Дата события — occurred_at (по умолчанию сейчас); приход учитывается, если он позже последней инвентаризации.\nБез инвентаризации остаток не ведётся: сначала пересчитайте товар.",
+        "operationId": "stock_receipt_v1_shops__shop_id__products__product_id__stock_receipt_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "title": "Product Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReceiptIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Stock Receipt V1 Shops  Shop Id  Products  Product Id  Stock Receipt Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stock Receipt",
+        "tags": [
+          "склад"
+        ]
+      }
+    },
+    "/v1/shops/{shop_id}/products/{product_id}/stock/relist": {
+      "post": {
+        "operationId": "stock_relist_v1_shops__shop_id__products__product_id__stock_relist_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "title": "Product Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Stock Relist V1 Shops  Shop Id  Products  Product Id  Stock Relist Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stock Relist",
+        "tags": [
+          "склад"
+        ]
+      }
+    },
     "/v1/shops/{shop_id}/profit-breakdown": {
       "get": {
         "operationId": "get_profit_breakdown_v1_shops__shop_id__profit_breakdown_get",
@@ -6443,6 +7913,125 @@
         ]
       }
     },
+    "/v1/shops/{shop_id}/stock": {
+      "get": {
+        "operationId": "list_stock_v1_shops__shop_id__stock_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response List Stock V1 Shops  Shop Id  Stock Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Stock",
+        "tags": [
+          "склад"
+        ]
+      }
+    },
+    "/v1/shops/{shop_id}/stock/alerts": {
+      "get": {
+        "description": "Уведомления 10/5/3 шт. и 0 — в приложении (этот список) и push на моке (файл в outbox). Ниже порога — один раз.",
+        "operationId": "stock_alerts_v1_shops__shop_id__stock_alerts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Stock Alerts V1 Shops  Shop Id  Stock Alerts Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stock Alerts",
+        "tags": [
+          "склад"
+        ]
+      }
+    },
     "/v1/shops/{shop_id}/subscription": {
       "get": {
         "operationId": "get_subscription_state_v1_shops__shop_id__subscription_get",
@@ -6501,9 +8090,78 @@
         ]
       }
     },
+    "/v1/shops/{shop_id}/subscription/offer": {
+      "post": {
+        "description": "Что предлагать к покупке (К-21): подписка с пробным периодом или без него — по правилам Satti.",
+        "operationId": "post_subscription_offer_v1_shops__shop_id__subscription_offer_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfferOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Subscription Offer",
+        "tags": [
+          "подписка"
+        ]
+      }
+    },
     "/v1/shops/{shop_id}/subscription/trial": {
       "post": {
-        "description": "Пробный период. В боевом режиме выдаётся только после подтверждения магазина приложений (раздел 8.2).",
+        "description": "Пробный период без магазина приложений — только SATTI_BILLING_TEST_MODE. В боевом режиме его даёт\nApp Store или Google Play (вводное предложение), а сервер видит его при проверке покупки.",
         "operationId": "post_start_trial_v1_shops__shop_id__subscription_trial_post",
         "parameters": [
           {
@@ -6532,6 +8190,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/DeviceIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "content": {
@@ -6562,7 +8237,7 @@
     },
     "/v1/shops/{shop_id}/subscription/verify": {
       "post": {
-        "description": "Проверка покупки через App Store Server API и Google Play Developer API (раздел 8.5).\nНе подключено: нужны аккаунты владельца (spec-2.1, 19.3 и 19.10).",
+        "description": "Проверка покупки у магазина (App Store Server API, Google Play Developer API) и доступ по её состоянию.\nТот же вызов — для «Восстановить покупки»: приложение присылает каждую найденную покупку.",
         "operationId": "post_verify_purchase_v1_shops__shop_id__subscription_verify_post",
         "parameters": [
           {
@@ -6591,13 +8266,22 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PurchaseVerifyIn"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Post Verify Purchase V1 Shops  Shop Id  Subscription Verify Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SubscriptionOut"
                 }
               }
             },
@@ -6742,6 +8426,49 @@
         "summary": "Tax Set",
         "tags": [
           "налог"
+        ]
+      }
+    },
+    "/v1/telemetry/errors": {
+      "post": {
+        "description": "Ошибка из приложения. Анонимно, с лимитом на адрес: 60 в час.",
+        "operationId": "client_error_v1_telemetry_errors_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientErrorIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Client Error V1 Telemetry Errors Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Client Error",
+        "tags": [
+          "ошибки"
         ]
       }
     },
