@@ -6,7 +6,7 @@ SQLAlchemy==2.0.36
 alembic==1.14.0
 openpyxl==3.1.5
 python-multipart==0.0.34
-tzdata==2025.2
+tzdata==2026.6
 pytest==9.2.0
 httpx==0.29.0
 httpx2==2.16.2
