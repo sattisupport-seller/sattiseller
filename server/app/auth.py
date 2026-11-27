@@ -121,17 +121,20 @@ def _consent_active(version: str | None, revoked_at) -> bool:
 
 
 def ai_consent_state(db: DbSession, principal: Principal) -> tuple[str | None, bool]:
-    """Возвращает (версия согласия, активно ли оно)."""
+    """Возвращает (версия согласия, активно ли оно).
+
+    К-24 (решение владельца 27.11.2026): отдельного согласия на ИИ нет. Согласие на передачу данных ИИ-сервису входит
+    в единственную галочку при регистрации (условия и политика, Apple 5.1.2(i)): ИИ работает, если принята текущая
+    версия условий (settings.legal_version). Старая версия — обновлённое согласие показывается один раз (механизм 1.19).
+    Демо: данные магазина вымышленные, регистрации нет — ИИ работает сразу.
+    """
     if principal.user_id:
         user = db.get(User, principal.user_id)
-        if user and _consent_active(user.ai_consent_version, user.ai_consent_revoked_at):
-            return user.ai_consent_version, True
-        return (user.ai_consent_version if user else None), False
+        if user and user.terms_version == settings.legal_version:
+            return settings.legal_version, True
+        return (user.terms_version if user else None), False
     if principal.demo_install_id:
-        inst = db.get(DemoInstallation, principal.demo_install_id)
-        if inst and _consent_active(inst.ai_consent_version, inst.ai_consent_revoked_at):
-            return inst.ai_consent_version, True
-        return (inst.ai_consent_version if inst else None), False
+        return settings.legal_version, True
     return None, False
 
 

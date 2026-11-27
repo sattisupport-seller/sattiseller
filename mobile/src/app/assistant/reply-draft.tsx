@@ -3,14 +3,14 @@ import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
-import { useAIConsent, useReplyDraft } from '@/api/hooks';
-import { draftErrorText, isConsentError } from '@/api/aiErrors';
+import { useReplyDraft } from '@/api/hooks';
+import { draftErrorText } from '@/api/aiErrors';
 import type { ReplyDraft } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/Inputs';
 import { Txt } from '@/components/ui/Text';
 import { Banner, Card, Chip } from '@/components/ui/Surfaces';
-import { Sheet, useToast } from '@/components/ui/Overlays';
+import { useToast } from '@/components/ui/Overlays';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
@@ -22,8 +22,6 @@ export default function ReplyDraftScreen() {
   const toast = useToast();
   const { shopId } = useSession();
   const reply = useReplyDraft(shopId);
-  const consent = useAIConsent();
-  const [consentOpen, setConsentOpen] = useState(false);
   const [question, setQuestion] = useState('');
   const [tone, setTone] = useState<'polite' | 'short'>('polite');
   const [error, setError] = useState<string | null>(null);
@@ -34,21 +32,7 @@ export default function ReplyDraftScreen() {
     try {
       setResult(await reply.mutateAsync({ question, tone }));
     } catch (e) {
-      if (isConsentError(e)) {
-        setConsentOpen(true);
-        return;
-      }
       setError(draftErrorText(e, t));
-    }
-  };
-
-  const allowConsent = async () => {
-    try {
-      await consent.mutateAsync(true);
-      setConsentOpen(false);
-      await make();
-    } catch {
-      setError(t('assistant.failed'));
     }
   };
 
@@ -88,10 +72,6 @@ export default function ReplyDraftScreen() {
           <Txt variant="footnote" tone="tertiary">{t('assistant.replySendYourself')}</Txt>
         </>
       ) : null}
-      <Sheet visible={consentOpen} onClose={() => setConsentOpen(false)} title={t('assistant.consentTitle')}>
-        <Txt variant="body" tone="secondary">{t('assistant.consentBody', { service: 'Satti AI' })}</Txt>
-        <Button title={t('assistant.allow')} onPress={allowConsent} loading={consent.isPending} fullWidth />
-      </Sheet>
     </ScrollView>
   );
 }

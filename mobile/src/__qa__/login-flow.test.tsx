@@ -60,3 +60,9 @@ test('с галочкой и адресом код запрашивается и
   await waitFor(() => expect(mockRequestCode).toHaveBeenCalledWith('seller@example.invalid'));
   await waitFor(() => expect(mockPush).toHaveBeenCalledWith({ pathname: '/code', params: { email: 'seller@example.invalid', accepted: '1' } }));
 });
+
+test('К-24: согласие на ИИ — в той же галочке, отдельной строкой рядом с ней', async () => {
+  await renderLogin();
+  expect(screen.getByRole('checkbox', { name: /включая передачу данных ИИ-сервису/ })).toBeTruthy();
+  expect(screen.getByText('Помощник и карточки товаров работают на ИИ компании Anthropic (США). Данные покупателей перед отправкой скрываются.')).toBeTruthy();
+});

@@ -31,11 +31,11 @@ def test_draft_with_number_near_sixtieth_char_is_not_rejected():
         assert "20" not in re.findall(r"\d+", t) or "2024" in facts
 
 
-def test_draft_without_consent_returns_consent_code(client, demo):
+def test_draft_works_without_separate_consent(client, demo):
+    """К-24: отдельного согласия на ИИ нет — карточка работает сразу."""
     r = client.post("/v1/ai/product-drafts", headers=demo["headers"],
                     data={"shop_id": demo["shop_id"], "facts": "Чашка белая", "languages": "ru"})
-    assert r.status_code == 403
-    assert r.json()["error"]["code"] == "ai_consent_required"
+    assert r.status_code == 201, r.text
 
 
 def test_draft_with_long_number_line_works_end_to_end(client, demo):

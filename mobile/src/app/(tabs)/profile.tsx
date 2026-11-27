@@ -4,7 +4,7 @@ import { LogOut, Sun } from 'lucide-react-native';
 import { useState, type ReactNode } from 'react';
 import { Linking, Pressable, ScrollView, View } from 'react-native';
 
-import { useAIConsent, useAIQuota, useAppConfig, useMe, useResetDemo, useSubscription } from '@/api/hooks';
+import { useAppConfig, useMe, useResetDemo, useSubscription } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import { TabHeader } from '@/components/ui/Header';
 import { Txt } from '@/components/ui/Text';
@@ -24,8 +24,6 @@ export default function ProfileScreen() {
   const toast = useToast();
   const { isDemo, email, themeMode, setThemeMode, logout, shopId } = useSession();
   const config = useAppConfig();
-  const quota = useAIQuota(shopId);
-  const consent = useAIConsent();
   const reset = useResetDemo();
   const me = useMe(!isDemo);
   const sub = useSubscription(isDemo ? null : shopId);
@@ -38,8 +36,6 @@ export default function ProfileScreen() {
   const build = String(Constants.expoConfig?.ios?.buildNumber ?? Constants.expoConfig?.android?.versionCode ?? '1');
   const initials = (email ?? 'Satti').slice(0, 2).toUpperCase();
   const themeLabel = themeMode === 'system' ? t('settings.system') : themeMode === 'light' ? t('settings.light') : t('settings.dark');
-  const aiOn = quota.data?.consent_active ?? false;
-  const assistantOn = config.data?.flags.ai_assistant === true;
 
   return (
     <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 120, paddingTop: spacing.sm }} style={{ backgroundColor: colors.bg }} showsVerticalScrollIndicator={false}>
@@ -104,18 +100,7 @@ export default function ProfileScreen() {
       <Section title={t('profile.settings')}>
         <GroupCard>
           <ListRow title={t('profile.theme')} right={<Txt variant="subhead" tone="tertiary">{themeLabel}</Txt>} onPress={() => setThemeOpen(true)} />
-          <ListRow title={t('profile.notifications')} onPress={() => router.push('/settings/notifications')} />
-          {assistantOn ? (
-            <ListRow
-              title={t('profile.aiAccess')}
-              right={<Txt variant="subhead" tone={aiOn ? 'tertiary' : 'danger'}>{aiOn ? t('profile.valueOn') : t('profile.valueOff')}</Txt>}
-              onPress={() => {
-                if (aiOn) consent.mutate(false);
-                else consent.mutate(true);
-              }}
-              last
-            />
-          ) : null}
+          <ListRow title={t('profile.notifications')} onPress={() => router.push('/settings/notifications')} last />
         </GroupCard>
       </Section>
 

@@ -67,6 +67,8 @@ export default function TermsConsent() {
             <Txt variant="footnote">{accepted ? '☑' : '☐'}</Txt>
             <Txt variant="footnote" style={{ flex: 1 }}>{t('login.acceptLabel')}</Txt>
           </Pressable>
+          {/* К-24: согласие на ИИ входит в эту галочку — отдельной строкой рядом с ней (Apple 5.1.2(i)) */}
+          <Txt variant="footnote" tone="secondary">{t('login.aiNote')}</Txt>
           <Button title={t('consent.accept')} onPress={submit} loading={busy} disabled={!accepted || busy} fullWidth />
         </View>
       </View>

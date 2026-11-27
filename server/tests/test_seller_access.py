@@ -215,3 +215,10 @@ def test_kaspi_cannot_be_disconnected_separately(client, env):
     with DbSession(engine) as db:
         assert db.get(KaspiConnection, shop_id) is not None  # подключение осталось
     assert _connect(client, headers, shop_id, seller="ONE").status_code == 409
+
+
+def test_second_shop_in_account_is_refused(client, env):
+    """К-25 п.2: один аккаунт — один магазин (решение владельца 23.11, 01:53)."""
+    headers, _ = _seller(client, "s12@example.com")
+    r = client.post("/v1/shops", headers=headers, json={"name": "Второй"})
+    assert r.status_code == 409 and r.json()["error"]["code"] == "shop_exists"

@@ -208,6 +208,8 @@ def test_endpoint_rejects_oversize_and_wrong_photos(client, demo, live_on):
     assert r.status_code == 422 and "5 МБ" in r.json()["error"]["message"]
 
 
-def test_endpoint_without_consent_still_asks_for_consent(client, demo, live_on):
+def test_endpoint_works_without_separate_consent(client, demo, live_on, monkeypatch):
+    """К-24: согласие на ИИ входит в галочку условий; отдельного шага нет. Модель не вызываем — шаблон."""
+    monkeypatch.setattr(settings, "anthropic_api_key", "")
     r = _draft(client, demo)
-    assert r.status_code == 403 and r.json()["error"]["code"] == "ai_consent_required"
+    assert r.status_code == 201, r.text

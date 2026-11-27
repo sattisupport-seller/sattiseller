@@ -150,6 +150,8 @@ export default function Login() {
             <Txt variant="footnote">{accepted ? '☑' : '☐'}</Txt>
             <Txt variant="footnote" style={{ flex: 1 }}>{t('login.acceptLabel')}</Txt>
           </Pressable>
+          {/* К-24: согласие на ИИ входит в эту галочку — отдельной строкой рядом с ней (Apple 5.1.2(i)) */}
+          <Txt variant="footnote" tone="secondary">{t('login.aiNote')}</Txt>
           <View style={{ flexDirection: 'row', gap: spacing.md, flexWrap: 'wrap' }}>
             <Pressable accessibilityRole="link" onPress={() => config.data && Linking.openURL(config.data.privacy_url)}>
               <Txt variant="footnote" tone="secondary">{t('login.privacyLink')}</Txt>

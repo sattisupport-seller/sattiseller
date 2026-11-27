@@ -534,6 +534,9 @@ def shops_create(body: ShopIn, principal: Principal = Depends(get_principal), db
         resolve("7d", body.timezone)
     except Exception as exc:  # noqa: BLE001
         raise ApiError(422, "validation", "Неизвестный часовой пояс.") from exc
+    # К-25 п.2 (решение владельца 23.11, 01:53): один аккаунт — один магазин. Демо-магазин устроен отдельно.
+    if db.scalar(select(Shop.id).where(Shop.owner_user_id == user.id, Shop.is_demo.is_(False))) is not None:
+        raise ApiError(409, "shop_exists", "В аккаунте уже есть магазин. Один аккаунт — один магазин Kaspi.")
     shop = Shop(owner_user_id=user.id, name=body.name, timezone=body.timezone, language=body.language)
     db.add(shop)
     db.commit()
@@ -1510,8 +1513,8 @@ def ai_ask(shop_id: str, body: AskIn, principal: Principal = Depends(get_princip
     shop = shop_for(db, principal, shop_id)
     require_ai(db)  # выключатель ИИ (QA-02)
     _, active = ai_consent_state(db, principal)
-    if not active:
-        raise ApiError(403, "ai_consent_required")
+    if not active:  # К-24: согласие на ИИ — в галочке условий; старая версия условий — принять обновлённые
+        raise ApiError(403, "terms_consent_required", "Примите обновлённые условия и политику конфиденциальности.")
     # AUD-17: проверка квоты и запись вопроса — под одной блокировкой на субъекта квоты
     with quota_guard(principal.user_id or shop.id):
         ai_service.require_budget(db, _now())  # бюджет ИИ (QA-03)
@@ -1592,8 +1595,8 @@ async def ai_product_draft(shop_id: str = Form(...), facts: str = Form(...), lan
     """Карточка товара (К-14, ADR 0011): живая модель с фото; при выключателе, бюджете или сбое модели — шаблон с пометкой."""
     shop = shop_for(db, principal, shop_id)  # проверка доступа к магазину
     _, active = ai_consent_state(db, principal)
-    if not active:
-        raise ApiError(403, "ai_consent_required")
+    if not active:  # К-24: согласие на ИИ — в галочке условий; старая версия условий — принять обновлённые
+        raise ApiError(403, "terms_consent_required", "Примите обновлённые условия и политику конфиденциальности.")
     if len(photos) > 5:
         raise ApiError(422, "validation", "Можно добавить не больше 5 фото.")
     photo_bytes: list[bytes] = []
@@ -1651,8 +1654,8 @@ def ai_reply_draft(body: ReplyDraftIn, shop_id: str = Query(...), principal: Pri
     shop = shop_for(db, principal, shop_id)
     require_ai(db)  # выключатель ИИ (QA-02)
     _, active = ai_consent_state(db, principal)
-    if not active:
-        raise ApiError(403, "ai_consent_required")
+    if not active:  # К-24: согласие на ИИ — в галочке условий; старая версия условий — принять обновлённые
+        raise ApiError(403, "terms_consent_required", "Примите обновлённые условия и политику конфиденциальности.")
     return _metered_draft(db, principal, shop, lambda: ai_service.reply_draft(body.question, body.tone))
 
 

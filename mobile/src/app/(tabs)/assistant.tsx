@@ -5,7 +5,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View,
 
 import { ApiError, request } from '@/api/client';
 import {
-  useAIConsent, useAIQuota, useAsk, useConversations, useDeleteConversation, useFeedback,
+  useAIQuota, useAsk, useConversations, useDeleteConversation, useFeedback,
 } from '@/api/hooks';
 import type { AskAnswer } from '@/api/types';
 import { Button } from '@/components/ui/Button';
@@ -38,7 +38,6 @@ export default function AssistantScreen() {
   const toast = useToast();
   const { shopId, isDemo } = useSession();
   const quota = useAIQuota(shopId);
-  const consent = useAIConsent();
   const ask = useAsk(shopId);
   const feedback = useFeedback();
   const conversations = useConversations(shopId);
@@ -47,8 +46,6 @@ export default function AssistantScreen() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [input, setInput] = useState('');
-  const [consentOpen, setConsentOpen] = useState(false);
-  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [flagTurn, setFlagTurn] = useState<string | null>(null);
   const [limitHit, setLimitHit] = useState(false);
@@ -58,16 +55,11 @@ export default function AssistantScreen() {
 
   const hasChat = messages.length > 0;
   const remaining = quota.data?.remaining ?? quota.data?.limit ?? 20;
-  const consentActive = quota.data?.consent_active ?? false;
 
-  const send = async (question: string, consentJustGiven = false) => {
+  // К-24: отдельного согласия на ИИ нет — оно входит в галочку условий при регистрации.
+  const send = async (question: string) => {
     const q = question.trim();
     if (!q) return;
-    if (!consentActive && !consentJustGiven) {
-      setPendingQuestion(q);
-      setConsentOpen(true);
-      return;
-    }
     setFailed(null);
     setLimitHit(false);
     setLastQuestion(q);
@@ -80,22 +72,7 @@ export default function AssistantScreen() {
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
     } catch (e) {
       if (e instanceof ApiError && e.status === 429) setLimitHit(true);
-      else if (e instanceof ApiError && e.status === 403) {
-        setPendingQuestion(q);
-        setConsentOpen(true);
-      } else setFailed(t('assistant.failed'));
-    }
-  };
-
-  const allowConsent = async () => {
-    try {
-      await consent.mutateAsync(true);
-      setConsentOpen(false);
-      const q = pendingQuestion;
-      setPendingQuestion(null);
-      if (q) await send(q, true);
-    } catch {
-      setFailed(t('assistant.failed'));
+      else setFailed(e instanceof ApiError && e.status === 403 ? e.message : t('assistant.failed'));
     }
   };
 
@@ -233,11 +210,6 @@ export default function AssistantScreen() {
         </View>
       </View>
 
-      <Sheet visible={consentOpen} onClose={() => setConsentOpen(false)} title={t('assistant.consentTitle')}>
-        <Txt variant="body" tone="secondary">{t('assistant.consentBody', { service: quota.data ? 'Satti AI' : '' })}</Txt>
-        <Button title={t('assistant.allow')} onPress={allowConsent} loading={consent.isPending} fullWidth />
-        <Button title={t('assistant.notNow')} variant="text" onPress={() => setConsentOpen(false)} fullWidth />
-      </Sheet>
 
       <Sheet visible={historyOpen} onClose={() => setHistoryOpen(false)} title={t('assistant.history')}>
         {conversations.data?.items.length ? (

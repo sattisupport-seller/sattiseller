@@ -1,5 +1,4 @@
-// Черновик описания (К-12, 22.11): без согласия показывается то же согласие, что в чате; после «Разрешить» черновик
-// создаётся сразу. Исчерпанная квота — понятная фраза, а не код ошибки.
+// Черновик описания (К-12; К-24 — отдельного согласия на ИИ нет, оно в галочке условий). Исчерпанная квота — понятная фраза, а не код ошибки.
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ApiError } from '@/api/client';
@@ -46,19 +45,23 @@ beforeEach(() => {
   mockConsent.mockClear();
 });
 
-test('без согласия показывается экран согласия, после «Разрешить» черновик создаётся сразу', async () => {
-  mockDraft.mockRejectedValueOnce(new ApiError(403, 'ai_consent_required', 'Сначала разрешите передачу данных ИИ-сервису.'));
+test('К-24: отдельного экрана согласия нет — черновик создаётся сразу', async () => {
   await renderScreen();
   await fireEvent.changeText(screen.getByLabelText('Факты о товаре'), 'Термокружка нержавейка 450 мл');
   await fireEvent.press(screen.getByRole('button', { name: 'Составить описание' }));
-
-  expect(await screen.findByText('Помощник использует ИИ')).toBeTruthy();
-  expect(screen.queryByText('ai_consent_required')).toBeNull();
-  await fireEvent.press(screen.getByRole('button', { name: 'Разрешить' }));
-
-  await waitFor(() => expect(mockConsent).toHaveBeenCalledWith(true));
-  await waitFor(() => expect(mockDraft).toHaveBeenCalledTimes(2));
   expect(await screen.findByText('Термокружка 450 мл')).toBeTruthy();
+  expect(mockDraft).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText('Помощник использует ИИ')).toBeNull();
+  expect(mockConsent).not.toHaveBeenCalled();
+});
+
+test('К-24: условия не приняты — понятный текст сервера, без экрана согласия', async () => {
+  mockDraft.mockRejectedValueOnce(new ApiError(403, 'terms_consent_required', 'Примите обновлённые условия и политику конфиденциальности.'));
+  await renderScreen();
+  await fireEvent.changeText(screen.getByLabelText('Факты о товаре'), 'Термокружка нержавейка 450 мл');
+  await fireEvent.press(screen.getByRole('button', { name: 'Составить описание' }));
+  expect(await screen.findByText('Примите обновлённые условия и политику конфиденциальности.')).toBeTruthy();
+  expect(screen.queryByText('Помощник использует ИИ')).toBeNull();
 });
 
 test('исчерпанная квота показывает понятный текст, а не код ошибки и не экран согласия', async () => {

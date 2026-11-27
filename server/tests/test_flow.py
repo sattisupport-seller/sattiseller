@@ -235,13 +235,9 @@ def test_import_sci_notation_article(client, demo):
 
 # ---------- помощник (раздел 8) ----------
 
-def test_ai_requires_consent_then_answers(client, demo):
+def test_ai_answers_without_separate_consent(client, demo):
+    """К-24: ИИ работает сразу, без отдельного согласия."""
     shop = demo["shop_id"]
-    denied = client.post(f"/v1/shops/{shop}/ai/ask", headers=demo["headers"], json={"question": "Сколько заказов вчера?"})
-    assert denied.status_code == 403
-    assert denied.json()["error"]["code"] == "ai_consent_required"
-
-    client.post("/v1/ai/consent", headers=demo["headers"], json={"granted": True})
     ok = client.post(f"/v1/shops/{shop}/ai/ask", headers=demo["headers"], json={"question": "Сколько заказов вчера?"})
     assert ok.status_code == 200, ok.text
     body = ok.json()

@@ -32,7 +32,12 @@ def test_parallel_trial_request_cannot_create_second_trial(client, monkeypatch):
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     confirm_age(client, headers)
     shop_a = client.post("/v1/shops", json={"name": "A"}, headers=headers).json()["id"]
-    shop_b = client.post("/v1/shops", json={"name": "B"}, headers=headers).json()["id"]
+    with DbSession(engine) as db:  # второй магазин через API создать нельзя (К-25) — гонку проверяем на уровне базы
+        owner = db.get(Shop, shop_a).owner_user_id
+        extra = Shop(owner_user_id=owner, name="B", timezone="Asia/Almaty", language="ru")
+        db.add(extra)
+        db.commit()
+        shop_b = extra.id
 
     ok = DeviceVerdict(available=True, trial_used=False)
     with DbSession(engine) as db:
