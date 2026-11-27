@@ -70,6 +70,10 @@ def _legal(slug: str) -> HTMLResponse:
     text = path.read_text(encoding="utf-8")
     # имя оператора — из SATTI_OWNER_NAME (до регистрации ИП); в продакшене без него сервер не стартует
     text = text.replace("{OWNER_NAME}", settings.owner_name or "Владелец приложения Satti Seller")
+    # К-28: данные ИП — из переменных; подстановки сработают, когда юрист добавит их в тексты
+    text = text.replace("{OWNER_IIN}", settings.owner_iin or "")
+    text = text.replace("{OWNER_CITY}", settings.owner_city or "")
+    text = text.replace("{SUPPORT_EMAIL}", settings.support_email or "")
     return _page(title, markdown.markdown(text, extensions=["tables"]))
 
 

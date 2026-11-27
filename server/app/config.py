@@ -143,6 +143,9 @@ class Settings:
     support_email: str = os.environ.get("SATTI_SUPPORT_EMAIL", "").strip()
     # имя оператора для юридических текстов (подставляется вместо {OWNER_NAME}); до регистрации ИП — из переменной
     owner_name: str = os.environ.get("SATTI_OWNER_NAME", "").strip()
+    # К-28: оператор — ИП. Какие из этих данных публиковать — решает юрист (legal-proposals п.12); в коде их нет
+    owner_iin: str = os.environ.get("SATTI_OWNER_IIN", "").strip()  # ИИН ИП — {OWNER_IIN}
+    owner_city: str = os.environ.get("SATTI_OWNER_CITY", "").strip()  # город регистрации — {OWNER_CITY}
     kaspi_connection_enabled: bool = os.environ.get("KASPI_ENABLED", "0") == "1"
     # 2.4: ключ шифрования токенов Kaspi (Fernet, 32 байта в base64). В продакшене обязателен.
     kaspi_key: str = os.environ.get("SATTI_KASPI_KEY", "")

@@ -103,6 +103,11 @@ def test_google_unconfigured_is_503(client, keypair, monkeypatch):
 
 
 def test_email_code_login_is_off_in_production(client, monkeypatch):
+    """К-28: для всех, кроме владельца, вход по почте выключен — код не отправляется и не принимается
+    (ответ тот же, что при отправке, чтобы не выдать адрес владельца)."""
     monkeypatch.setattr(settings, "email_login_enabled", False)
+    monkeypatch.setattr(settings, "admin_email", "owner-only@example.com")
     r = client.post("/v1/auth/email/start", json={"email": "x@example.com"})
-    assert r.status_code == 404
+    assert r.status_code == 202
+    r = client.post("/v1/auth/email/verify", json={"email": "x@example.com", "code": "123456"})
+    assert r.status_code == 400

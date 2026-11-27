@@ -189,11 +189,18 @@ def _norm_email(email: str) -> str:
     return e
 
 
+def _email_login_allowed(email: str) -> bool:
+    """К-28 (решение владельца 27.11): в продакшене вход по коду из почты выключен для всех, кроме адреса владельца
+    (SATTI_ADMIN_EMAIL) — так владелец открывает веб-админку; дальше обязательна 2FA."""
+    return settings.email_login_enabled or (bool(settings.admin_email) and email == settings.admin_email)
+
+
 @api.post("/auth/email/start", status_code=202, tags=["вход"])
 def auth_email_start(body: EmailIn, request: Request, db: DbSession = Depends(get_session)) -> dict:
-    if not settings.email_login_enabled:
-        raise ApiError(404, "not_found")
     email = _norm_email(body.email)
+    if not _email_login_allowed(email):
+        # тот же ответ, что при отправке: по ответу нельзя узнать адрес владельца
+        return {"status": "sent", "expires_in": settings.code_ttl_minutes * 60}
     ip = client_ip(request)
     if not allow(f"code:{email}", settings.code_requests_per_hour, db=db) or not allow(f"codeip:{ip}", 20, db=db):
         raise ApiError(429, "rate_limited", "Слишком много попыток, подождите 10 минут.")
@@ -210,9 +217,9 @@ def auth_email_start(body: EmailIn, request: Request, db: DbSession = Depends(ge
 
 @api.post("/auth/email/verify", tags=["вход"])
 def auth_email_verify(body: VerifyIn, db: DbSession = Depends(get_session)) -> dict:
-    if not settings.email_login_enabled:
-        raise ApiError(404, "not_found")
     email = _norm_email(body.email)
+    if not _email_login_allowed(email):
+        raise ApiError(400, "code_invalid")
     code_row = db.scalar(select(AuthCode).where(AuthCode.email == email, AuthCode.purpose == "login",
                                                 AuthCode.used.is_(False)).order_by(AuthCode.expires_at.desc()))
     if code_row is None:
