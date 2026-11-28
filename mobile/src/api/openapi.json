@@ -305,6 +305,20 @@
         "title": "Body_import_upload_v1_shops__shop_id__imports_post",
         "type": "object"
       },
+      "Body_kaspi_pay_report_v1_shops__shop_id__kaspi_pay_report_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_kaspi_pay_report_v1_shops__shop_id__kaspi_pay_report_post",
+        "type": "object"
+      },
       "Body_kaspi_upload_catalog_v1_shops__shop_id__kaspi_catalog_post": {
         "properties": {
           "file": {
@@ -7773,6 +7787,76 @@
           }
         },
         "summary": "Kaspi Connect",
+        "tags": [
+          "Kaspi"
+        ]
+      }
+    },
+    "/v1/shops/{shop_id}/kaspi/pay-report": {
+      "post": {
+        "description": "К-33 Б1: сверка с Kaspi — выгрузка Kaspi Pay «Продажи» (Excel) против расчёта Satti по каждому заказу:\n«совпало N; расхождение X ₸ по M заказам». Строки выгрузки сохраняются.",
+        "operationId": "kaspi_pay_report_v1_shops__shop_id__kaspi_pay_report_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_kaspi_pay_report_v1_shops__shop_id__kaspi_pay_report_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Kaspi Pay Report V1 Shops  Shop Id  Kaspi Pay Report Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Kaspi Pay Report",
         "tags": [
           "Kaspi"
         ]

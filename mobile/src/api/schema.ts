@@ -1242,6 +1242,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/shops/{shop_id}/kaspi/pay-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Kaspi Pay Report
+         * @description К-33 Б1: сверка с Kaspi — выгрузка Kaspi Pay «Продажи» (Excel) против расчёта Satti по каждому заказу:
+         *     «совпало N; расхождение X ₸ по M заказам». Строки выгрузки сохраняются.
+         */
+        post: operations["kaspi_pay_report_v1_shops__shop_id__kaspi_pay_report_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/shops/{shop_id}/kaspi/stores": {
         parameters: {
             query?: never;
@@ -1925,6 +1946,11 @@ export interface components {
         };
         /** Body_import_upload_v1_shops__shop_id__imports_post */
         Body_import_upload_v1_shops__shop_id__imports_post: {
+            /** File */
+            file: string;
+        };
+        /** Body_kaspi_pay_report_v1_shops__shop_id__kaspi_pay_report_post */
+        Body_kaspi_pay_report_v1_shops__shop_id__kaspi_pay_report_post: {
             /** File */
             file: string;
         };
@@ -5482,6 +5508,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    kaspi_pay_report_v1_shops__shop_id__kaspi_pay_report_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_kaspi_pay_report_v1_shops__shop_id__kaspi_pay_report_post"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
