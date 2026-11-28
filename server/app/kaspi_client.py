@@ -201,7 +201,35 @@ class KaspiClient:
             total_n = int(total) if total is not None else None
         except (TypeError, ValueError):
             total_n = None
-        return self._parse_each(body.get("data", []), parse_order, "order"), total_n
+        data = body.get("data", [])
+        self._observe(data)
+        return self._parse_each(data, parse_order, "order"), total_n
+
+    # К-37 п.4: какие поля и статусы реально присылает Kaspi — в журнал раз за синхронизацию (client живёт одну
+    # синхронизацию). Только названия полей и служебные значения status/state, без данных покупателя и без токена.
+    OBSERVED_ENUMS = ("status", "state", "deliveryMode", "paymentMode", "creditTerm", "isKaspiDelivery",
+                      "cancellationReason", "cancelReason")
+
+    def _observe(self, items) -> None:
+        if not isinstance(items, list):
+            return
+        if not hasattr(self, "_seen_fields"):
+            self._seen_fields: set[str] = set()
+            self._seen_values: dict[str, set[str]] = {}
+        for item in items:
+            attrs = item.get("attributes") if isinstance(item, dict) else None
+            if not isinstance(attrs, dict):
+                continue
+            self._seen_fields.update(str(k) for k in attrs)
+            for key in self.OBSERVED_ENUMS:
+                if key in attrs and not isinstance(attrs[key], (dict, list)):
+                    self._seen_values.setdefault(key, set()).add(str(attrs[key])[:40])
+
+    def observed_summary(self) -> str | None:
+        if not getattr(self, "_seen_fields", None):
+            return None
+        values = "; ".join(f"{k}={sorted(v)}" for k, v in sorted(self._seen_values.items()))
+        return f"fields={sorted(self._seen_fields)} values: {values}"
 
     def _parse_each(self, items, parse, kind: str):
         """К-33 А1: странная запись не роняет загрузку — пропускаем, пишем в журнал (без данных покупателя и токена)."""

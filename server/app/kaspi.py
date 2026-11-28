@@ -380,6 +380,8 @@ def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: d
     added = updated = items_changed = 0
     for ko in orders:
         status = STATE_MAP.get(ko.state, DEFAULT_STATUS)
+        if ko.state not in STATE_MAP:  # К-37: незнакомый статус Kaspi — в журнал (значение — служебное, без данных)
+            log.warning("kaspi unknown status %r → %s (order %s)", ko.state[:40], DEFAULT_STATUS, ko.code)
         completed_at = _utc(ko.completed_ms) if ko.completed_ms else None
         order = existing.get(ko.code)
         if order is None:
@@ -514,6 +516,9 @@ def _sync_locked(db: DbSession, conn: KaspiConnection, client: KaspiClient, now:
     db.add(conn)
     db.commit()
     reportcache.invalidate(shop.id)  # AUD-12: появились новые заказы
+    summary = client.observed_summary() if hasattr(client, "observed_summary") else None
+    if summary:  # К-37 п.4: поля и статусы реального Kaspi — без данных покупателя и без токена
+        log.info("kaspi observed shop=%s %s", shop.id[:8], summary)
     return {"pages": pages, "added": added, "updated": updated, "items_changed": items_changed, "skipped": skipped}
 
 
