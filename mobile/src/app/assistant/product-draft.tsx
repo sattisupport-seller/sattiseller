@@ -96,7 +96,7 @@ export default function ProductDraftScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 48, gap: spacing.md }} style={{ backgroundColor: colors.bg }} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 48, gap: spacing.md }} style={{ backgroundColor: colors.bg }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
       <TextField
         label={t('assistant.productDraftFacts')}
         value={facts}

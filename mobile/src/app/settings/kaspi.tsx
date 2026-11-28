@@ -158,7 +158,7 @@ export default function KaspiScreen() {
   );
 
   const wrap = (children: React.ReactNode) => (
-    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 48, gap: spacing.md }} style={{ backgroundColor: colors.bg }}>
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 48, gap: spacing.md }} style={{ backgroundColor: colors.bg }} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
       {Header}
       {children}
     </ScrollView>
