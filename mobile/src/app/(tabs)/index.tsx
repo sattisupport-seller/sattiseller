@@ -12,6 +12,7 @@ import { TabHeader } from '@/components/ui/Header';
 import { Txt } from '@/components/ui/Text';
 import { Badge, Banner, Card, Chip, GroupCard, ListRow, Section } from '@/components/ui/Surfaces';
 import { EmptyState, ErrorState, ScreenScroll, Sheet, Skeleton } from '@/components/ui/Overlays';
+import { MoneyCards } from '@/components/MoneyCards';
 import { PresentationCard } from '@/components/PresentationCard';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
@@ -103,6 +104,7 @@ export default function OverviewScreen() {
           <Banner text={t('overview.demoBanner')} tone="primary" action={t('overview.more')} onAction={() => router.push('/settings/how-profit')} />
         ) : null}
         {shop?.presentation_mode ? <PresentationCard shopId={shopId} pct={shop.example_cost_pct ?? 60} /> : null}
+        <MoneyCards shopId={shopId} />
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md }}>
           <View style={{ flex: 1 }}>

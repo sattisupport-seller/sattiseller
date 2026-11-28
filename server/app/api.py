@@ -639,6 +639,22 @@ def get_profit_breakdown(shop_id: str, period: str = Query("7d"), principal: Pri
     return reportcache.memo(shop.id, f"profit|{period}|{_minute()}", compute)
 
 
+@api.get("/shops/{shop_id}/money", tags=["обзор"])
+def get_money_insights(shop_id: str, principal: Principal = Depends(get_principal),
+                       db: DbSession = Depends(get_session)) -> dict:
+    """К-33 А5: главный экран языком денег — утечки маржи, минимальная цена без убытка, пороги доставки,
+    защита от отмен. За последние 30 дней."""
+    from .insights import money_insights
+
+    shop = shop_for(db, principal, shop_id)
+
+    def compute() -> dict:
+        data, facts = base_for(db, shop)
+        return money_insights(db, data, facts, _now())
+
+    return reportcache.memo(shop.id, f"money|{_minute()}", compute)
+
+
 @api.get("/shops/{shop_id}/orders", tags=["заказы"], response_model=OrdersPageOut)
 def get_orders(shop_id: str, period: str = Query("7d"), status: str | None = None, q: str | None = None,
                cursor: str | None = None, limit: int = 50, principal: Principal = Depends(get_principal),

@@ -1279,6 +1279,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/shops/{shop_id}/money": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Money Insights
+         * @description К-33 А5: главный экран языком денег — утечки маржи, минимальная цена без убытка, пороги доставки,
+         *     защита от отмен. За последние 30 дней.
+         */
+        get: operations["get_money_insights_v1_shops__shop_id__money_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/shops/{shop_id}/orders": {
         parameters: {
             query?: never;
@@ -5520,6 +5541,39 @@ export interface operations {
         };
     };
     kaspi_sync_now_v1_shops__shop_id__kaspi_sync_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_money_insights_v1_shops__shop_id__money_get: {
         parameters: {
             query?: never;
             header?: {

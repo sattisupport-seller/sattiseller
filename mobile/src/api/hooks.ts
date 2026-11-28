@@ -433,6 +433,32 @@ export function useExampleCostPct(shopId: string | null) {
   });
 }
 
+/** К-33 А5: главный экран языком денег (GET /shops/{id}/money). */
+export type MoneyInsights = {
+  period: { from: string; to: string };
+  vat_payer: boolean;
+  leaks: {
+    items: { product_id: string; sku: string; name: string; sold_qty: number; avg_price_minor: number; unit_cost_minor: number;
+      profit_minor: number; margin_bp: number | null; per_unit: { commission: number; delivery: number };
+      worst_rate_bp: number; worst_unit_profit_minor: number; min_price_minor: number }[];
+    count: number; losing_count: number; month_loss_minor: number; near_zero_bp: number;
+  };
+  threshold_hints: { product_id: string; name: string; price_minor: number; threshold_tenge: number;
+    suggested_price_minor: number; gain_per_order_minor: number }[];
+  cancel_protection: { protected_count: number; protected: { product_id: string; name: string; current: number }[];
+    preview: boolean; orders_count: number; sold_orders_count: number; cancelled_count: number; cancel_share_bp: number;
+    kaspi_limit_bp: number; note: string };
+  time_saving: { ai_card: boolean; reply_templates: boolean };
+};
+
+export function useMoneyInsights(shopId: string | null) {
+  return useQuery({
+    queryKey: ['money', shopId],
+    queryFn: () => request<MoneyInsights>(`/shops/${shopId}/money`),
+    enabled: !!shopId,
+  });
+}
+
 export function useResetDemo() {
   const qc = useQueryClient();
   return useMutation({
