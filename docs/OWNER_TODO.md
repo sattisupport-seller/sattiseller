@@ -62,6 +62,7 @@
 ## 10. Apple Developer
 - **Зачем:** App Store, вход через Apple, TestFlight.
 - **Шаги:** developer.apple.com → Enroll (Apple ID с двухфакторной защитой), оплатить 99 $ в год. Ключи (Sign in with Apple, App Store Connect API) создаёте сами; файлы `.p8` храните вне проекта, в `.env` — только путь.
+- **В день регистрации (К-33 Б4):** вступить в **Apple Small Business Program** (developer.apple.com → App Store Small Business Program → Enroll). Без неё комиссия Apple с подписки первый год — 30 % вместо 15 % (с 9 900 ₸ — 2 970 ₸ вместо 1 485 ₸). Расчёт — docs/ECONOMICS.md.
 - **Стоимость:** 99 $ в год.
 - **Разблокирует:** 3.1, 3.2, 3.3, TestFlight (5.6), 5.7.
 - **Покупки (К-21, код готов на моках):** в App Store Connect одна группа подписок и два продукта: `kz.satti.seller.monthly` (9 900 ₸ в месяц, вводное предложение «14 дней бесплатно») и `kz.satti.seller.monthly.notrial` (то же без вводного предложения — для телефона, который уже получал пробный период). Ключ In-App Purchase (App Store Server API): Issuer ID, Key ID, файл `.p8` → `SATTI_APPLE_ISSUER_ID`, `SATTI_APPLE_KEY_ID`, `SATTI_APPLE_PRIVATE_KEY_PATH`. App Store Server Notifications V2 (Sandbox и Production): адрес `https://<домен>/v1/store/apple/notifications`.
