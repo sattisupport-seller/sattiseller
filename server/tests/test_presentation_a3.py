@@ -118,3 +118,22 @@ def test_presentation_needs_confirmation_and_admin(client, env, monkeypatch):  #
                        json={"enabled": True}).status_code == 422
     assert client.post(f"/v1/admin/sellers/{number}/presentation", headers=headers,
                        json={"enabled": True, "confirm": True}).status_code in (401, 403, 404)  # не владелец: админки «нет»
+
+
+def test_meeting_preparation_path(client, env, monkeypatch):  # noqa: F811
+    """К-33 А1/А6: прогон на отдельном аккаунте → удаление → тот же магазин Kaspi подключается к аккаунту встречи;
+    доступ без подписки и режим презентации выдаются из админки заново (при удалении особые условия снимаются)."""
+    from app.accounts import delete_user_account
+    from app.models import User
+
+    headers, shop_id, number, admin = _setup(client, env, monkeypatch, email="trial@example.com")
+    with DbSession(engine) as db:
+        delete_user_account(db, db.scalar(select(User).where(User.email == "trial@example.com")))
+    h2, s2 = _seller(client, "meeting@example.com")
+    assert _connect(client, h2, s2).status_code == 201  # тот же магазин Kaspi — к новому аккаунту
+    assert _number(client, h2) == number  # номер продавца тот же
+    r = client.post(f"/v1/admin/sellers/{number}/special-access", headers=admin, json={"months": 1, "confirm": True})
+    assert r.status_code == 200
+    assert client.post(f"/v1/shops/{s2}/kaspi/sync", headers=h2).status_code == 200
+    r = _presentation(client, admin, number, True)
+    assert r.status_code == 200 and r.json()["presentation"]["stock_examples"] >= 1
