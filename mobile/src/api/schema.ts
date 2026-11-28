@@ -481,7 +481,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Ai Reply Draft */
+        /**
+         * Ai Reply Draft
+         * @description К-35 п.2: ответ покупателю — живой ИИ по сути вопроса; в дневном лимите ИИ. Лимит или бюджет исчерпан,
+         *     ИИ недоступен или ответ не прошёл проверку — шаблон по теме вопроса с пометкой причины.
+         */
         post: operations["ai_reply_draft_v1_ai_reply_drafts_post"];
         delete?: never;
         options?: never;
