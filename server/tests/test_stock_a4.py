@@ -14,18 +14,18 @@ from tests.test_kaspi import (SELLER_NS, _connect, _import, _seller_xml, kaspi_o
 NS = f"{{{SELLER_NS}}}"
 
 
-def _order(mock, code, *, sku_idx=0, qty=1, state="ACCEPTED_BY_MERCHANT", handed_over=False, ago_h=0):
+def _order(km, code, *, sku_idx=0, qty=1, state="ACCEPTED_BY_MERCHANT", handed_over=False, ago_h=0):
     created = int((datetime.now(timezone.utc) - timedelta(hours=ago_h)).timestamp() * 1000)
-    mock.entries[code] = [{"id": f"E{code}", "idx": sku_idx, "qty": qty, "basePrice": 5000}]
+    km.entries[code] = [{"id": f"E{code}", "idx": sku_idx, "qty": qty, "basePrice": 5000}]
     attrs = {"state": state, "creationDate": created, "completedDate": None, "paymentMode": "PREPAID"}
     if handed_over:
         attrs["kaspiDelivery"] = {"courierTransmissionDate": created + 3_600_000}
-    mock.orders.append({"id": code, "type": "orders", "attributes": attrs,
+    km.orders.append({"id": code, "type": "orders", "attributes": attrs,
                         "relationships": {"entries": {"links": {"related": f"/orders/{code}/entries"}}}})
 
 
-def _set(mock, code, **attrs):
-    o = next(o for o in mock.orders if o["id"] == code)
+def _set(km, code, **attrs):
+    o = next(o for o in km.orders if o["id"] == code)
     o["attributes"].update(attrs)
 
 
@@ -49,10 +49,10 @@ def _inventory(client, demo, pid, qty):
                       json={"qty": qty}).status_code == 200
 
 
-def _setup(client, demo, mock, stores=("S-100",)):
+def _setup(client, demo, km, stores=("S-100",)):
     _connect(client, demo)
-    _order(mock, "A-0", ago_h=48, state="COMPLETED")  # первая продажа — товар K0 появляется у нас
-    _set(mock, "A-0", completedDate=int(datetime.now(timezone.utc).timestamp() * 1000) - DAY_MS)
+    _order(km, "A-0", ago_h=48, state="COMPLETED")  # первая продажа — товар K0 появляется у нас
+    _set(km, "A-0", completedDate=int(datetime.now(timezone.utc).timestamp() * 1000) - DAY_MS)
     _sync(client, demo)
     _import(client, demo, _seller_xml([("K0", "Товар 0", 5000), ("K1", "Товар 1", 3000)]))
     if stores:

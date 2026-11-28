@@ -30,3 +30,6 @@ server/tests/ai_eval_report.json
 server/tests/ai_eval_report*.json
 server/tests/ai_eval_live*.json
 server/tests/ai_eval_live_runs/
+
+# К-33 А7: итоги release_check (файл с хэшем коммита) — локально, в Git не кладём
+release-checks/
