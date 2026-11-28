@@ -77,7 +77,10 @@ def parse_order(item: dict) -> KaspiOrder:
             seller_delivery = None
     return KaspiOrder(
         code=str(item["id"]),
-        state=str(attrs.get("state", "")),
+        # К-34: исход заказа — в `status` (COMPLETED, CANCELLED, RETURNED…); `state` — этап (NEW, PICKUP,
+        # KASPI_DELIVERY, ARCHIVE…). Раньше читался только `state`: выданный и отменённый заказ (state=ARCHIVE)
+        # стал бы «в работе». `state` — запасной вариант, если `status` в ответе нет.
+        state=str(attrs.get("status") or attrs.get("state") or ""),
         created_ms=int(attrs["creationDate"]),
         completed_ms=int(completed) if completed is not None else None,
         entries=[],
@@ -89,24 +92,22 @@ def parse_order(item: dict) -> KaspiOrder:
     )
 
 
-# К-33 А4: состояния Kaspi, в которых заказ уже у Kaspi Доставки (после «Передача»). UNVERIFIED: сверить на
-# реальном магазине (KASPI_TEST.md) — у Kaspi есть state и status, поля доставки — в attributes.kaspiDelivery.
-HANDED_OVER_STATES = {"KASPI_DELIVERY", "KASPI_DELIVERY_TRANSMITTED", "DELIVERY_TRANSMITTED"}
-
-
 def _handed_over_ms(attrs: dict) -> int | None:
-    """Время передачи в Kaspi Доставку: kaspiDelivery.courierTransmissionDate; иначе — признак по состоянию
-    (время неизвестно — 0). None — не передан или своя доставка/самовывоз (тогда Kaspi вернёт остаток сам)."""
+    """К-33 А4 / К-34: время передачи в Kaspi Доставку — атрибут заказа `courierTransmissionDate` (документация
+    Kaspi, список атрибутов заказа); на всякий случай — и вложенный `kaspiDelivery.courierTransmissionDate`.
+    None — не передан, своя доставка или самовывоз (тогда Kaspi вернёт остаток сам).
+    Этап `state=KASPI_DELIVERY` признаком не считается: он, по-видимому, включает и «Упаковку», где Kaspi возвращает
+    остаток сам (гид q3694). Сверить на реальном магазине (KASPI_TEST.md)."""
+    candidates = [attrs.get("courierTransmissionDate")]
     kd = attrs.get("kaspiDelivery")
     if isinstance(kd, dict):
-        raw = kd.get("courierTransmissionDate")
-        if raw not in (None, ""):
+        candidates.append(kd.get("courierTransmissionDate"))
+    for raw in candidates:
+        if raw not in (None, "", 0):
             try:
                 return int(raw)
             except (TypeError, ValueError):
                 return 0
-    if str(attrs.get("state", "")) in HANDED_OVER_STATES or str(attrs.get("status", "")) in HANDED_OVER_STATES:
-        return 0
     return None
 
 

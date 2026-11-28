@@ -138,7 +138,9 @@ def money_insights(db: DbSession, data: ShopData, facts: list[ItemFact], now: da
             "cancelled_count": cancelled,
             "cancel_share_bp": share,
             "kaspi_limit_bp": CANCEL_LIMIT_BP,
-            "note": "Kaspi считает только отмены по вине продавца (например, «нет в наличии»); здесь — все отмены. "
+            "note": "Здесь все отмены, включая отмены покупателем: причину отмены Kaspi в заказе не передаёт. "
+                    "Kaspi считает только отмены по вине продавца (например, «нет в наличии»); ваш показатель — "
+                    "в кабинете Kaspi. "
                     "Порог Kaspi — меньше 3 %, иначе ограничения вплоть до отключения.",
         },
         "time_saving": {"ai_card": True, "reply_templates": True},

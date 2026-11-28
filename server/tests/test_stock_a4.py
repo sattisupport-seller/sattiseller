@@ -19,7 +19,7 @@ def _order(km, code, *, sku_idx=0, qty=1, state="ACCEPTED_BY_MERCHANT", handed_o
     km.entries[code] = [{"id": f"E{code}", "idx": sku_idx, "qty": qty, "basePrice": 5000}]
     attrs = {"state": state, "creationDate": created, "completedDate": None, "paymentMode": "PREPAID"}
     if handed_over:
-        attrs["kaspiDelivery"] = {"courierTransmissionDate": created + 3_600_000}
+        attrs["courierTransmissionDate"] = created + 3_600_000  # К-34: атрибут заказа по документации Kaspi
     km.orders.append({"id": code, "type": "orders", "attributes": attrs,
                         "relationships": {"entries": {"links": {"related": f"/orders/{code}/entries"}}}})
 
@@ -182,3 +182,35 @@ def test_invariant_over_mixed_events(client, demo, kaspi_on, mock):  # noqa: F81
         assert sum(q for _s, _a, q in av) <= 10 - known_sold - in_transit, (code, av)
         assert sum(q for _s, _a, q in av) == max(10 - known_sold - in_transit, 0)
     assert _stock(client, demo, pid)["returning"] == 2
+
+
+# --- К-34: исход заказа — в status, этап — в state (документация Kaspi) --------------------------------------------
+
+def test_status_not_state_decides_the_outcome():
+    from app.kaspi import STATE_MAP
+    from app.kaspi_client import parse_order
+
+    def order(**attrs):
+        return {"id": "X-1", "type": "orders", "attributes": {"creationDate": 1, **attrs}}
+
+    cases = [({"state": "ARCHIVE", "status": "COMPLETED"}, "completed"),
+             ({"state": "ARCHIVE", "status": "CANCELLED"}, "cancelled"),
+             ({"state": "ARCHIVE", "status": "RETURNED"}, "returned"),
+             ({"state": "NEW", "status": "APPROVED_BY_BANK"}, "pending"),
+             ({"state": "KASPI_DELIVERY", "status": "ACCEPTED_BY_MERCHANT"}, "in_progress"),
+             ({"state": "KASPI_DELIVERY", "status": "CANCELLING"}, "in_progress"),
+             ({"state": "ARCHIVE", "status": "KASPI_DELIVERY_RETURN_REQUESTED"}, "completed")]
+    for attrs, expected in cases:
+        assert STATE_MAP.get(parse_order(order(**attrs)).state, "in_progress") == expected, attrs
+
+
+def test_handover_only_by_transmission_date():
+    from app.kaspi_client import parse_order
+
+    def order(**attrs):
+        return {"id": "X-2", "type": "orders", "attributes": {"creationDate": 1, **attrs}}
+
+    # этап Kaspi Доставки без даты передачи (например, «Упаковка») — Kaspi вернёт остаток сам
+    assert parse_order(order(state="KASPI_DELIVERY", status="CANCELLED", isKaspiDelivery=True)).handed_over_ms is None
+    assert parse_order(order(state="ARCHIVE", status="CANCELLED", courierTransmissionDate=1_700)).handed_over_ms == 1_700
+    assert parse_order(order(kaspiDelivery={"courierTransmissionDate": 1_800})).handed_over_ms == 1_800

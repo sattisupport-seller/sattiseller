@@ -18,6 +18,24 @@ from app import kaspi_client
 VALID_TOKEN = "mock-token-0123456789"
 DAY_MS = 86_400_000
 
+# К-34: как у настоящего Kaspi — исход заказа в `status`, этап в `state` (у завершённых — ARCHIVE).
+# Тесты пишут исход в attributes["state"] (так короче); на «провод» он уходит в реальной форме.
+_WIRE = {  # исход в тестах -> (status, state) в ответе Kaspi
+    "NEW": ("APPROVED_BY_BANK", "NEW"),
+    "ACCEPTED_BY_MERCHANT": ("ACCEPTED_BY_MERCHANT", "DELIVERY"),
+    "COMPLETED": ("COMPLETED", "ARCHIVE"),
+    "CANCELLED": ("CANCELLED", "ARCHIVE"),
+    "RETURNED": ("RETURNED", "ARCHIVE"),
+}
+
+
+def _wire(order: dict) -> dict:
+    attrs = order.get("attributes", {})
+    if "status" in attrs or attrs.get("state") not in _WIRE:
+        return order  # тест задал форму сам
+    status, stage = _WIRE[attrs["state"]]
+    return {**order, "attributes": {**attrs, "status": status, "state": stage}}
+
 
 @dataclass
 class MockKaspi:
@@ -123,7 +141,7 @@ class MockKaspi:
                 return httpx.Response(500, json={"error": "down"})
         if "filter[orders][code]" in q:  # заказ по номеру (К-19)
             code = q["filter[orders][code]"]
-            return self._json({"data": [o for o in self.orders if o["id"] == code]})
+            return self._json({"data": [_wire(o) for o in self.orders if o["id"] == code]})
         since = int(q.get("filter[orders][creationDate][$ge]", "0"))
         until = q.get("filter[orders][creationDate][$le]")
         if self.max_period_ms is not None:
@@ -138,7 +156,7 @@ class MockKaspi:
             return o["attributes"].get("creationDate", since)
         rows = sorted((o for o in self.orders if _created(o) >= since
                        and (until is None or _created(o) <= int(until))), key=_created)
-        chunk = rows[page * size:(page + 1) * size]
+        chunk = [_wire(o) for o in rows[page * size:(page + 1) * size]]
         return self._json({"data": chunk, "meta": {"totalCount": len(rows), "pageCount": -(-len(rows) // size)}})
 
     @staticmethod

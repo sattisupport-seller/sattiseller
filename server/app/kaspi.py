@@ -31,10 +31,14 @@ from .models import KaspiCatalog, KaspiConnection, Order, OrderItem, Product, Sh
 
 log = logging.getLogger("satti.kaspi")
 
-# Состояния Kaspi -> статусы заказов Satti. UNVERIFIED: сверить с официальным списком состояний.
+# Статусы Kaspi (attributes.status, документация …/api/orders/q3201) -> статусы заказов Satti.
+# К-34: читается `status`; `state` (этап) — только если `status` нет. Переходные — in_progress.
 STATE_MAP = {
+    "APPROVED_BY_BANK": "pending",
     "NEW": "pending",
     "ACCEPTED_BY_MERCHANT": "in_progress",
+    "CANCELLING": "in_progress",  # отмена ещё не завершена — товар у продавца, остаток не трогаем
+    "KASPI_DELIVERY_RETURN_REQUESTED": "completed",  # заказ выдан, возврат только запрошен — продажа до RETURNED
     "COMPLETED": "completed",
     "DELIVERED": "completed",
     "CANCELLED": "cancelled",
