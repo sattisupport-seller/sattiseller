@@ -55,6 +55,10 @@ class MockKaspi:
     bad_period_requests: int = 0
     fail_list_from: int | None = None  # начиная с этого по счёту запроса списка заказов (с 1) — 500 (Kaspi упал)
     list_requests: int = 0
+    # К-33 Б3: «хаос» — доля запросов со сбоем (429, 500, 503 или таймаут), повторяемо по зерну
+    chaos: float = 0.0
+    chaos_seed: int = 7
+    chaos_seen: dict = field(default_factory=dict)
 
     def generate(self, count: int, *, now: datetime, days: int = 60, state_cycle=None, products: int | None = None) -> None:
         """Создаёт count заказов, равномерно за последние days дней. Товары — K0..K{products-1}."""
@@ -109,6 +113,17 @@ class MockKaspi:
         q_page = int(request.url.params.get("page[number]", "0"))
         if self.fail_on_page is not None and q_page == self.fail_on_page and path.endswith("/orders"):
             return httpx.Response(500, json={"error": "down"})
+        if self.chaos > 0:
+            if not hasattr(self, "_rng"):
+                import random
+                self._rng = random.Random(self.chaos_seed)
+            if self._rng.random() < self.chaos:
+                kind = self._rng.choice(["429", "500", "503", "timeout"])
+                self.chaos_seen[kind] = self.chaos_seen.get(kind, 0) + 1
+                if kind == "timeout":
+                    raise httpx.ReadTimeout("mock timeout", request=request)
+                return httpx.Response(int(kind), headers={"Retry-After": "0"} if kind == "429" else {},
+                                      json={"error": "chaos"})
         if self.fail_script:
             status = self.fail_script.pop(0)
             headers = {"Retry-After": "0"} if status == 429 else {}

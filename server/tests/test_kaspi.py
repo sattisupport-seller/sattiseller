@@ -310,9 +310,12 @@ def test_partial_cancel_reduces_the_item_and_recalculates_net_sales(client, demo
         db.commit()
     before_net, before_stock = net(), stock_now()
     mock.partial_cancel(code, 0, 1)
-    r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
-    assert r.status_code == 200, r.text
-    assert r.json()["items_changed"] >= 1
+    # К-33 Б3: у выданного заказа позиции перечитывает суточная проверка открытых заказов (К-19), а не обычная
+    # синхронизация каждые 15 минут (иначе ≈ 1 200 запросов к Kaspi на каждую синхронизацию магазина)
+    with DbSession(engine) as db:
+        conn = db.get(KaspiConnection, demo["shop_id"])
+        res = kaspi_service.refresh_open_orders(db, conn, kaspi_service.client_for(conn), datetime.now(timezone.utc))
+    assert res["items_changed"] >= 1
     with DbSession(engine) as db:
         order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == code).one()
         items = db.query(_OI).filter(_OI.order_id == order.id).all()

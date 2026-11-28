@@ -323,8 +323,18 @@ def return_window_open(order: Order, status: str, now: datetime) -> bool:
     return now < _aware(order.completed_at) + timedelta(days=RETURN_WINDOW_DAYS + RETURN_GRACE_DAYS)
 
 
-def _needs_refresh(order: Order, status: str, now: datetime) -> bool:
-    return return_window_open(order, status, now)
+REFRESH_OPEN_STATUSES = {"pending", "in_progress"}
+
+
+def _needs_refresh(order: Order, status: str, now: datetime, status_changed: bool = True) -> bool:
+    """Перечитывать ли позиции заказа в обычной синхронизации (каждые 15 минут).
+    К-33 Б3: раньше — у всех заказов с открытым окном возврата, т. е. почти у всех за 14 дней: ≈ 1 200 запросов
+    к Kaspi на каждую синхронизацию магазина с 470 заказами за 14 дней (≈ 5 минут из 15). Теперь — только если
+    статус изменился или заказ ещё не выдан (частичная отмена бывает до выдачи). Возврат приходит сменой статуса
+    на RETURNED; окно возврата и поздние изменения по-прежнему проверяет суточный проход refresh_open_orders (К-19)."""
+    if status_changed or status in REFRESH_OPEN_STATUSES:
+        return return_window_open(order, status, now) or status in REFRESH_OPEN_STATUSES
+    return False
 
 
 def _ensure_full_return(db: DbSession, order: Order, now: datetime, to_warehouse: bool | None,
@@ -387,12 +397,13 @@ def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: d
             continue
         if order.in_delivery_at is None and ko.handed_over_ms is not None:
             order.in_delivery_at = _handed_over_at(ko, now)  # К-33 А4: передан в Kaspi Доставку
-        if order.status != status:
+        status_changed = order.status != status
+        if status_changed:
             order.status = status
             updated += 1
         if order.completed_at is None and status in ("completed", "returned"):
             order.completed_at = completed_at or now
-        if force_refresh or _needs_refresh(order, status, now):
+        if force_refresh or _needs_refresh(order, status, now, status_changed):
             if _reconcile(db, shop, order, _lines(client, ko.code), products, now, ko.seller_delivery, ko.credit):
                 items_changed += 1
         if status == "returned":
@@ -794,6 +805,8 @@ def _refresh_open_locked(db: DbSession, conn: KaspiConnection, client: KaspiClie
         db.add(conn)
         db.commit()
         raise
+    if updated or items_changed:
+        reportcache.invalidate(shop.id)  # К-33 Б3: отчёты сразу видят перечитанные позиции и статусы
     return {"checked": checked, "updated": updated, "items_changed": items_changed}
 
 
