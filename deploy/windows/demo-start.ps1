@@ -5,11 +5,15 @@
 # Запуск:   powershell -ExecutionPolicy Bypass -File deploy\windows\demo-start.ps1
 # Правило брандмауэра (один раз, от имени администратора):
 #           powershell -ExecutionPolicy Bypass -File deploy\windows\demo-start.ps1 -FirewallOnly
+# Прогон реального магазина (К-37): отдельная база server\kaspi_test.db; подключение Kaspi и вход по коду
+# включены только для этого запуска (server\.env не меняется); журнал сервера — в satti-backups:
+#           powershell -ExecutionPolicy Bypass -File deploy\windows\demo-start.ps1 -KaspiTest
 # Правило пускает на порты 8000 и 8081 только из локальной подсети (RemoteAddress LocalSubnet)
 # и действует во всех профилях — в том числе когда Windows считает сеть «общественной».
 
 param(
     [switch]$FirewallOnly,
+    [switch]$KaspiTest,
     [int]$ApiPort = 8000,
     [int]$MetroPort = 8081
 )
@@ -66,7 +70,19 @@ powercfg /change monitor-timeout-dc 0 | Out-Null
 $server = Join-Path $Root "server"
 $py = Join-Path $server ".venv\Scripts\python.exe"
 $db = Join-Path $server "demo_phone.db"
-$serverCmd = "`$env:DATABASE_URL='sqlite:///$($db -replace '\\','/')'; Set-Location '$server'; " +
+$extraEnv = ""
+if ($KaspiTest) {
+    $db = Join-Path $server "kaspi_test.db"
+    $backups = Join-Path (Split-Path $Root) "satti-backups"
+    New-Item -ItemType Directory -Force $backups | Out-Null
+    # копия базы до запуска; токен в ней зашифрован, копия остаётся на этом ноутбуке
+    if (Test-Path $db) { Copy-Item $db (Join-Path $backups ("kaspi_test-before-{0:yyyyMMdd-HHmm}.db" -f (Get-Date))) }
+    $logFile = Join-Path $backups ("kaspi_test_server_{0:yyyyMMdd}.log" -f (Get-Date))
+    $extraEnv = "`$env:KASPI_ENABLED='1'; `$env:SATTI_EMAIL_LOGIN='1'; `$env:SATTI_LOG_FILE='$logFile'; "
+    Write-Host "Режим К-37: база $db; журнал $logFile" -ForegroundColor Cyan
+    Write-Host "Сводка прогона: server\.venv\Scripts\python.exe server\scripts\kaspi_watch.py --log `"$logFile`" --db `"$db`""
+}
+$serverCmd = $extraEnv + "`$env:DATABASE_URL='sqlite:///$($db -replace '\\','/')'; Set-Location '$server'; " +
     "& '$py' -m alembic upgrade head; & '$py' -m uvicorn app.main:app --host 0.0.0.0 --port $ApiPort"
 Start-Process powershell -ArgumentList "-NoExit", "-Command", $serverCmd -WindowStyle Normal
 
