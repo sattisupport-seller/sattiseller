@@ -32,6 +32,14 @@ class StockState:
     level: str | None  # out | t3 | t5 | t10 | None
     delisted: bool
     pending_returns: int = 0  # К-26: вернулось, но годность не подтверждена — остаток не увеличен
+    returning: int = 0  # К-33 А4: отмена после передачи в Kaspi Доставку — едет обратно, ждёт «забрал»
+    buffer: int = 0  # К-33 А4: буфер автоснятия
+    example: bool = False  # К-33 А3: остаток — пример
+
+    @property
+    def for_sale(self) -> int:
+        """Сколько показать в прайсе Kaspi: остаток минус буфер, не меньше 0."""
+        return max(self.current - self.buffer, 0)
 
 
 def _level(current: int) -> str | None:
@@ -65,7 +73,7 @@ def stock_states(db: DbSession, shop: Shop, now: datetime | None = None) -> dict
     if not base:
         return {}
     items = db.execute(
-        select(OrderItem.product_id, OrderItem.qty, Order.created_at, Order.status)
+        select(OrderItem.product_id, OrderItem.qty, Order.created_at, Order.status, Order.in_delivery_at)
         .join(Order, Order.id == OrderItem.order_id)
         .where(OrderItem.shop_id == shop.id)
     ).all()
@@ -82,25 +90,36 @@ def stock_states(db: DbSession, shop: Shop, now: datetime | None = None) -> dict
             continue
         receipts = sum(m.qty for m in moves if m.kind == "receipt" and m.product_id == pid
                        and _aware(m.occurred_at) > base_at)
-        sold = sum(q for ipid, q, created, status in items
+        sold = sum(q for ipid, q, created, status, _hd in items
                    if ipid == pid and status not in CANCEL and _aware(created) >= base_at)
+        # К-33 А4: отмена после передачи в Kaspi Доставку — товар не на складе, пока продавец не забрал его
+        transit = sum(q for ipid, q, created, status, handed in items
+                      if ipid == pid and status in CANCEL and handed is not None and _aware(created) >= base_at)
+        transit += sum(m.qty for m in moves if m.kind == "cancel_transit" and m.product_id == pid
+                       and _aware(m.occurred_at) >= base_at)
+        back_ok = sum(m.qty for m in moves if m.kind == "back_ok" and m.product_id == pid
+                      and _aware(m.occurred_at) >= base_at)
+        back_defect = sum(m.qty for m in moves if m.kind == "back_defect" and m.product_id == pid
+                          and _aware(m.occurred_at) >= base_at)
+        returning = max(transit - back_ok - back_defect, 0)
         # частичные отмены Kaspi (движение «cancel»): позиция уже уменьшена, поэтому остаток не меняем дважды;
         # в «продано всего» отменённые штуки возвращаем, чтобы продажи были видны как было заказано
-        cancelled = sum(m.qty for m in moves if m.kind == "cancel" and m.product_id == pid
+        cancelled = sum(m.qty for m in moves if m.kind in ("cancel", "cancel_transit") and m.product_id == pid
                         and _aware(m.occurred_at) >= base_at)
         sold_gross = sold + cancelled
         returned = sum(q for rpid, q, confirmed, sellable in returns
                        if rpid == pid and sellable and _aware(confirmed) >= base_at)
         pending = sum(q for rpid, q, confirmed, sellable in returns
                       if rpid == pid and sellable is None and _aware(confirmed) >= base_at)
-        current = base_qty + receipts - sold + returned
-        recent = sum(q for ipid, q, created, status in items
+        current = base_qty + receipts - sold - transit + back_ok + returned
+        recent = sum(q for ipid, q, created, status, _hd in items
                      if ipid == pid and status not in CANCEL and _aware(created) >= recent_cut)
         avg = recent / SALE_WINDOW_DAYS
         days = int(current / avg) if avg > 0 and current > 0 else (0 if current <= 0 else None)
         row = legacy.get(pid)
         out[pid] = StockState(pid, p.sku, p.name, base_qty, base_at, sold_gross, returned, current,
-                              round(avg, 2), days, _level(current), bool(row.delisted) if row else False, pending)
+                              round(avg, 2), days, _level(current), bool(row.delisted) if row else False, pending,
+                              returning=returning, buffer=(row.buffer or 0) if row else 0)
     return out
 
 

@@ -178,6 +178,9 @@ class Order(Base):
     status: Mapped[str] = mapped_column(String(24))  # completed|cancelled|pending|in_progress|returned|partial_return
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # К-33 А4: когда заказ передан в Kaspi Доставку. Отмена после передачи — товар «едет обратно»: Kaspi остаток
+    # не возвращает, у нас он вернётся только после подтверждения продавца «забрал» (гид Kaspi q3694).
+    in_delivery_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     items: Mapped[list["OrderItem"]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
 
@@ -231,6 +234,7 @@ class ProductStock(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     delisted: Mapped[bool] = mapped_column(Boolean, default=False)  # снят с продажи (XML) после подтверждения
     last_alert_level: Mapped[str | None] = mapped_column(String(8), nullable=True)  # последний отправленный порог
+    buffer: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # К-33 А4: буфер автоснятия, шт.
 
 
 class StockMovement(Base):

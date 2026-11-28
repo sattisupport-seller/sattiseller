@@ -61,6 +61,7 @@ class KaspiOrder:
     seller_delivery: int | None = None  # deliveryCostForSeller: доставка, которую оплачивает продавец (тенге)
     credit: bool = False  # paymentMode == PAY_WITH_CREDIT: рассрочка/кредит, комиссия отличается
     returned_to_warehouse: bool | None = None  # returnedToWarehouse: товар вернулся на склад продавца (возврат)
+    handed_over_ms: int | None = None  # К-33 А4: передан в Kaspi Доставку (kaspiDelivery.courierTransmissionDate)
 
 
 def parse_order(item: dict) -> KaspiOrder:
@@ -84,7 +85,29 @@ def parse_order(item: dict) -> KaspiOrder:
         credit=attrs.get("paymentMode") == "PAY_WITH_CREDIT",
         returned_to_warehouse=(bool(attrs["returnedToWarehouse"]) if attrs.get("returnedToWarehouse") is not None
                                else None),
+        handed_over_ms=_handed_over_ms(attrs),
     )
+
+
+# К-33 А4: состояния Kaspi, в которых заказ уже у Kaspi Доставки (после «Передача»). UNVERIFIED: сверить на
+# реальном магазине (KASPI_TEST.md) — у Kaspi есть state и status, поля доставки — в attributes.kaspiDelivery.
+HANDED_OVER_STATES = {"KASPI_DELIVERY", "KASPI_DELIVERY_TRANSMITTED", "DELIVERY_TRANSMITTED"}
+
+
+def _handed_over_ms(attrs: dict) -> int | None:
+    """Время передачи в Kaspi Доставку: kaspiDelivery.courierTransmissionDate; иначе — признак по состоянию
+    (время неизвестно — 0). None — не передан или своя доставка/самовывоз (тогда Kaspi вернёт остаток сам)."""
+    kd = attrs.get("kaspiDelivery")
+    if isinstance(kd, dict):
+        raw = kd.get("courierTransmissionDate")
+        if raw not in (None, ""):
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                return 0
+    if str(attrs.get("state", "")) in HANDED_OVER_STATES or str(attrs.get("status", "")) in HANDED_OVER_STATES:
+        return 0
+    return None
 
 
 def parse_entry(item: dict) -> OrderEntry:

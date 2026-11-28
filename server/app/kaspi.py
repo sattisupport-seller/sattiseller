@@ -217,11 +217,21 @@ def _lines(client: KaspiClient, code: str) -> list[tuple[str, int, int, str | No
 
 
 def _log_cancel(db: DbSession, shop: Shop, order: Order, product_id: str, qty: int, now: datetime) -> None:
-    """Движение «отмена» в журнале склада (К-7): сколько штук Kaspi сняла с заказа."""
+    """Движение «отмена» в журнале склада (К-7): сколько штук Kaspi сняла с заказа.
+    К-33 А4: отмена после передачи в Kaspi Доставку — «cancel_transit»: товар едет обратно, в остаток он вернётся
+    только после подтверждения продавца «забрал»."""
     from .models import StockMovement
     if qty > 0:
-        db.add(StockMovement(id=_uid(), shop_id=shop.id, product_id=product_id, kind="cancel", qty=qty,
+        kind = "cancel_transit" if order.in_delivery_at is not None else "cancel"
+        db.add(StockMovement(id=_uid(), shop_id=shop.id, product_id=product_id, kind=kind, qty=qty,
                              occurred_at=now, created_at=now))
+
+
+def _handed_over_at(ko: KaspiOrder, now: datetime) -> datetime | None:
+    """Время передачи в Kaspi Доставку; если Kaspi дал только признак (0) — время синхронизации."""
+    if ko.handed_over_ms is None:
+        return None
+    return _utc(ko.handed_over_ms) if ko.handed_over_ms > 0 else now
 
 
 def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, int, int, str | None, str | None]],
@@ -362,7 +372,8 @@ def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: d
             if status in ("completed", "returned") and completed_at is None:
                 completed_at = now
             order = Order(id=_uid(), shop_id=shop.id, number=ko.code, status=status,
-                          created_at=_utc(ko.created_ms), completed_at=completed_at)
+                          created_at=_utc(ko.created_ms), completed_at=completed_at,
+                          in_delivery_at=_handed_over_at(ko, now))
             db.add(order)
             db.flush()
             _reconcile(db, shop, order, _lines(client, ko.code), products, now, ko.seller_delivery, ko.credit)
@@ -370,6 +381,8 @@ def _apply_page(db: DbSession, shop: Shop, orders: list[KaspiOrder], products: d
                 _ensure_full_return(db, order, now, ko.returned_to_warehouse, historic=True)
             added += 1
             continue
+        if order.in_delivery_at is None and ko.handed_over_ms is not None:
+            order.in_delivery_at = _handed_over_at(ko, now)  # К-33 А4: передан в Kaspi Доставку
         if order.status != status:
             order.status = status
             updated += 1
@@ -391,19 +404,21 @@ _SHOP_LOCKS: dict[str, threading.Lock] = {}
 _SHOP_LOCKS_GUARD = threading.Lock()
 
 
-def sync(db: DbSession, conn: KaspiConnection, client: KaspiClient, now: datetime) -> dict:
+def sync(db: DbSession, conn: KaspiConnection, client: KaspiClient, now: datetime, *,
+         skip_backfill: bool = False) -> dict:
     """Один проход синхронизации под блокировкой магазина: параллельные запуски не начинаются (KaspiBusy)."""
     with _SHOP_LOCKS_GUARD:
         lock = _SHOP_LOCKS.setdefault(conn.shop_id, threading.Lock())
     if not lock.acquire(blocking=False):
         raise KaspiBusy("синхронизация уже идёт")
     try:
-        return _sync_locked(db, conn, client, now)
+        return _sync_locked(db, conn, client, now, skip_backfill=skip_backfill)
     finally:
         lock.release()
 
 
-def _sync_locked(db: DbSession, conn: KaspiConnection, client: KaspiClient, now: datetime) -> dict:
+def _sync_locked(db: DbSession, conn: KaspiConnection, client: KaspiClient, now: datetime, *,
+                 skip_backfill: bool = False) -> dict:
     """Один проход синхронизации. Заказы сохраняются после каждой страницы, а курсор — только после полного прохода.
 
     Почему так (К-17.3): порядок выдачи Kaspi не описан. Если страницы идут «новые сначала», курсор по последней
@@ -456,7 +471,7 @@ def _sync_locked(db: DbSession, conn: KaspiConnection, client: KaspiClient, now:
             db.add(conn)
             db.commit()
         # этап 2: догрузка остальных 90 дней постранично (продолжается с сохранённой страницы)
-        if not conn.backfill_done:
+        if not conn.backfill_done and not skip_backfill:
             b = _backfill_pass(db, shop, conn, client, now, products)
             added += b["added"]
             updated += b["updated"]
@@ -528,6 +543,33 @@ def _backfill_pass(db: DbSession, shop: Shop, conn: KaspiConnection, client: Kas
 def client_for(conn: KaspiConnection) -> KaspiClient:
     """Клиент с токеном из базы. Тесты подменяют эту функцию на клиент с моком."""
     return KaspiClient(decrypt_token(conn.token_enc))
+
+
+PRICE_REFRESH_TIMEOUT = 8.0  # К-33 А4: досинхронизация перед прайсом — короткие таймауты, без длинных повторов
+PRICE_REFRESH_ATTEMPTS = 2
+
+
+def refresh_before_price(db: DbSession, conn: KaspiConnection, now: datetime) -> bool:
+    """К-33 А4: перед выдачей прайса — досинхронизировать новые заказы (без догрузки 90 дней), с ограничением
+    по времени. True — заказы свежие, прайс можно отдать. False — не успели (Kaspi недоступен, токен не принят,
+    уже идёт синхронизация): прайс не отдаём, чтобы не «вернуть» проданную единицу (повторная продажа →
+    отмена по вине продавца)."""
+    import httpx
+
+    if conn.status != "active" or conn.cursor_ms is None:
+        return False  # первая загрузка ещё не прошла — остаток по заказам неизвестен
+    client = client_for(conn)
+    client._max_attempts = min(getattr(client, "_max_attempts", PRICE_REFRESH_ATTEMPTS), PRICE_REFRESH_ATTEMPTS)
+    try:
+        client._http.timeout = httpx.Timeout(PRICE_REFRESH_TIMEOUT)
+    except AttributeError:
+        pass
+    try:
+        sync(db, conn, client, now, skip_backfill=True)
+        return True
+    except (KaspiBusy, KaspiUnavailable, KaspiAuthError) as exc:
+        log.warning("price refresh skipped for shop %s: %s", conn.shop_id, type(exc).__name__)
+        return False
 
 
 # ---------- XML-прайс ----------
@@ -634,12 +676,18 @@ def price_list_xml(db: DbSession, shop: Shop, conn: KaspiConnection, today: date
         for old in [el for el in offer if _local(el.tag) == "availabilities"]:
             offer.remove(old)
         av_el = ET.Element(f"{ns}availabilities")
-        qty = max(states[pid].current, 0) if pid in states else 0
-        for sid in stores:
+        # К-33 А4: инвариант — в прайсе не больше, чем «последний известный остаток − все известные заказы − товар,
+        # который едет обратно», минус буфер продавца. Несколько складов: раньше тот же остаток писался на каждый
+        # склад (у Kaspi сумма по складам — вдвое больше товара). Теперь весь остаток — на первом складе в списке
+        # продавца, на остальных «нет в наличии»: сумма по складам никогда не больше остатка.
+        qty = states[pid].for_sale if pid in states else 0
+        for i, sid in enumerate(stores):
+            store_qty = qty if i == 0 else 0
             if pid in delisted:
                 ET.SubElement(av_el, f"{ns}availability", available="no", storeId=sid, stockCount="0")
             else:
-                ET.SubElement(av_el, f"{ns}availability", available="yes" if qty > 0 else "no", storeId=sid, stockCount=str(qty))
+                ET.SubElement(av_el, f"{ns}availability", available="yes" if store_qty > 0 else "no", storeId=sid,
+                              stockCount=str(store_qty))
         # availabilities ставим перед ценой, как в описании формата
         children = list(offer)
         idx = next((i for i, el in enumerate(children) if _local(el.tag) == "price"), len(children))
@@ -723,6 +771,8 @@ def _refresh_open_locked(db: DbSession, conn: KaspiConnection, client: KaspiClie
             if ko is None:
                 continue
             status = STATE_MAP.get(ko.state, DEFAULT_STATUS)
+            if order.in_delivery_at is None and ko.handed_over_ms is not None:
+                order.in_delivery_at = _handed_over_at(ko, now)  # К-33 А4
             if order.status != status:
                 order.status = status
                 updated += 1

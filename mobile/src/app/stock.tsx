@@ -15,7 +15,7 @@ import { useTheme } from '@/theme/useTheme';
 
 // Склад (решения владельца 22.11): остатки, приход, инвентаризация, уведомления 10/5/3, снятие с продажи.
 // Списание продаж и возвраты делает сервер; здесь — ввод и подтверждение.
-type Mode = { kind: 'inventory' | 'receipt'; productId: string; name: string } | null;
+type Mode = { kind: 'inventory' | 'receipt' | 'buffer'; productId: string; name: string } | null;
 
 export default function StockScreen() {
   const { t } = useI18n();
@@ -39,7 +39,7 @@ export default function StockScreen() {
   const stockByProduct = new Map((list.data?.items ?? []).map((s) => [s.productId, s]));
   const allProducts = (products.data?.pages ?? []).flatMap((p) => p.items);
   // К-33 А3: предпросмотр автоснятия — товары, которые сняли бы с продажи сейчас (остаток 0 или снят вручную)
-  const wouldDelist = (list.data?.items ?? []).filter((s) => s.delisted || s.current <= 0);
+  const wouldDelist = (list.data?.items ?? []).filter((s) => s.delisted || (s.forSale ?? s.current) <= 0);
 
   const submitQty = async () => {
     // Инвентаризация: 0 допустим (товар закончился). Приход: только больше нуля.
@@ -50,6 +50,7 @@ export default function StockScreen() {
     setError(null);
     try {
       if (mode.kind === 'receipt') await mut.receipt.mutateAsync({ productId: mode.productId, qty: n });
+      else if (mode.kind === 'buffer') await mut.buffer.mutateAsync({ productId: mode.productId, buffer: n });
       else await mut.inventory.mutateAsync({ productId: mode.productId, qty: n });
       setMode(null);
       setQty('');
@@ -93,6 +94,7 @@ export default function StockScreen() {
           ))}
         </Card>
       )}
+      <Txt variant="footnote" tone="secondary">{t('stock.kaspiHint')}</Txt>
       {presentation && (
         <Card style={{ gap: spacing.xs }}>
           <Txt variant="headline">{t('stock.previewTitle', { count: wouldDelist.length })}</Txt>
@@ -112,6 +114,20 @@ export default function StockScreen() {
                 <Txt variant="body">{s.current} шт.{s.example ? ` · ${t('stock.example')}` : ''}</Txt>
                 {levelText(s) && <Txt variant="body" tone="danger">{levelText(s)}</Txt>}
                 {s.daysLeft !== null && s.current > 0 && <Txt variant="footnote" tone="secondary">{t('stock.daysLeft', { days: s.daysLeft })}</Txt>}
+                {(s.buffer ?? 0) > 0 && (
+                  <Txt variant="footnote" tone="secondary">{t('stock.bufferInfo', { buffer: s.buffer ?? 0, forSale: s.forSale ?? 0 })}</Txt>
+                )}
+                {(s.returning ?? 0) > 0 && (
+                  <View style={{ gap: spacing.xs }}>
+                    <Txt variant="footnote" tone="secondary">{t('stock.returning', { qty: s.returning ?? 0 })}</Txt>
+                    <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
+                      <Button title={t('stock.pickedUpOk')} size="S" variant="secondary"
+                        onPress={() => mut.pickedUp.mutate({ productId: p.product_id, qty: s.returning ?? 0, sellable: true })} />
+                      <Button title={t('stock.pickedUpDefect')} size="S" variant="text"
+                        onPress={() => mut.pickedUp.mutate({ productId: p.product_id, qty: s.returning ?? 0, sellable: false })} />
+                    </View>
+                  </View>
+                )}
                 {(s.pendingReturns ?? 0) > 0 && (
                   <View style={{ gap: spacing.xs }}>
                     <Txt variant="footnote" tone="secondary">{t('stock.confirmReturn', { qty: s.pendingReturns ?? 0 })}</Txt>
@@ -134,11 +150,13 @@ export default function StockScreen() {
                 <Button title={t('stock.delist')} variant="text" onPress={() => setConfirmDelist(s)} />
               )}
               {s && s.delisted && <Button title={t('stock.relist')} variant="text" onPress={() => mut.relist.mutate(p.product_id)} />}
+              {s && <Button title={t('stock.buffer')} variant="text" onPress={() => { setMode({ kind: 'buffer', productId: p.product_id, name: p.name }); setQty(String(s.buffer ?? 0)); }} />}
             </View>
             {mode?.productId === p.product_id && (
               <View style={{ gap: spacing.sm }}>
-                <TextField label={t('stock.qtyLabel')} accessibilityLabel={t('stock.qtyLabel')} value={qty} onChangeText={setQty} keyboardType="number-pad" error={error ?? undefined} />
-                <Button title={t('stock.save')} onPress={submitQty} loading={mut.inventory.isPending || mut.receipt.isPending} fullWidth />
+                {mode.kind === 'buffer' && <Txt variant="footnote" tone="secondary">{t('stock.bufferHint')}</Txt>}
+                <TextField label={mode.kind === 'buffer' ? t('stock.bufferLabel') : t('stock.qtyLabel')} accessibilityLabel={mode.kind === 'buffer' ? t('stock.bufferLabel') : t('stock.qtyLabel')} value={qty} onChangeText={setQty} keyboardType="number-pad" error={error ?? undefined} />
+                <Button title={t('stock.save')} onPress={submitQty} loading={mut.inventory.isPending || mut.receipt.isPending || !!mut.buffer?.isPending} fullWidth />
               </View>
             )}
           </Card>

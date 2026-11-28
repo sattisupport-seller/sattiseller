@@ -353,6 +353,21 @@
         "title": "BreakdownStepOut",
         "type": "object"
       },
+      "BufferIn": {
+        "properties": {
+          "buffer": {
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Buffer",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "buffer"
+        ],
+        "title": "BufferIn",
+        "type": "object"
+      },
       "BulkCostIn": {
         "properties": {
           "apply_to_history": {
@@ -2064,6 +2079,26 @@
           "to"
         ],
         "title": "PeriodOut",
+        "type": "object"
+      },
+      "PickedUpIn": {
+        "properties": {
+          "qty": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Qty",
+            "type": "integer"
+          },
+          "sellable": {
+            "title": "Sellable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "qty",
+          "sellable"
+        ],
+        "title": "PickedUpIn",
         "type": "object"
       },
       "PresentationIn": {
@@ -8762,6 +8797,85 @@
         ]
       }
     },
+    "/v1/shops/{shop_id}/products/{product_id}/stock/buffer": {
+      "put": {
+        "description": "К-33 А4: буфер автоснятия — сколько штук не показывать в Kaspi (по умолчанию 0). Товар снимается с продажи,\nкогда остаток не больше буфера.",
+        "operationId": "stock_buffer_v1_shops__shop_id__products__product_id__stock_buffer_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "title": "Product Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BufferIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Stock Buffer V1 Shops  Shop Id  Products  Product Id  Stock Buffer Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stock Buffer",
+        "tags": [
+          "склад"
+        ]
+      }
+    },
     "/v1/shops/{shop_id}/products/{product_id}/stock/delist": {
       "post": {
         "description": "Снятие с продажи (XML-прайс): только при нулевом остатке и после подтверждения (confirm=true).",
@@ -8836,6 +8950,85 @@
           }
         },
         "summary": "Stock Delist",
+        "tags": [
+          "склад"
+        ]
+      }
+    },
+    "/v1/shops/{shop_id}/products/{product_id}/stock/picked-up": {
+      "post": {
+        "description": "К-33 А4: отмена после передачи в Kaspi Доставку — продавец забрал товар в пункте приёма. Годный товар\nвозвращается в остаток, брак — нет. Больше, чем едет обратно, подтвердить нельзя.",
+        "operationId": "stock_picked_up_v1_shops__shop_id__products__product_id__stock_picked_up_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "title": "Product Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PickedUpIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Stock Picked Up V1 Shops  Shop Id  Products  Product Id  Stock Picked Up Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stock Picked Up",
         "tags": [
           "склад"
         ]

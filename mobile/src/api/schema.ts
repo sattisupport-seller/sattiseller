@@ -1440,6 +1440,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/shops/{shop_id}/products/{product_id}/stock/buffer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Stock Buffer
+         * @description К-33 А4: буфер автоснятия — сколько штук не показывать в Kaspi (по умолчанию 0). Товар снимается с продажи,
+         *     когда остаток не больше буфера.
+         */
+        put: operations["stock_buffer_v1_shops__shop_id__products__product_id__stock_buffer_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/shops/{shop_id}/products/{product_id}/stock/delist": {
         parameters: {
             query?: never;
@@ -1454,6 +1475,27 @@ export interface paths {
          * @description Снятие с продажи (XML-прайс): только при нулевом остатке и после подтверждения (confirm=true).
          */
         post: operations["stock_delist_v1_shops__shop_id__products__product_id__stock_delist_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shops/{shop_id}/products/{product_id}/stock/picked-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stock Picked Up
+         * @description К-33 А4: отмена после передачи в Kaspi Доставку — продавец забрал товар в пункте приёма. Годный товар
+         *     возвращается в остаток, брак — нет. Больше, чем едет обратно, подтвердить нельзя.
+         */
+        post: operations["stock_picked_up_v1_shops__shop_id__products__product_id__stock_picked_up_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1880,6 +1922,11 @@ export interface components {
             minor: number;
             /** Rate Bp */
             rate_bp?: number | null;
+        };
+        /** BufferIn */
+        BufferIn: {
+            /** Buffer */
+            buffer: number;
         };
         /** BulkCostIn */
         BulkCostIn: {
@@ -2487,6 +2534,13 @@ export interface components {
             from: string;
             /** To */
             to: string;
+        };
+        /** PickedUpIn */
+        PickedUpIn: {
+            /** Qty */
+            qty: number;
+            /** Sellable */
+            sellable: boolean;
         };
         /** PresentationIn */
         PresentationIn: {
@@ -5896,6 +5950,44 @@ export interface operations {
             };
         };
     };
+    stock_buffer_v1_shops__shop_id__products__product_id__stock_buffer_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BufferIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stock_delist_v1_shops__shop_id__products__product_id__stock_delist_post: {
         parameters: {
             query?: never;
@@ -5911,6 +6003,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["DelistIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stock_picked_up_v1_shops__shop_id__products__product_id__stock_picked_up_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PickedUpIn"];
             };
         };
         responses: {

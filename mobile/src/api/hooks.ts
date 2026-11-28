@@ -511,6 +511,9 @@ export type StockItem = {
   returnedSince: number; avgDaily: number; daysLeft: number | null; level: 'out' | 't3' | 't5' | 't10' | null; delisted: boolean;
   pendingReturns?: number;  // К-26: возвраты без подтверждения «вернулся на склад»
   example?: boolean;  // К-33 А3: остаток — пример (режим презентации)
+  returning?: number;  // К-33 А4: отмена после передачи в Kaspi Доставку — едет обратно
+  buffer?: number;  // К-33 А4: буфер автоснятия
+  forSale?: number;  // К-33 А4: сколько видно в Kaspi (остаток − буфер)
 };
 
 export function useStockList(shopId: string | null) {
@@ -560,5 +563,17 @@ export function useStockMutations(shopId: string | null) {
       request(`/shops/${shopId}/products/${v.productId}/stock/returns`, { method: 'POST', body: { sellable: v.sellable } }),
     onSuccess: refresh,
   });
-  return { receipt, inventory, delist, relist, confirmReturns };
+  // К-33 А4: отмена после передачи в Kaspi Доставку — продавец забрал товар (годен / брак)
+  const pickedUp = useMutation({
+    mutationFn: (v: { productId: string; qty: number; sellable: boolean }) =>
+      request(`/shops/${shopId}/products/${v.productId}/stock/picked-up`, { method: 'POST', body: { qty: v.qty, sellable: v.sellable } }),
+    onSuccess: refresh,
+  });
+  // К-33 А4: буфер автоснятия
+  const buffer = useMutation({
+    mutationFn: (v: { productId: string; buffer: number }) =>
+      request(`/shops/${shopId}/products/${v.productId}/stock/buffer`, { method: 'PUT', body: { buffer: v.buffer } }),
+    onSuccess: refresh,
+  });
+  return { receipt, inventory, delist, relist, confirmReturns, pickedUp, buffer };
 }

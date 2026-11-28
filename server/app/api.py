@@ -1044,7 +1044,8 @@ def _stock_json(st, example: set[str] | None = None) -> dict:
             "productId": st.product_id, "sku": st.sku, "name": st.name, "current": st.current, "baseQty": st.base_qty,
             "soldSince": st.sold_since, "returnedSince": st.returned_since, "avgDaily": st.avg_daily,
             "daysLeft": st.days_left, "level": st.level, "delisted": st.delisted,
-            "pendingReturns": st.pending_returns}
+            "pendingReturns": st.pending_returns,
+            "returning": st.returning, "buffer": st.buffer, "forSale": st.for_sale}  # К-33 А4
 
 
 @api.get("/shops/{shop_id}/products/{product_id}/stock", tags=["склад"])
@@ -1076,7 +1077,7 @@ def stock_delist_preview(shop_id: str, principal: Principal = Depends(get_princi
     states = stock_states(db, shop)
     example, _cost = presentation_service.example_product_ids(db, shop.id)
     items = [{**_stock_json(st, example), "reason": "delisted" if st.delisted else "out_of_stock"}
-             for st in sorted(states.values(), key=lambda x: x.name) if st.delisted or st.current <= 0]
+             for st in sorted(states.values(), key=lambda x: x.name) if st.delisted or st.for_sale <= 0]
     return {"items": items, "count": len(items), "presentation_mode": bool(shop.presentation_mode),
             "note": "Предпросмотр: в магазине Kaspi ничего не меняется."}
 
@@ -1155,6 +1156,58 @@ def stock_confirm_returns(shop_id: str, product_id: str, body: ReturnConfirmIn,
     db.commit()
     reportcache.invalidate(shop.id)
     return {"confirmed": sum(r.returned_qty for r in rows), "sellable": body.sellable}
+
+
+class PickedUpIn(BaseModel):
+    qty: int = Field(ge=1, le=100_000)
+    sellable: bool  # годен к продаже / брак
+
+
+@api.post("/shops/{shop_id}/products/{product_id}/stock/picked-up", tags=["склад"])
+def stock_picked_up(shop_id: str, product_id: str, body: PickedUpIn, principal: Principal = Depends(get_principal),
+                    db: DbSession = Depends(get_session)) -> dict:
+    """К-33 А4: отмена после передачи в Kaspi Доставку — продавец забрал товар в пункте приёма. Годный товар
+    возвращается в остаток, брак — нет. Больше, чем едет обратно, подтвердить нельзя."""
+    from .models import StockMovement
+    shop = shop_for(db, principal, shop_id)
+    _product_of_shop(db, shop, product_id)
+    st = stock_states(db, shop).get(product_id)
+    if st is None or st.returning <= 0:
+        raise ApiError(409, "nothing_returning", "Этот товар не едет обратно.")
+    if body.qty > st.returning:
+        raise ApiError(422, "validation", f"Обратно едет только {st.returning} шт.")
+    now = datetime.now(timezone.utc)
+    db.add(StockMovement(shop_id=shop.id, product_id=product_id, kind="back_ok" if body.sellable else "back_defect",
+                         qty=body.qty, occurred_at=now, created_at=now))
+    db.commit()
+    reportcache.invalidate(shop.id)
+    after = stock_states(db, shop)[product_id]
+    return {"current": after.current, "returning": after.returning}
+
+
+class BufferIn(BaseModel):
+    buffer: int = Field(ge=0, le=10_000)
+
+
+@api.put("/shops/{shop_id}/products/{product_id}/stock/buffer", tags=["склад"])
+def stock_buffer(shop_id: str, product_id: str, body: BufferIn, principal: Principal = Depends(get_principal),
+                 db: DbSession = Depends(get_session)) -> dict:
+    """К-33 А4: буфер автоснятия — сколько штук не показывать в Kaspi (по умолчанию 0). Товар снимается с продажи,
+    когда остаток не больше буфера."""
+    shop = shop_for(db, principal, shop_id)
+    _product_of_shop(db, shop, product_id)
+    row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
+    if row is None:
+        st0 = stock_states(db, shop).get(product_id)
+        if st0 is None:
+            raise ApiError(409, "stock_not_counted", "Сначала внесите остаток товара.")
+        # остаток ведётся по журналу (например, пример в режиме презентации) — строка только для буфера
+        row = ProductStock(shop_id=shop.id, product_id=product_id, qty=st0.current, updated_at=datetime.now(timezone.utc))
+        db.add(row)
+    row.buffer = body.buffer
+    db.commit()
+    st = stock_states(db, shop)[product_id]
+    return {"buffer": st.buffer, "forSale": st.for_sale, "current": st.current}
 
 
 @api.post("/shops/{shop_id}/products/{product_id}/stock/receipt", tags=["склад"])
@@ -2123,6 +2176,10 @@ def kaspi_price_list(shop_id: str, price_key: str, db: DbSession = Depends(get_s
     if shop.id in accounts_service.deactivated_shop_ids(db):
         # К-21: пустой файл или available="no" сняли бы товары продавца с продажи. Отдаём временную ошибку без файла.
         return Response(status_code=503, headers={"Retry-After": "3600"})
+    if kaspi_service.store_list(conn) and not kaspi_service.refresh_before_price(db, conn, datetime.now(timezone.utc)):
+        # К-33 А4: заказы не досинхронизированы — прайс не отдаём: Kaspi оставит свой текущий остаток (он уже учёл
+        # свои заказы). Старый файл «вернул» бы проданные единицы. Без кодов складов наличие не передаётся вовсе.
+        return Response(status_code=503, headers={"Retry-After": "600"})
     try:
         body = kaspi_service.price_list_xml(db, shop, conn)
     except kaspi_service.KaspiNoCatalog as exc:
