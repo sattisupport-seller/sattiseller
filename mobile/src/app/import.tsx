@@ -17,6 +17,7 @@ import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
 import { useQueryClient } from '@tanstack/react-query';
+import { filePart } from '@/api/upload';
 
 type UploadState = {
   id: string;
@@ -77,7 +78,7 @@ export default function ImportScreen() {
       return;
     }
     const form = new FormData();
-    form.append('file', { uri: asset.uri, name: asset.name, type: asset.mimeType ?? 'application/octet-stream' } as unknown as Blob);
+    form.append('file', filePart(asset.uri, asset.name, asset.mimeType ?? 'application/octet-stream'));
     try {
       const data = await upload.mutateAsync(form);
       setFile({ ...data, sample: (data as unknown as { sample: string[][] }).sample ?? [] });

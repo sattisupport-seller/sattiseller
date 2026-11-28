@@ -17,6 +17,7 @@ import { useToast } from '@/components/ui/Overlays';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
+import { filePart } from '@/api/upload';
 
 // К-20 п.2: фото с телефона бывают больше лимита сервера (5 МБ). Сжимаем до длинной стороны 1600 px в JPEG 0,7.
 async function shrinkPhoto(uri: string, width?: number, height?: number) {
@@ -74,7 +75,7 @@ export default function ProductDraftScreen() {
     form.append('shop_id', shopId ?? '');
     form.append('facts', facts);
     form.append('languages', 'ru');  // К-13: описание только на русском
-    photos.forEach((p) => form.append('photos', { uri: p.uri, name: p.name, type: p.type } as unknown as Blob));
+    photos.forEach((p) => form.append('photos', filePart(p.uri, p.name, p.type)));
     try {
       setResult(await draft.mutateAsync(form));
       setFlagged(false);

@@ -17,6 +17,7 @@ import { useTour } from '@/onboarding/OnboardingProvider';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
+import { filePart } from '@/api/upload';
 
 type KaspiStatus = {
   enabled: boolean;
@@ -105,7 +106,7 @@ export default function KaspiScreen() {
       if (res.canceled) return null;
       const a = res.assets[0];
       const form = new FormData();
-      form.append('file', { uri: a.uri, name: a.name ?? 'price.xml', type: 'application/xml' } as unknown as Blob);
+      form.append('file', filePart(a.uri, a.name ?? 'price.xml', 'application/xml'));
       return request<KaspiStatus>(`/shops/${shopId}/kaspi/catalog`, { method: 'POST', form });
     },
     onMutate: () => { setError(null); setNotice(null); },

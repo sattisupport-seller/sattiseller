@@ -12,6 +12,7 @@ import { useI18n } from '@/i18n';
 import { formatMoney } from '@/lib/format';
 import { useSession } from '@/session/SessionProvider';
 import { useTheme } from '@/theme/useTheme';
+import { filePart } from '@/api/upload';
 
 // К-33 Б1: сверка с Kaspi — выгрузка Kaspi Pay «Продажи» (Excel) против расчёта Satti по каждому заказу.
 export default function KaspiPayScreen() {
@@ -31,7 +32,7 @@ export default function KaspiPayScreen() {
     if (res.canceled || !res.assets?.[0]) return;
     const asset = res.assets[0];
     const form = new FormData();
-    form.append('file', { uri: asset.uri, name: asset.name, type: asset.mimeType ?? 'application/octet-stream' } as unknown as Blob);
+    form.append('file', filePart(asset.uri, asset.name, asset.mimeType ?? 'application/octet-stream'));
     try {
       setResult(await upload.mutateAsync(form));
     } catch (e) {
