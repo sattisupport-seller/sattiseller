@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { Banner, Card, GroupCard, ListRow } from '@/components/ui/Surfaces';
 import { Txt } from '@/components/ui/Text';
 import { useToast } from '@/components/ui/Overlays';
-import { SUPPORT_EMAIL } from '@/config';
+import { SUPPORT_EMAIL, supportMailto } from '@/config';
 import { openManageSubscriptions } from '@/lib/purchases';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
@@ -52,7 +52,7 @@ export default function AccountDeactivatedScreen() {
       <Button title={t('deactivated.subscribe')} variant="secondary" onPress={() => router.push('/paywall')} fullWidth />
       <GroupCard>
         <ListRow title={t('subscription.manage')} onPress={() => { void openManageSubscriptions('satti_monthly'); }} />
-        <ListRow title={t('subscription.support')} onPress={() => { void Linking.openURL(`mailto:${SUPPORT_EMAIL}`); }} />
+        <ListRow title={t('subscription.support')} onPress={() => { void Linking.openURL(supportMailto()); }} />
         <ListRow title={t('profile.logout')} onPress={() => { void logout(); }} />
         <ListRow title={t('subscription.deleteAccount')} onPress={() => router.push('/settings/delete-account')} last />
       </GroupCard>

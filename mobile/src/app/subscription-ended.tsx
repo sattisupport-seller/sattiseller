@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Card, GroupCard, ListRow } from '@/components/ui/Surfaces';
 import { Txt } from '@/components/ui/Text';
 import { ErrorState, Skeleton, useToast } from '@/components/ui/Overlays';
-import { SUPPORT_EMAIL } from '@/config';
+import { SUPPORT_EMAIL, supportMailto } from '@/config';
 import { trackEvent } from '@/lib/analytics';
 import { downloadAndShare } from '@/lib/download';
 import { useSession } from '@/session/SessionProvider';
@@ -52,7 +52,7 @@ export default function SubscriptionEndedScreen() {
               .catch(() => toast.show(t('common.unknownError')));
           }}
         />
-        <ListRow title={t('subscription.support')} onPress={() => { void Linking.openURL(`mailto:${SUPPORT_EMAIL}`); }} />
+        <ListRow title={t('subscription.support')} onPress={() => { void Linking.openURL(supportMailto()); }} />
         <ListRow
           title={t('subscription.privacy')}
           onPress={() => { if (config.data) void Linking.openURL(config.data.privacy_url); }}

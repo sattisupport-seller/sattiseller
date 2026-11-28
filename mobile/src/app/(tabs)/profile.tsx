@@ -14,7 +14,7 @@ import { useTour } from '@/onboarding/OnboardingProvider';
 import { useSession, type Locale, type ThemeMode } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
-import { SUPPORT_EMAIL } from '@/config';
+import { SUPPORT_EMAIL, supportMailto } from '@/config';
 import { downloadAndShare } from '@/lib/download';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -113,7 +113,7 @@ export default function ProfileScreen() {
         <GroupCard>
           {!isDemo ? <ListRow title={t('profile.onboarding')} onPress={tour.start} /> : null}
           <ListRow title={t('profile.howProfit')} onPress={() => router.push('/settings/how-profit')} />
-          <ListRow title={t('profile.support')} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)} />
+          <ListRow title={t('profile.support')} onPress={() => Linking.openURL(supportMailto(sellerNumber, `${version} (${build})`))} />
           <ListRow title={t('profile.privacy')} onPress={() => config.data && Linking.openURL(config.data.privacy_url)} />
           <ListRow title={t('profile.terms')} onPress={() => config.data && Linking.openURL(config.data.terms_url)} last />
         </GroupCard>

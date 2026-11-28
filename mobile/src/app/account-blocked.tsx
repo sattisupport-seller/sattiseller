@@ -3,7 +3,7 @@ import { Linking, ScrollView } from 'react-native';
 
 import { Card, GroupCard, ListRow } from '@/components/ui/Surfaces';
 import { Txt } from '@/components/ui/Text';
-import { SUPPORT_EMAIL } from '@/config';
+import { SUPPORT_EMAIL, supportMailto } from '@/config';
 import { openManageSubscriptions } from '@/lib/purchases';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
@@ -25,7 +25,7 @@ export default function AccountBlockedScreen() {
         <Txt variant="subhead" tone="secondary" selectable>{t('blocked.contact', { email: SUPPORT_EMAIL })}</Txt>
       </Card>
       <GroupCard>
-        <ListRow title={t('subscription.support')} onPress={() => { void Linking.openURL(`mailto:${SUPPORT_EMAIL}`); }} />
+        <ListRow title={t('subscription.support')} onPress={() => { void Linking.openURL(supportMailto()); }} />
         <ListRow title={t('subscription.manage')} onPress={() => { void openManageSubscriptions('satti_monthly'); }} />
         <ListRow title={t('profile.logout')} onPress={() => { void logout(); }} />
         <ListRow title={t('subscription.deleteAccount')} onPress={() => router.push('/settings/delete-account')} last />

@@ -39,4 +39,21 @@ export const API_URL: string = checkApiUrl(
   __DEV__,
 );
 
-export const SUPPORT_EMAIL = 'support@example.invalid';
+// К-35 п.4 (решение владельца 28.11.2026): почта поддержки и жалоб. Задаётся только здесь (сервер — SATTI_SUPPORT_EMAIL).
+export const SUPPORT_EMAIL = 'satti.support@gmail.com';
+export const SUPPORT_SUBJECT = 'Satti Seller — обращение';
+
+/** Письмо в поддержку: тема и в тексте — номер продавца (если есть) и версия приложения. */
+export function supportMailto(sellerNumber?: string | null, appVersion?: string | null): string {
+  if (appVersion == null) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      appVersion = (require('expo-constants').default?.expoConfig?.version as string | undefined) ?? null;
+    } catch {
+      appVersion = null;
+    }
+  }
+  const lines =['', '', '—', `Номер продавца: ${sellerNumber || 'нет (демо или магазин не подключён)'}`,
+    `Версия приложения: ${appVersion || 'неизвестна'}`];
+  return `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(SUPPORT_SUBJECT)}&body=${encodeURIComponent(lines.join('\n'))}`;
+}

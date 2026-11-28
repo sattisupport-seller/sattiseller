@@ -140,7 +140,8 @@ class Settings:
     owner_alert_email: str = os.environ.get("SATTI_OWNER_ALERT_EMAIL", "").strip().lower()
     analytics_enabled: bool = os.environ.get("ANALYTICS_ENABLED", "0") == "1"  # 3.9: за флагом, по умолчанию выключено
     # адрес поддержки (страница /support, тексты магазинов и бета-материалов; пункт 5.8)
-    support_email: str = os.environ.get("SATTI_SUPPORT_EMAIL", "").strip()
+    # К-35 п.4 (решение владельца 28.11.2026): почта поддержки и жалоб — satti.support@gmail.com
+    support_email: str = os.environ.get("SATTI_SUPPORT_EMAIL", "satti.support@gmail.com").strip()
     # имя оператора для юридических текстов (подставляется вместо {OWNER_NAME}); до регистрации ИП — из переменной
     owner_name: str = os.environ.get("SATTI_OWNER_NAME", "").strip()
     # К-28: оператор — ИП. Какие из этих данных публиковать — решает юрист (legal-proposals п.12); в коде их нет
