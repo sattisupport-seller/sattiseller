@@ -112,7 +112,7 @@ export default function AssistantScreen() {
       >
         <TabHeader
           title={t('assistant.title')}
-          subtitle={<Txt variant="subhead" tone="tertiary">{t('assistant.subtitle')}</Txt>}
+          subtitle={<Txt variant="subhead" tone="tertiary">{isDemo ? t('assistant.demoNote') : t('assistant.subtitle')}</Txt>}  /* К-35 п.7: одна строка по режиму */
           right={
             <>
               <IconButton label={t('assistant.history')} onPress={() => setHistoryOpen(true)}>
@@ -125,7 +125,6 @@ export default function AssistantScreen() {
           }
         />
 
-        {isDemo ? <Txt variant="footnote" tone="tertiary">{t('assistant.demoNote')}</Txt> : null}
 
         {!hasChat ? (
           <>
