@@ -5,6 +5,8 @@
 Печатает: подключение и прогресс загрузки, заказы по статусам и датам, запросы к Kaspi (метод, коды ответов),
 запросы НЕ на чтение (должно быть 0), поля и статусы, которые прислал Kaspi, незнакомые статусы, пропущенные записи.
 Данные покупателей и токен не печатаются (их нет ни в журнале, ни в выводе).
+Ещё (К-37 п.3 и п.6): время до первых цифр и до полной загрузки 90 дней — по журналу; список «что сверить
+с кабинетом Kaspi» — 5 заказов (номер, дата по времени магазина, статус, сумма товаров) и итог за 14 дней.
 """
 
 from __future__ import annotations
@@ -14,9 +16,106 @@ import re
 import sqlite3
 import sys
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 KASPI_REQ = re.compile(r"HTTP Request: (\w+) https://kaspi\.kz(\S*) \"HTTP/1\.1 (\d{3})")
+LOG_TIME = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
+STATUS_RU = {  # как в кабинете Kaspi, приблизительно: исход заказа
+    "pending": "новый",
+    "in_progress": "в работе",
+    "completed": "выдан",
+    "cancelled": "отменён",
+    "returned": "возврат",
+}
+
+
+def _tenge(minor: int) -> str:
+    return f"{minor / 100:,.0f}".replace(",", " ")
+
+
+def _fmt_delta(sec: float) -> str:
+    sec = int(sec)
+    return f"{sec // 60} мин {sec % 60:02d} с" if sec >= 60 else f"{sec} с"
+
+
+def load_timing(text: str) -> dict[str, float | None]:
+    """Секунды от первого запроса заказов к Kaspi до первых цифр («kaspi observed») и до конца догрузки."""
+
+    def first_time(pred) -> datetime | None:
+        for line in text.splitlines():
+            m = LOG_TIME.match(line)
+            if m and pred(line):
+                return datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+        return None
+
+    start = first_time(lambda ln: "HTTP Request: GET https://kaspi.kz" in ln and "/orders" in ln)
+    first = first_time(lambda ln: "kaspi observed" in ln)
+    done = first_time(lambda ln: "kaspi backfill done" in ln)
+    if start is None:
+        return {"first_numbers": None, "full_load": None}
+    return {
+        "first_numbers": (first - start).total_seconds() if first else None,
+        "full_load": (done - start).total_seconds() if done else None,
+    }
+
+
+def print_timing(text: str) -> None:
+    t = load_timing(text)
+    if t["first_numbers"] is None and t["full_load"] is None:
+        print("Время загрузки: в журнале ещё нет запросов заказов к Kaspi или первых цифр.")
+        return
+    first = _fmt_delta(t["first_numbers"]) if t["first_numbers"] is not None else "ещё нет"
+    full = _fmt_delta(t["full_load"]) if t["full_load"] is not None else "ещё идёт"
+    print(f"Время загрузки: до первых цифр {first}; до полной загрузки 90 дней {full}")
+
+
+def _parse_db_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    return datetime.fromisoformat(str(value)).replace(tzinfo=timezone.utc)  # в базе — UTC без пояса
+
+
+def check_list(c: sqlite3.Connection, shop_id: str, now: datetime | None = None) -> list[str]:
+    """Что сверить с кабинетом Kaspi: 5 разных заказов и итог за 14 дней. Без данных покупателей."""
+    row = c.execute("select timezone from shops where id=?", (shop_id,)).fetchone()
+    tz = ZoneInfo(row[0] if row and row[0] else "Asia/Almaty")
+    now = now or datetime.now(timezone.utc)
+    since = now - timedelta(days=14)
+    orders = c.execute(
+        "select o.id, o.number, o.status, o.created_at, coalesce(sum(i.qty * i.unit_price_minor), 0) "
+        "from orders o left join order_items i on i.order_id = o.id where o.shop_id=? "
+        "group by o.id order by o.created_at desc", (shop_id,)).fetchall()
+    recent = [o for o in orders if (_parse_db_time(o[3]) or now) >= since]
+    if not recent:
+        return ["Заказов за 14 дней нет — сверять нечего."]
+    picked: list[tuple] = []
+
+    def take(o):
+        if o and o not in picked and len(picked) < 5:
+            picked.append(o)
+
+    take(recent[0])  # самый новый
+    for st in ("completed", "cancelled", "returned", "in_progress"):
+        take(next((o for o in recent if o[2] == st), None))  # по одному каждого исхода
+    take(max(recent, key=lambda o: o[4]))  # самый крупный
+    take(recent[-1])  # самый ранний за 14 дней
+    for o in recent:
+        take(o)
+
+    lines = ["Сверить с кабинетом Kaspi (Заказы → поиск по номеру):"]
+    for _id, number, status, created, total in picked:
+        local = _parse_db_time(created).astimezone(tz).strftime("%d.%m.%Y %H:%M")
+        lines.append(f"  № {number}: {local}, {STATUS_RU.get(status, status)}, товары на {_tenge(total)} ₸")
+    by_status = Counter(o[2] for o in recent)
+    sums = Counter()
+    for o in recent:
+        sums[o[2]] += o[4]
+    lines.append(f"Итог за 14 дней (с {since.astimezone(tz):%d.%m}): заказов {len(recent)}; " + "; ".join(
+        f"{STATUS_RU.get(s, s)} {n} на {_tenge(sums[s])} ₸"
+        for s, n in sorted(by_status.items(), key=lambda kv: -kv[1])))
+    lines.append("  Сумма — цена товаров × количество, без доставки. В кабинете сравнить число и сумму по каждому статусу.")
+    return lines
 
 
 def log_summary(path: str) -> None:
@@ -25,6 +124,7 @@ def log_summary(path: str) -> None:
     methods = Counter(m for m, _p, _c in reqs)
     codes = Counter(c for _m, _p, c in reqs)
     kinds = Counter(re.sub(r"/[A-Za-z0-9_-]{6,}", "/{id}", p.split("?")[0]) for _m, p, _c in reqs)
+    print_timing(text)
     print(f"Запросы к Kaspi: всего {len(reqs)}; методы {dict(methods)}; ответы {dict(sorted(codes.items()))}")
     writes = [(m, p) for m, p, _c in reqs if m != "GET"]
     print(f"  НЕ на чтение (должно быть 0): {len(writes)}" + (f" — {writes[:3]}" if writes else ""))
@@ -67,6 +167,8 @@ def db_summary(path: str) -> None:
         print(f"  позиций {items} ({qty} шт.), товаров {products}; с доставкой продавца {delivery[0]} "
               f"(на {delivery[1] / 100:,.0f} ₸ с НДС)".replace(",", " ")
               + f"; в рассрочку {credit}; переданы в Kaspi Доставку {handed}")
+        for line in check_list(c, shop_id):
+            print(line)
 
 
 def main(argv: list[str]) -> int:

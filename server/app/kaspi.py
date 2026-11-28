@@ -557,6 +557,7 @@ def _backfill_pass(db: DbSession, shop: Shop, conn: KaspiConnection, client: Kas
     conn.load_total = conn.load_done  # догрузка закончена — число точное
     db.add(conn)
     db.commit()
+    log.info("kaspi backfill done shop=%s orders=%s", conn.shop_id[:8], conn.load_done)  # К-37: время полной загрузки
     return {"added": added, "updated": updated, "items_changed": items_changed, "pages": pages}
 
 
