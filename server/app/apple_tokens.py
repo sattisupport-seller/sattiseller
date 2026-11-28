@@ -67,9 +67,9 @@ def revoke(refresh_token: str) -> bool:
             r = http.post(REVOKE_URL, data={"client_id": settings.apple_client_id, "client_secret": client_secret(),
                                             "token": refresh_token, "token_type_hint": "refresh_token"})
     except httpx.HTTPError as exc:
-        log.warning("apple token revoke failed: %s", type(exc).__name__)
+        log.warning("apple revoke failed: %s", type(exc).__name__)  # без секрета: только тип ошибки
         return False
     if r.status_code != 200:
-        log.warning("apple token revoke refused: %s", r.status_code)
+        log.warning("apple revoke refused: %s", r.status_code)  # без тела ответа
         return False
     return True
