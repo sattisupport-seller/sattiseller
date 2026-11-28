@@ -519,6 +519,9 @@ def _sync_locked(db: DbSession, conn: KaspiConnection, client: KaspiClient, now:
     summary = client.observed_summary() if hasattr(client, "observed_summary") else None
     if summary:  # К-37 п.4: поля и статусы реального Kaspi — без данных покупателя и без токена
         log.info("kaspi observed shop=%s %s", shop.id[:8], summary)
+    if hasattr(client, "observed_shapes"):  # KASPI_TEST §9: структура ответов — названия полей и типы, без значений
+        for kind, shape in client.observed_shapes().items():
+            log.info("kaspi shape shop=%s %s %s", shop.id[:8], kind, shape)
     return {"pages": pages, "added": added, "updated": updated, "items_changed": items_changed, "skipped": skipped}
 
 

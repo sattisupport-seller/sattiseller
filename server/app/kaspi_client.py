@@ -11,7 +11,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -171,7 +173,9 @@ class KaspiClient:
                 self._backoff(attempt, None)
                 continue
             if resp.status_code == 200:
-                return resp.json()
+                body = resp.json()
+                self._record_shape(path, body)
+                return body
             if resp.status_code in (401, 403):
                 raise KaspiAuthError(f"HTTP {resp.status_code}")
             if resp.status_code == 429 or resp.status_code >= 500:
@@ -216,6 +220,7 @@ class KaspiClient:
         if not hasattr(self, "_seen_fields"):
             self._seen_fields: set[str] = set()
             self._seen_values: dict[str, set[str]] = {}
+            self._transmission: dict[str, list[int]] = {}
         for item in items:
             attrs = item.get("attributes") if isinstance(item, dict) else None
             if not isinstance(attrs, dict):
@@ -224,12 +229,73 @@ class KaspiClient:
             for key in self.OBSERVED_ENUMS:
                 if key in attrs and not isinstance(attrs[key], (dict, list)):
                     self._seen_values.setdefault(key, set()).add(str(attrs[key])[:40])
+            # KASPI_TEST §9: есть ли признак передачи в Kaspi Доставку — по исходу заказа (с полем / всего)
+            outcome = str(attrs.get("status") or attrs.get("state") or "?")[:40]
+            delivery = attrs.get("kaspiDelivery") if isinstance(attrs.get("kaspiDelivery"), dict) else {}
+            has = bool(attrs.get("courierTransmissionDate") or delivery.get("courierTransmissionDate"))
+            cnt = self._transmission.setdefault(outcome, [0, 0])
+            cnt[0] += int(has)
+            cnt[1] += 1
 
     def observed_summary(self) -> str | None:
         if not getattr(self, "_seen_fields", None):
             return None
         values = "; ".join(f"{k}={sorted(v)}" for k, v in sorted(self._seen_values.items()))
-        return f"fields={sorted(self._seen_fields)} values: {values}"
+        handed = ", ".join(f"{k} {a}/{b}" for k, (a, b) in sorted(self._transmission.items()))
+        return f"fields={sorted(self._seen_fields)} values: {values}; courierTransmissionDate: {handed}"
+
+    # KASPI_TEST §9 и К-37 п.4: структура ответов Kaspi по видам запросов — только названия полей и типы значений,
+    # никаких значений (ни данных покупателя, ни сумм, ни токена). Объединяется по всем ответам одной синхронизации.
+    _ID_SEGMENT = re.compile(r"^(?=.*\d)[A-Za-z0-9_=-]{4,}$")
+
+    @classmethod
+    def _path_kind(cls, path: str) -> str:
+        segs = path.split("?")[0].strip("/").split("/")
+        return "/".join("{id}" if cls._ID_SEGMENT.match(s) else s for s in segs)
+
+    @classmethod
+    def _shape(cls, value, depth: int = 0):
+        if depth > 6:
+            return "…"
+        if isinstance(value, dict):
+            return {str(k)[:60]: cls._shape(v, depth + 1) for k, v in list(value.items())[:80]}
+        if isinstance(value, list):
+            merged = None
+            for v in value[:200]:
+                merged = cls._merge(merged, cls._shape(v, depth + 1))
+            return [merged] if merged is not None else []
+        if value is None:
+            return "null"
+        return {bool: "bool", int: "int", float: "float", str: "str"}.get(type(value), type(value).__name__)
+
+    @classmethod
+    def _merge(cls, a, b):
+        if a is None:
+            return b
+        if b is None:
+            return a
+        if isinstance(a, dict) and isinstance(b, dict):
+            out = dict(a)
+            for k, v in b.items():
+                out[k] = cls._merge(out.get(k), v)
+            return out
+        if isinstance(a, list) and isinstance(b, list):
+            inner = cls._merge(a[0] if a else None, b[0] if b else None)
+            return [inner] if inner is not None else []
+        if isinstance(a, (dict, list)) or isinstance(b, (dict, list)):
+            return "mixed"
+        return a if a == b else "|".join(sorted(set(a.split("|")) | set(b.split("|"))))
+
+    def _record_shape(self, path: str, body) -> None:
+        if not hasattr(self, "_shapes"):
+            self._shapes: dict[str, object] = {}
+        kind = self._path_kind(path)
+        self._shapes[kind] = self._merge(self._shapes.get(kind), self._shape(body))
+
+    def observed_shapes(self) -> dict[str, str]:
+        """Вид запроса → структура ответа одной строкой JSON (для журнала)."""
+        return {k: json.dumps(v, ensure_ascii=False, sort_keys=True)[:6000]
+                for k, v in sorted(getattr(self, "_shapes", {}).items())}
 
     def _parse_each(self, items, parse, kind: str):
         """К-33 А1: странная запись не роняет загрузку — пропускаем, пишем в журнал (без данных покупателя и токена)."""

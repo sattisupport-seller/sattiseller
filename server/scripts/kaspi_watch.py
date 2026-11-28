@@ -133,6 +133,13 @@ def log_summary(path: str) -> None:
     for line in re.findall(r"kaspi observed .*", text)[-1:]:
         print("Поля и статусы Kaspi (последняя синхронизация):")
         print("  " + line[:1500])
+    shapes: dict[str, str] = {}
+    for kind, shape in re.findall(r"kaspi shape shop=\S+ (\S+) (.*)", text):
+        shapes[kind] = shape  # последняя по каждому виду запроса
+    if shapes:
+        print("Структура ответов Kaspi (поля и типы, без значений) — для KASPI_TEST §9:")
+        for kind, shape in sorted(shapes.items()):
+            print(f"  {kind}: {shape[:1500]}")
     unknown = Counter(re.findall(r"kaspi unknown status '([^']*)'", text))
     print(f"Незнакомые статусы: {dict(unknown) or 'нет'}")
     skipped = re.findall(r"kaspi (\w+) skipped: id=\S+ (\w+)", text)
