@@ -459,6 +459,20 @@ export function useMoneyInsights(shopId: string | null) {
   });
 }
 
+/** К-33 Б1: сверка с выгрузкой Kaspi Pay «Продажи». */
+export type KaspiPayResult = {
+  rows: number; bad_rows: number[]; columns: Record<string, string>; orders_in_file: number; matched: number;
+  mismatch_orders: number; mismatch_sum_minor: number;
+  mismatches: { order_number: string; field: 'amount' | 'commission' | 'delivery'; satti_minor: number; kaspi_minor: number; diff_minor: number }[];
+  missing_in_satti: string[]; missing_in_satti_count: number;
+};
+
+export function useKaspiPayReport(shopId: string | null) {
+  return useMutation({
+    mutationFn: (form: FormData) => request<KaspiPayResult>(`/shops/${shopId}/kaspi/pay-report`, { method: 'POST', form }),
+  });
+}
+
 export function useResetDemo() {
   const qc = useQueryClient();
   return useMutation({

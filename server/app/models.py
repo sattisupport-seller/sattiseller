@@ -237,6 +237,21 @@ class ProductStock(Base):
     buffer: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # К-33 А4: буфер автоснятия, шт.
 
 
+class KaspiPayRow(Base):
+    """К-33 Б1: строка выгрузки Kaspi Pay «Продажи» по заказу (суммы в тиынах; None — колонки нет в файле).
+    Повторная загрузка того же заказа заменяет строку."""
+    __tablename__ = "kaspi_pay_rows"
+    __table_args__ = (UniqueConstraint("shop_id", "order_number", name="uq_kaspi_pay_order"),)
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uid)
+    shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id", ondelete="CASCADE"), index=True)
+    order_number: Mapped[str] = mapped_column(String(32))
+    amount_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    commission_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    delivery_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    payout_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class StockMovement(Base):
     """Журнал движений склада (К-1 от 22.11): инвентаризация (остаток на момент) и приход. Дата — дата события, не ввода."""
     __tablename__ = "stock_movements"

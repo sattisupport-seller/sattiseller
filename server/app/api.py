@@ -2051,6 +2051,24 @@ def kaspi_connect(shop_id: str, body: KaspiConnectIn, principal: Principal = Dep
     return _kaspi_view(shop, conn, db)
 
 
+@api.post("/shops/{shop_id}/kaspi/pay-report", tags=["Kaspi"])
+async def kaspi_pay_report(shop_id: str, file: UploadFile = File(...), principal: Principal = Depends(get_principal),
+                           db: DbSession = Depends(get_session)) -> dict:
+    """К-33 Б1: сверка с Kaspi — выгрузка Kaspi Pay «Продажи» (Excel) против расчёта Satti по каждому заказу:
+    «совпало N; расхождение X ₸ по M заказам». Строки выгрузки сохраняются."""
+    from . import kaspi_pay
+
+    shop = shop_for(db, principal, shop_id)
+    key = f"pay:{principal.user_id or principal.demo_install_id or principal.session_id}"
+    if not allow(key, settings.import_requests_per_hour, db=db):
+        raise ApiError(429, "rate_limited")
+    content = await file.read(settings.import_max_bytes + 1)
+    parsed = await run_in_threadpool(parse_file, file.filename or "file", content)
+    pay = kaspi_pay.parse_pay(parsed)
+    result = kaspi_pay.reconcile(db, shop, pay, _now())
+    return result
+
+
 @api.post("/shops/{shop_id}/kaspi/catalog", tags=["Kaspi"])
 async def kaspi_upload_catalog(shop_id: str, file: UploadFile = File(...), principal: Principal = Depends(get_principal),
                                db: DbSession = Depends(get_session)) -> dict:

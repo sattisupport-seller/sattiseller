@@ -463,6 +463,20 @@ export const ru = {
     valueOff: 'Выключены',
   },
   // Налог (ТЗ 2.1, раздел 7.3)
+  // К-33 Б1: сверка с Kaspi Pay
+  kaspiPay: {
+    title: 'Сверка с Kaspi',
+    hint: 'Kaspi Pay (веб-версия) → «Продажи» → период → выгрузить в Excel. Загрузите файл без изменений — сверим каждый заказ: сумму, комиссию Kaspi и доставку.',
+    pick: 'Выбрать файл Kaspi Pay',
+    allMatch: 'Сверка с Kaspi: все заказы совпали ({count})',
+    summary: 'Сверка с Kaspi: совпало заказов — {matched}; расхождение {sum}, заказов с расхождением — {count}',
+    missing: 'Заказов в файле, которых нет в Satti: {count} (ещё не загружены или старше 90 дней).',
+    badRows: 'Пропущены строки без номера заказа или суммы: {rows}.',
+    row: 'Satti {satti} · Kaspi {kaspi} · разница {diff}',
+    field_amount: 'сумма',
+    field_commission: 'комиссия',
+    field_delivery: 'доставка',
+  },
   // К-33 А5: главный экран языком денег
   money: {
     leaksTitle: 'Утечки маржи',

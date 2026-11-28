@@ -84,6 +84,7 @@ export default function ProfileScreen() {
       <Section title={t('profile.data')}>
         <GroupCard>
           <ListRow title={t('profile.importCosts')} onPress={() => router.push('/import')} />
+          <ListRow title={t('kaspiPay.title')} onPress={() => router.push('/settings/kaspi-pay' as never)} />
           <ListRow title={t('profile.commissions')} onPress={() => router.push('/settings/commissions')} />
           <ListRow title={t('profile.tax')} onPress={() => router.push('/settings/tax')} />
           <ListRow title={t('stock.title')} onPress={() => router.push('/stock' as never)} />
