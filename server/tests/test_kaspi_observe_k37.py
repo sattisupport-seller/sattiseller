@@ -49,6 +49,9 @@ def test_shape_merge_rules():
     from app.kaspi_client import KaspiClient as K
     assert K._path_kind("orders/584110157/entries") == "orders/{id}/entries"
     assert K._path_kind("masterproducts/abc123XYZ/merchantProduct") == "masterproducts/{id}/merchantProduct"
+    assert K._path_kind("masterproducts/M0/merchantProduct") == "masterproducts/{id}/merchantProduct"
+    assert K._path_kind("masterproducts/M0") == "masterproducts/{id}"
+    assert K._path_kind("orders") == "orders"
     assert K._shape({"a": [{"x": 1}, {"y": None}], "b": "s"}) == {"a": [{"x": "int", "y": "null"}], "b": "str"}
     assert K._merge({"v": "int"}, {"v": "null"}) == {"v": "int|null"}
     assert K._merge({"v": {"a": "int"}}, {"v": "str"}) == {"v": "mixed"}

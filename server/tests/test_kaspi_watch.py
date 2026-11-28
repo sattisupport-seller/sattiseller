@@ -85,6 +85,13 @@ def test_load_timing_from_log():
     assert kw._fmt_delta(570) == "9 мин 30 с" and kw._fmt_delta(42) == "42 с"
 
 
+def test_request_kind_keeps_collection_names():
+    assert kw.request_kind("/shop/api/v2/orders?page[number]=0") == "orders"
+    assert kw.request_kind("/shop/api/v2/orders/584110157/entries") == "orders/{id}/entries"
+    assert kw.request_kind("/shop/api/v2/masterproducts/M0/merchantProduct") == "masterproducts/{id}/merchantProduct"
+    assert kw.request_kind("/shop/api/v2/orderentries/abc123/product") == "orderentries/{id}/product"
+
+
 def test_backfill_completion_is_logged(client, demo, kaspi_on, mock, caplog):  # noqa: F811
     mock.generate(120, now=datetime.now(timezone.utc), days=80, products=5)
     _connect(client, demo)

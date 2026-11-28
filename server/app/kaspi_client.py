@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 from dataclasses import dataclass, field
 
@@ -246,12 +245,11 @@ class KaspiClient:
 
     # KASPI_TEST §9 и К-37 п.4: структура ответов Kaspi по видам запросов — только названия полей и типы значений,
     # никаких значений (ни данных покупателя, ни сумм, ни токена). Объединяется по всем ответам одной синхронизации.
-    _ID_SEGMENT = re.compile(r"^(?=.*\d)[A-Za-z0-9_=-]{4,}$")
-
-    @classmethod
-    def _path_kind(cls, path: str) -> str:
+    @staticmethod
+    def _path_kind(path: str) -> str:
+        """orders/584110157/entries → orders/{id}/entries: в путях клиента второй сегмент — всегда идентификатор."""
         segs = path.split("?")[0].strip("/").split("/")
-        return "/".join("{id}" if cls._ID_SEGMENT.match(s) else s for s in segs)
+        return "/".join("{id}" if i == 1 else s for i, s in enumerate(segs))
 
     @classmethod
     def _shape(cls, value, depth: int = 0):

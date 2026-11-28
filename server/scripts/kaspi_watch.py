@@ -30,6 +30,12 @@ STATUS_RU = {  # как в кабинете Kaspi, приблизительно:
 }
 
 
+def request_kind(path: str) -> str:
+    """/shop/api/v2/orders/584110157/entries → orders/{id}/entries (как «kaspi shape» в журнале)."""
+    segs = path.split("?")[0].split("/shop/api/v2/", 1)[-1].strip("/").split("/")
+    return "/".join("{id}" if i == 1 else s for i, s in enumerate(segs))
+
+
 def _tenge(minor: int) -> str:
     return f"{minor / 100:,.0f}".replace(",", " ")
 
@@ -123,7 +129,7 @@ def log_summary(path: str) -> None:
     reqs = KASPI_REQ.findall(text)
     methods = Counter(m for m, _p, _c in reqs)
     codes = Counter(c for _m, _p, c in reqs)
-    kinds = Counter(re.sub(r"/[A-Za-z0-9_-]{6,}", "/{id}", p.split("?")[0]) for _m, p, _c in reqs)
+    kinds = Counter(request_kind(p) for _m, p, _c in reqs)
     print_timing(text)
     print(f"Запросы к Kaspi: всего {len(reqs)}; методы {dict(methods)}; ответы {dict(sorted(codes.items()))}")
     writes = [(m, p) for m, p, _c in reqs if m != "GET"]
