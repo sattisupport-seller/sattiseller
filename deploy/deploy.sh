@@ -4,7 +4,7 @@
 #                         — один раз на чистом сервере: пользователь, вход только по ключу, без root и пароля,
 #                           ufw (22, 80, 443), fail2ban, автообновления безопасности, синхронизация времени, Docker
 #   ./deploy.sh up        — обновить до текущей версии: бэкап, миграции, запуск, проверка здоровья
-#   ./deploy.sh rollback  — вернуться на предыдущий образ и откатить последнюю миграцию (после бэкапа)
+#   ./deploy.sh rollback  — вернуться на предыдущий образ и откатить миграции до ревизии, что была до обновления (после бэкапа)
 #   ./deploy.sh backup         — копия базы сейчас (зашифрована, выгружается в S3 другой компании); cron — каждую ночь
 #   ./deploy.sh verify-backup  — последняя копия → временная база satti_verify → сверка; сбой — письмо владельцу (cron)
 #   ./deploy.sh export-latest  — последняя копия в ~/satti-export (её забирает компьютер владельца, deploy/windows)
@@ -126,6 +126,19 @@ health() {
   return 1
 }
 
+# К-33 Б5: имя образа приложения (как в docker-compose.yml: SATTI_IMAGE из .env или значение по умолчанию)
+app_image() {
+  local v
+  v=$(grep -E '^SATTI_IMAGE=' .env 2>/dev/null | tail -n 1 | cut -d= -f2-)
+  echo "${SATTI_IMAGE:-${v:-satti-server:latest}}"
+}
+
+# К-33 Б5: ревизия миграций работающей базы (через запущенное приложение); пусто — приложение не запущено
+db_revision() {
+  [ -n "$("${COMPOSE[@]}" ps -q app 2>/dev/null)" ] || return 0
+  "${COMPOSE[@]}" exec -T app python -m alembic current 2>/dev/null | awk 'NF {print $1; exit}'
+}
+
 backup() {
   # первый запуск: контейнера приложения ещё нет — бэкапить нечего, это не ошибка
   if [ -z "$("${COMPOSE[@]}" ps -q app 2>/dev/null)" ]; then
@@ -139,6 +152,9 @@ case "${1:-}" in
   up)
     backup
     if [ -f "$STATE_DIR/current_image" ]; then cp "$STATE_DIR/current_image" "$STATE_DIR/previous_image"; fi
+    # К-33 Б5: ревизия миграций до обновления — к ней вернётся откат (в выпуске бывает несколько миграций)
+    rev=$(db_revision)
+    if [ -n "$rev" ]; then echo "$rev" > "$STATE_DIR/previous_revision"; fi
     "${COMPOSE[@]}" build app
     "${COMPOSE[@]}" up -d db
     "${COMPOSE[@]}" run --rm app python -m alembic upgrade head
@@ -176,12 +192,28 @@ case "${1:-}" in
     echo "база восстановлена; дальше: ./deploy.sh up"
     ;;
   rollback)
+    # К-33 Б5: раньше откат перезапускал тот же новый образ (previous_image не использовался) и откатывал
+    # только одну миграцию. Теперь: копия → миграции до ревизии, что была до обновления (кодом НОВОГО образа:
+    # в старом нет описания новых миграций) → предыдущий образ под рабочим именем → запуск → проверка.
     [ -f "$STATE_DIR/previous_image" ] || { echo "нет предыдущей версии для отката" >&2; exit 1; }
+    prev_image=$(cat "$STATE_DIR/previous_image")
     backup
-    "${COMPOSE[@]}" run --rm -e SATTI_ALLOW_DOWNGRADE=1 app python -m alembic downgrade -1 || echo "миграция не откатилась (проверьте вручную)" >&2
-    "${COMPOSE[@]}" stop app
-    "${COMPOSE[@]}" up -d app
-    echo "откат выполнен на предыдущий образ; проверьте /v1/health"
+    if [ -f "$STATE_DIR/previous_revision" ]; then
+      target=$(cat "$STATE_DIR/previous_revision")
+      "${COMPOSE[@]}" run --rm -e SATTI_ALLOW_DOWNGRADE=1 app python -m alembic downgrade "$target" \
+        || { echo "миграции не откатились до $target — образ не меняю, проверьте вручную (копия сделана)" >&2; exit 1; }
+    else
+      echo "ревизия до обновления неизвестна — миграции не трогаю (новые колонки старому коду не мешают)" >&2
+    fi
+    docker tag "$prev_image" "$(app_image)"
+    "${COMPOSE[@]}" up -d --no-build app
+    if health; then
+      echo "$prev_image" > "$STATE_DIR/current_image"
+      echo "откат выполнен: предыдущий образ отвечает на /v1/health"
+    else
+      echo "после отката сервер не отвечает — см. docs/OPERATIONS.md, «Учения восстановления»" >&2
+      exit 1
+    fi
     ;;
   *)
     echo "использование: $0 setup <пользователь> <ключ.pub> | up | rollback | backup | verify-backup | export-latest | restore-latest" >&2
