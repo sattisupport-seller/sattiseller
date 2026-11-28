@@ -1880,12 +1880,54 @@ class ReplyDraftIn(BaseModel):
 @api.post("/ai/reply-drafts", status_code=201, tags=["ИИ"])
 def ai_reply_draft(body: ReplyDraftIn, shop_id: str = Query(...), principal: Principal = Depends(get_principal),
                    db: DbSession = Depends(get_session)) -> dict:
+    """К-35 п.2: ответ покупателю — живой ИИ по сути вопроса; в дневном лимите ИИ. Лимит или бюджет исчерпан,
+    ИИ недоступен или ответ не прошёл проверку — шаблон по теме вопроса с пометкой причины."""
     shop = shop_for(db, principal, shop_id)
     require_ai(db)  # выключатель ИИ (QA-02)
     _, active = ai_consent_state(db, principal)
     if not active:  # К-24: согласие на ИИ — в галочке условий; старая версия условий — принять обновлённые
         raise ApiError(403, "terms_consent_required", "Примите обновлённые условия и политику конфиденциальности.")
-    return _metered_draft(db, principal, shop, lambda: ai_service.reply_draft(body.question, body.tone))
+    base = ai_service.reply_draft(body.question, body.tone)  # проверка ввода (422 — квота не тратится), маскировка
+    masked = base.pop("question_masked")
+    reason = None
+    reserved_id = None
+    if not (settings.ai_live and settings.anthropic_api_key):
+        reason = "ИИ сейчас недоступен"
+    else:
+        with quota_guard(principal.user_id or shop.id):
+            try:
+                ai_service.require_budget(db, _now())
+                ai_service.check_quota(db, principal.user_id, shop.id, _now())
+            except ApiError as exc:
+                if exc.code == "ai_budget_exhausted":
+                    reason = "бюджет ИИ на сегодня исчерпан"
+                elif exc.code == "ai_limit":
+                    reason = "дневной лимит ИИ исчерпан"
+                else:
+                    raise
+            else:
+                reserve = AIUsageEvent(user_id=principal.user_id, shop_id=shop.id, created_at=_now(), tool_calls=0,
+                                       kind="draft", cost_micro_usd=settings.ai_cost_per_call_micro_usd)
+                db.add(reserve)
+                db.commit()
+                reserved_id = reserve.id
+    if reason is None:
+        try:
+            result = draft_ai.live_reply(masked, body.tone)
+        except draft_ai.DraftFallback as exc:
+            log.warning("reply draft fallback: %s", exc)  # причина без текста вопроса
+            reason = "ответ ИИ не прошёл проверку"
+            db.execute(delete(AIUsageEvent).where(AIUsageEvent.id == reserved_id))  # шаблон квоту не тратит
+            db.commit()
+        else:
+            cost = ai_service.live_cost_micro(result.tin, result.tout, result.tcw, result.tcr)
+            db.execute(update(AIUsageEvent).where(AIUsageEvent.id == reserved_id).values(cost_micro_usd=cost))
+            db.commit()
+            ai_service.check_budget_alerts(db, _now())
+            return {"reply": result.draft["reply"], "warnings": ["Черновик ИИ — проверьте перед отправкой.",
+                                                                 *base["warnings"]], "generatedBy": "ai"}
+    return {"reply": base["reply"], "generatedBy": "template",
+            "warnings": [f"Составлено по шаблону: {reason}. Проверьте и дополните перед отправкой.", *base["warnings"]]}
 
 
 # ---------- уведомления и Kaspi (за флагом) ----------

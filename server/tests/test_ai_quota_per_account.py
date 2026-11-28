@@ -13,7 +13,7 @@ def _device(client, email):
     return {"Authorization": f"Bearer {tokens['access_token']}"}
 
 
-def test_daily_limit_is_shared_between_devices(client, monkeypatch):
+def test_daily_limit_is_shared_between_devices(client, monkeypatch, live_reply_ok):
     monkeypatch.setattr(settings, "billing_enforced", False)
     phone_a = _device(client, "quota-two@example.com")
     confirm_age(client, phone_a)
@@ -31,7 +31,7 @@ def test_daily_limit_is_shared_between_devices(client, monkeypatch):
     assert left_b == settings.ai_daily_limit - 10 - 1
 
 
-def test_limit_reached_on_one_device_blocks_the_other(client, monkeypatch):
+def test_limit_reached_on_one_device_blocks_the_other(client, monkeypatch, live_reply_ok):
     monkeypatch.setattr(settings, "billing_enforced", False)
     monkeypatch.setattr(settings, "ai_daily_limit", 3)
     phone_a = _device(client, "quota-block@example.com")
@@ -42,7 +42,8 @@ def test_limit_reached_on_one_device_blocks_the_other(client, monkeypatch):
     assert client.post("/v1/ai/reply-drafts", params={"shop_id": shop_id}, headers=phone_b, json=ASK).status_code == 201
     assert client.post("/v1/ai/reply-drafts", params={"shop_id": shop_id}, headers=phone_a, json=ASK).status_code == 201
     r = client.post("/v1/ai/reply-drafts", params={"shop_id": shop_id}, headers=phone_b, json=ASK)
-    assert r.status_code == 429 and r.json()["error"]["code"] == "ai_limit"
+    # К-35: лимит исчерпан на одном телефоне — на другом ответ уже по шаблону с пометкой
+    assert r.status_code == 201 and r.json()["generatedBy"] == "template" and "лимит" in r.json()["warnings"][0]
 
 
 def test_assistant_history_is_shared_between_devices(client, monkeypatch):

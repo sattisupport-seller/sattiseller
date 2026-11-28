@@ -13,13 +13,13 @@ def _consent(client, demo):
     client.post("/v1/ai/consent", json={"granted": True}, headers=demo["headers"])
 
 
-def test_reply_drafts_count_toward_the_shared_daily_quota(client, demo):
+def test_reply_drafts_count_toward_the_shared_daily_quota(client, demo, live_reply_ok):
     _consent(client, demo)
     url = f"/v1/ai/reply-drafts?shop_id={demo['shop_id']}"
-    codes = [client.post(url, json={"question": f"Где заказ {i}?", "tone": "polite"},
-                         headers=demo["headers"]).status_code for i in range(31)]
-    assert codes[:30] == [201] * 30
-    assert codes[30] == 429
+    kinds = [client.post(url, json={"question": f"Где заказ {i}?", "tone": "polite"},
+                         headers=demo["headers"]).json()["generatedBy"] for i in range(31)]
+    assert kinds[:30] == ["ai"] * 30
+    assert kinds[30] == "template"  # К-35: лимит исчерпан — шаблон с пометкой, а не ошибка
 
 
 def test_invalid_draft_input_does_not_spend_quota(client, demo):
@@ -58,7 +58,7 @@ def test_budget_warns_at_eighty_percent(client, demo, monkeypatch):
     assert state["daySpentUsd"] == 4.0
 
 
-def test_every_answer_is_labelled_as_generated_by_ai(client, demo):
+def test_every_answer_is_labelled_as_generated_by_ai(client, demo, live_reply_ok):
     _consent(client, demo)
     ask = client.post(f"/v1/shops/{demo['shop_id']}/ai/ask", json={"question": "Прибыль за неделю?"},
                       headers=demo["headers"])

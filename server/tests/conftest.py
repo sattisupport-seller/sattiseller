@@ -85,3 +85,14 @@ def admin_email(monkeypatch):
 
     monkeypatch.setattr(settings, "admin_email", "boss@example.com")
     return "boss@example.com"
+
+
+@pytest.fixture
+def live_reply_ok(monkeypatch):
+    """К-35: «живой» ответ покупателю без сети — модель подменена хорошим ответом; квота и бюджет считаются."""
+    from app import draft_ai
+
+    monkeypatch.setattr(settings, "ai_live", True)
+    monkeypatch.setattr(settings, "anthropic_api_key", settings.anthropic_api_key or "test-key")
+    monkeypatch.setattr(draft_ai, "live_reply", lambda q, tone: draft_ai.LiveResult(
+        draft={"reply": "Здравствуйте! Мы проверим и ответим вам."}, tin=200, tout=40))

@@ -168,7 +168,7 @@ def test_a_new_seller_full_journey(client, env, stores):  # noqa: F811
     ratelimit.reset()
 
 
-def test_b_second_device_same_data_and_shared_quota(client, monkeypatch):
+def test_b_second_device_same_data_and_shared_quota(client, monkeypatch, live_reply_ok):
     monkeypatch.setattr(settings, "billing_enforced", False)
     monkeypatch.setattr(settings, "ai_daily_limit", 2)
     phone_a = {"Authorization": f"Bearer {login(client, 'e2e-two@example.com')['access_token']}"}
@@ -186,7 +186,8 @@ def test_b_second_device_same_data_and_shared_quota(client, monkeypatch):
     ask = {"question": "Когда доставка?", "tone": "polite"}
     assert client.post("/v1/ai/reply-drafts", params={"shop_id": shop_id}, headers=phone_a, json=ask).status_code == 201
     assert client.post("/v1/ai/reply-drafts", params={"shop_id": shop_id}, headers=phone_b, json=ask).status_code == 201
-    assert client.post("/v1/ai/reply-drafts", params={"shop_id": shop_id}, headers=phone_a, json=ask).status_code == 429
+    third = client.post("/v1/ai/reply-drafts", params={"shop_id": shop_id}, headers=phone_a, json=ask)
+    assert third.status_code == 201 and third.json()["generatedBy"] == "template"  # К-35: лимит — шаблон с пометкой
 
 
 def test_c_no_second_trial_for_same_phone_or_same_kaspi_shop(client, stores):  # noqa: F811

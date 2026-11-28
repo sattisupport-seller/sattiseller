@@ -187,3 +187,71 @@ def live_draft(facts: str, photos: list[bytes], transport=None) -> LiveResult:
     return LiveResult(draft=draft, tin=int(usage.get("input_tokens", 0)), tout=int(usage.get("output_tokens", 0)),
                       tcw=int(usage.get("cache_creation_input_tokens", 0) or 0),
                       tcr=int(usage.get("cache_read_input_tokens", 0) or 0), photos_sent=len(blocks))
+
+
+# ---------- К-35 п.2: ответ покупателю — живой ИИ по сути вопроса ----------
+
+REPLY_SYSTEM = (
+    "Ты помогаешь продавцу маркетплейса Kaspi ответить покупателю. Пиши только по-русски.\n"
+    "Ответь по сути вопроса или жалобы покупателя (доставка, наличие, сроки, возврат, брак, качество и т. п.):\n"
+    "признай проблему, если она есть, коротко объясни, что продавец сделает, и что нужно от покупателя.\n"
+    "Правила:\n"
+    "1. Не выдумывай факты о заказе: номера, даты, сроки, статусы, причины задержки — их ты не знаешь.\n"
+    "2. Не обещай деньги, компенсацию, скидку, промокод, бонусы, бесплатную доставку, возврат денег от имени "
+    "продавца. Про возврат — только «оформите возврат в Kaspi» или «мы проверим и ответим».\n"
+    "3. Никаких контактов, ссылок, телефонов, электронной почты, мессенджеров.\n"
+    "4. Не пиши чисел, которых нет в вопросе покупателя.\n"
+    "5. Без грубости и без спора с покупателем.\n"
+    "Ответ — только текст ответа покупателю, без кавычек и пояснений для продавца."
+)
+TONE_HINT = {
+    "polite": "Тон: вежливый и тёплый, 2–4 предложения, начни с «Здравствуйте!».",
+    "short": "Тон: коротко и по делу, 1–2 предложения, начни с «Здравствуйте.».",
+}
+# обещания денег и выгод от имени продавца — запрещены (К-35)
+MONEY_PROMISE = re.compile(r"компенс|вернём\s+деньги|вернем\s+деньги|возврат\w*\s+(денег|средств)|скидк|промокод|"
+                           r"бонус|кэшбэк|кешбэк|бесплатн\w*\s+доставк|подар", re.I)
+REPLY_MAX = 600
+
+
+def check_reply(text: str, question: str) -> str:
+    reply = " ".join((text or "").strip().strip('"«»').split())
+    if not reply or len(reply) > REPLY_MAX:
+        raise DraftFallback("пустой или слишком длинный ответ")
+    if not re.search(r"[а-яё]", reply, re.I) or set(reply.lower()) & KK_LETTERS:
+        raise DraftFallback("ответ не на русском")
+    if LINK.search(reply) or contains_pii(reply):
+        raise DraftFallback("в ответе контакты или ссылки")
+    if MONEY_PROMISE.search(reply):
+        raise DraftFallback("в ответе обещание денег или выгоды")
+    allowed = set(NUMBER.findall(question))
+    if any(n not in allowed for n in NUMBER.findall(reply)):
+        raise DraftFallback("в ответе число, которого нет в вопросе")
+    return reply
+
+
+def live_reply(question: str, tone: str, transport=None) -> LiveResult:
+    """Ответ покупателю живой моделью. Вопрос уже замаскирован. Бросает DraftFallback при любой проблеме."""
+    if not settings.anthropic_api_key:
+        raise DraftFallback("нет ключа")
+    body = {"model": settings.ai_model, "max_tokens": 400,
+            "system": REPLY_SYSTEM + "\n" + TONE_HINT.get(tone, TONE_HINT["polite"]),
+            "messages": [{"role": "user", "content": f"Вопрос или отзыв покупателя:\n{question}"}]}
+    try:
+        with httpx.Client(timeout=30.0, transport=transport) as http:
+            resp = http.post(MODEL_URL, json=body, headers={
+                "x-api-key": settings.anthropic_api_key, "anthropic-version": "2023-06-01",
+                "content-type": "application/json"})
+    except httpx.HTTPError as exc:
+        raise DraftFallback(f"сеть: {type(exc).__name__}") from exc
+    if resp.status_code >= 400:
+        log.warning("reply provider error %s", resp.status_code)  # без текста вопроса
+        raise DraftFallback(f"ошибка модели {resp.status_code}")
+    data = resp.json()
+    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+    usage = data.get("usage", {})
+    reply = check_reply(text, question)
+    return LiveResult(draft={"reply": reply}, tin=int(usage.get("input_tokens", 0)),
+                      tout=int(usage.get("output_tokens", 0)),
+                      tcw=int(usage.get("cache_creation_input_tokens", 0) or 0),
+                      tcr=int(usage.get("cache_read_input_tokens", 0) or 0))
