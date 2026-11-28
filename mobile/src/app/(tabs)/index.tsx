@@ -12,6 +12,7 @@ import { TabHeader } from '@/components/ui/Header';
 import { Txt } from '@/components/ui/Text';
 import { Badge, Banner, Card, Chip, GroupCard, ListRow, Section } from '@/components/ui/Surfaces';
 import { EmptyState, ErrorState, ScreenScroll, Sheet, Skeleton } from '@/components/ui/Overlays';
+import { PresentationCard } from '@/components/PresentationCard';
 import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
@@ -42,7 +43,8 @@ export default function OverviewScreen() {
   const query = useOverview(shopId, period);
   const { data, isLoading, isError, error, refetch, isRefetching } = query;
   const shopsQuery = useShops(!!shopId);
-  const shopName = shopsQuery.data?.items.find((s) => s.id === shopId)?.name ?? null;
+  const shop = shopsQuery.data?.items.find((s) => s.id === shopId);
+  const shopName = shop?.name ?? null;
 
   const days = data?.series.days ?? [];
   const today = todayAlmaty();
@@ -100,6 +102,7 @@ export default function OverviewScreen() {
         {isDemo ? (
           <Banner text={t('overview.demoBanner')} tone="primary" action={t('overview.more')} onAction={() => router.push('/settings/how-profit')} />
         ) : null}
+        {shop?.presentation_mode ? <PresentationCard shopId={shopId} pct={shop.example_cost_pct ?? 60} /> : null}
 
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md }}>
           <View style={{ flex: 1 }}>

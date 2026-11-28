@@ -173,6 +173,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/sellers/{number}/presentation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Seller Presentation
+         * @description К-33 А3: режим презентации для конкретного аккаунта — пример остатков (≈ 30 дней продаж, несколько товаров
+         *     с 0–1 шт.) и себестоимости (≈ 60 % от цены) на его товарах. Прайс-лист в Kaspi в этом режиме не отдаётся.
+         *     Выключение убирает все примеры; цифры продавца остаются.
+         */
+        post: operations["seller_presentation_v1_admin_sellers__number__presentation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/sellers/{number}/reconnect": {
         parameters: {
             query?: never;
@@ -1308,6 +1330,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/shops/{shop_id}/presentation/cost-percent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Presentation Cost Percent
+         * @description К-33 А3: себестоимость-пример «≈ N % от цены» — меняется прямо на встрече. Только в режиме презентации.
+         */
+        post: operations["presentation_cost_percent_v1_shops__shop_id__presentation_cost_percent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/shops/{shop_id}/products": {
         parameters: {
             query?: never;
@@ -1522,6 +1564,27 @@ export interface paths {
          * @description Уведомления 10/5/3 шт. и 0 — в приложении (этот список) и push на моке (файл в outbox). Ниже порога — один раз.
          */
         get: operations["stock_alerts_v1_shops__shop_id__stock_alerts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shops/{shop_id}/stock/delist-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stock Delist Preview
+         * @description К-33 А3: предпросмотр автоснятия — «вот товары, которые сняли бы с продажи сейчас» (остаток 0 или снят вручную).
+         *     Ничего не меняет ни у нас, ни в Kaspi.
+         */
+        get: operations["stock_delist_preview_v1_shops__shop_id__stock_delist_preview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2053,6 +2116,11 @@ export interface components {
             /** Event */
             event: string;
         };
+        /** ExampleCostIn */
+        ExampleCostIn: {
+            /** Percent */
+            percent: number;
+        };
         /** ExpenseIn */
         ExpenseIn: {
             /** Amount */
@@ -2420,6 +2488,16 @@ export interface components {
             /** To */
             to: string;
         };
+        /** PresentationIn */
+        PresentationIn: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Enabled */
+            enabled: boolean;
+        };
         /** ProductDetailOut */
         ProductDetailOut: {
             /** Commission Note */
@@ -2604,6 +2682,8 @@ export interface components {
         };
         /** ShopOut */
         ShopOut: {
+            /** Example Cost Pct */
+            example_cost_pct?: number | null;
             /** Id */
             id: string;
             /** Is Demo */
@@ -2612,6 +2692,11 @@ export interface components {
             language: string;
             /** Name */
             name: string;
+            /**
+             * Presentation Mode
+             * @default false
+             */
+            presentation_mode: boolean;
             /** Timezone */
             timezone: string;
             /**
@@ -3050,6 +3135,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SellerBlockIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    seller_presentation_v1_admin_sellers__number__presentation_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Admin-Session"?: string | null;
+                authorization?: string | null;
+            };
+            path: {
+                number: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PresentationIn"];
             };
         };
         responses: {
@@ -5483,6 +5606,43 @@ export interface operations {
             };
         };
     };
+    presentation_cost_percent_v1_shops__shop_id__presentation_cost_percent_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExampleCostIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_products_v1_shops__shop_id__products_get: {
         parameters: {
             query?: {
@@ -5953,6 +6113,39 @@ export interface operations {
         };
     };
     stock_alerts_v1_shops__shop_id__stock_alerts_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stock_delist_preview_v1_shops__shop_id__stock_delist_preview_get: {
         parameters: {
             query?: never;
             header?: {

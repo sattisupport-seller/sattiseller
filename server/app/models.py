@@ -102,6 +102,9 @@ class Shop(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     # К-33 А2: «Я плательщик НДС». Плательщик: выручка без НДС, комиссия и доставка без НДС (НДС к зачёту).
     vat_payer: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # К-33 А3: режим презентации — включает владелец в админке; пример остатков и себестоимости на данных продавца
+    presentation_mode: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    example_cost_pct: Mapped[int] = mapped_column(Integer, default=60, server_default="60")
 
     products: Mapped[list["Product"]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
     orders: Mapped[list["Order"]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
@@ -129,7 +132,7 @@ class ProductCostVersion(Base):
     packaging_minor: Mapped[int] = mapped_column(BigInteger, default=0)
     other_minor: Mapped[int] = mapped_column(BigInteger, default=0)
     effective_from: Mapped[date | None] = mapped_column(Date, nullable=True)
-    source: Mapped[str] = mapped_column(String(32), default="manual")  # manual | import | demo
+    source: Mapped[str] = mapped_column(String(32), default="manual")  # manual | import | demo | example (К-33 А3)
     import_batch_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -238,6 +241,7 @@ class StockMovement(Base):
     product_id: Mapped[str] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
     kind: Mapped[str] = mapped_column(String(16))  # inventory | receipt
     qty: Mapped[int] = mapped_column(Integer)
+    example: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())  # К-33 А3: «пример»
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

@@ -22,6 +22,12 @@ from sqlalchemy.orm import Session as DbSession  # noqa: E402
 
 from app.config import settings  # noqa: E402
 
+if os.environ.get("SATTI_TEST_DATABASE_URL"):
+    # PostgreSQL-база тестов живёт между прогонами: схема — по текущим моделям ещё до сборки тестов
+    # (test_api_fuzz при сборке запускает приложение и читает таблицы раньше фикстуры _fresh_db).
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+
 
 @pytest.fixture(autouse=True)
 def _fresh_db():

@@ -428,6 +428,7 @@ def _seller_view(db: DbSession, row) -> dict:
         "kaspi_status": conn.status if conn else None,
         "reconnect_until": _aware(conn.reconnect_until).isoformat() if conn and conn.reconnect_until else None,
         "subscription": sub,
+        "presentation_mode": bool(shop.presentation_mode) if shop else False,  # К-33 А3
         "special_access": [{"from": _aware(s.starts_at).isoformat(), "until": _aware(s.ends_at).isoformat(),
                             "cancelled_at": _aware(s.cancelled_at).isoformat() if s.cancelled_at else None,
                             "comment": s.comment} for s in specials],
@@ -512,6 +513,33 @@ def seller_special_cancel(number: str, body: ConfirmIn, admin: User = Depends(re
     db.commit()
     _audit(db, admin, "special_access_cancel", f"seller:{row.number}", row.shop_id)
     return _seller_view(db, row)
+
+
+class PresentationIn(ConfirmIn):
+    enabled: bool
+
+
+@router.post("/sellers/{number}/presentation")
+def seller_presentation(number: str, body: PresentationIn, admin: User = Depends(require_admin),
+                        db: DbSession = Depends(get_session)) -> dict:
+    """К-33 А3: режим презентации для конкретного аккаунта — пример остатков (≈ 30 дней продаж, несколько товаров
+    с 0–1 шт.) и себестоимости (≈ 60 % от цены) на его товарах. Прайс-лист в Kaspi в этом режиме не отдаётся.
+    Выключение убирает все примеры; цифры продавца остаются."""
+    from . import presentation
+
+    _confirmed(body)
+    row = _seller(db, number)
+    if row.user_id is None:
+        raise ApiError(409, "account_deleted", "Аккаунт этого продавца удалён.")
+    shop = db.get(Shop, row.shop_id) if row.shop_id else None
+    if shop is None:
+        raise ApiError(409, "no_shop", "У этого номера нет магазина.")
+    shop.presentation_mode = body.enabled
+    result = (presentation.apply_examples(db, shop, _now()) if body.enabled
+              else (presentation.clear_examples(db, shop) or {}))
+    db.commit()
+    _audit(db, admin, "presentation_on" if body.enabled else "presentation_off", f"seller:{row.number}", shop.id)
+    return {**_seller_view(db, row), "presentation": {"enabled": body.enabled, **result}}
 
 
 @router.get("/special-access")

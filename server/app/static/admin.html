@@ -90,6 +90,16 @@ th, td { text-align:left; border-bottom:1px solid var(--line); padding:6px 4px; 
     <p class="muted">Магазины пользователя открываются только если он разрешил доступ поддержки на 24 часа.</p>
     <div id="user-shops"></div>
   </section>
+  <section id="seller-section" hidden>
+    <h2>Продавец по номеру</h2>
+    <p class="muted">Номер продавца показан в приложении (Профиль). Каждое действие — с подтверждением и записью в журнал.</p>
+    <div class="row">
+      <input id="seller-number" placeholder="номер продавца">
+      <button id="seller-find">Найти</button>
+    </div>
+    <div id="seller-card"></div>
+    <p class="error" id="seller-error"></p>
+  </section>
   <section id="errors-section" hidden>
     <h2>Ошибки</h2>
     <p class="muted">Группы по месту и типу. Тексты очищены от персональных данных на сервере.</p>

@@ -1003,6 +1003,21 @@
         "title": "EventIn",
         "type": "object"
       },
+      "ExampleCostIn": {
+        "properties": {
+          "percent": {
+            "maximum": 95.0,
+            "minimum": 1.0,
+            "title": "Percent",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "percent"
+        ],
+        "title": "ExampleCostIn",
+        "type": "object"
+      },
       "ExpenseIn": {
         "properties": {
           "amount": {
@@ -2051,6 +2066,24 @@
         "title": "PeriodOut",
         "type": "object"
       },
+      "PresentationIn": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "PresentationIn",
+        "type": "object"
+      },
       "ProductDetailOut": {
         "properties": {
           "commission_note": {
@@ -2598,6 +2631,17 @@
       },
       "ShopOut": {
         "properties": {
+          "example_cost_pct": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Example Cost Pct"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2613,6 +2657,11 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "presentation_mode": {
+            "default": false,
+            "title": "Presentation Mode",
+            "type": "boolean"
           },
           "timezone": {
             "title": "Timezone",
@@ -3698,6 +3747,92 @@
           }
         },
         "summary": "Seller Block",
+        "tags": [
+          "админ"
+        ]
+      }
+    },
+    "/v1/admin/sellers/{number}/presentation": {
+      "post": {
+        "description": "К-33 А3: режим презентации для конкретного аккаунта — пример остатков (≈ 30 дней продаж, несколько товаров\nс 0–1 шт.) и себестоимости (≈ 60 % от цены) на его товарах. Прайс-лист в Kaspi в этом режиме не отдаётся.\nВыключение убирает все примеры; цифры продавца остаются.",
+        "operationId": "seller_presentation_v1_admin_sellers__number__presentation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "number",
+            "required": true,
+            "schema": {
+              "title": "Number",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Admin-Session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Admin-Session"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresentationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Seller Presentation V1 Admin Sellers  Number  Presentation Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Seller Presentation",
         "tags": [
           "админ"
         ]
@@ -7998,6 +8133,76 @@
         ]
       }
     },
+    "/v1/shops/{shop_id}/presentation/cost-percent": {
+      "post": {
+        "description": "К-33 А3: себестоимость-пример «≈ N % от цены» — меняется прямо на встрече. Только в режиме презентации.",
+        "operationId": "presentation_cost_percent_v1_shops__shop_id__presentation_cost_percent_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExampleCostIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Presentation Cost Percent V1 Shops  Shop Id  Presentation Cost Percent Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Presentation Cost Percent",
+        "tags": [
+          "магазины"
+        ]
+      }
+    },
     "/v1/shops/{shop_id}/products": {
       "get": {
         "operationId": "get_products_v1_shops__shop_id__products_get",
@@ -9044,6 +9249,66 @@
           }
         },
         "summary": "Stock Alerts",
+        "tags": [
+          "склад"
+        ]
+      }
+    },
+    "/v1/shops/{shop_id}/stock/delist-preview": {
+      "get": {
+        "description": "К-33 А3: предпросмотр автоснятия — «вот товары, которые сняли бы с продажи сейчас» (остаток 0 или снят вручную).\nНичего не меняет ни у нас, ни в Kaspi.",
+        "operationId": "stock_delist_preview_v1_shops__shop_id__stock_delist_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Stock Delist Preview V1 Shops  Shop Id  Stock Delist Preview Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stock Delist Preview",
         "tags": [
           "склад"
         ]

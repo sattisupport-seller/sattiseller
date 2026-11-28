@@ -41,6 +41,7 @@ from .demo_template import copy_template, create_demo_from_template, ensure_temp
 from .flags import is_enabled, require_ai
 from . import analytics as analytics_service
 from . import kaspi as kaspi_service
+from . import presentation as presentation_service
 from .kaspi_client import KaspiAuthError, KaspiClient, KaspiUnavailable
 from .errors import ApiError, pick_lang
 from .imports import (
@@ -581,7 +582,9 @@ def shops_patch(shop_id: str, body: ShopPatch, principal: Principal = Depends(ge
 
 def _shop_json(shop: Shop) -> dict:
     return {"id": shop.id, "name": shop.name, "timezone": shop.timezone, "language": shop.language,
-            "is_demo": shop.is_demo, "vat_payer": bool(shop.vat_payer)}
+            "is_demo": shop.is_demo, "vat_payer": bool(shop.vat_payer),
+            "presentation_mode": bool(shop.presentation_mode),
+            "example_cost_pct": shop.example_cost_pct if shop.presentation_mode else None}
 
 
 # ---------- отчёты ----------
@@ -697,6 +700,7 @@ def _record_inventory(db: DbSession, shop: Shop, product_id: str, qty: int) -> P
     from .models import StockMovement
 
     now = datetime.now(timezone.utc)
+    presentation_service.drop_product_examples(db, shop.id, product_id, stock=True)  # К-33 А3
     row = db.scalar(select(ProductStock).where(ProductStock.product_id == product_id))
     if row is None:
         row = ProductStock(shop_id=shop.id, product_id=product_id, qty=qty, updated_at=now)
@@ -992,6 +996,7 @@ def _minor(value: str) -> int:
 
 def _add_cost(db: DbSession, shop: Shop, product: Product, body: CostIn, source: str,
               batch_id: str | None = None) -> ProductCostVersion:
+    presentation_service.drop_product_examples(db, shop.id, product.id, cost=True)  # К-33 А3: свои цифры главнее
     versions = db.scalars(select(ProductCostVersion).where(ProductCostVersion.product_id == product.id,
                                                            ProductCostVersion.cancelled.is_(False))).all()
     today = today_in(shop.timezone)
@@ -1034,8 +1039,9 @@ def _product_of_shop(db: DbSession, shop: Shop, product_id: str) -> Product:
     return product
 
 
-def _stock_json(st) -> dict:
-    return {"productId": st.product_id, "sku": st.sku, "name": st.name, "current": st.current, "baseQty": st.base_qty,
+def _stock_json(st, example: set[str] | None = None) -> dict:
+    return {"example": bool(example and st.product_id in example),  # К-33 А3: остаток — пример
+            "productId": st.product_id, "sku": st.sku, "name": st.name, "current": st.current, "baseQty": st.base_qty,
             "soldSince": st.sold_since, "returnedSince": st.returned_since, "avgDaily": st.avg_daily,
             "daysLeft": st.days_left, "level": st.level, "delisted": st.delisted,
             "pendingReturns": st.pending_returns}
@@ -1057,7 +1063,38 @@ def list_stock(shop_id: str, principal: Principal = Depends(get_principal),
                db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
     states = stock_states(db, shop)
-    return {"items": [_stock_json(st) for st in sorted(states.values(), key=lambda x: x.name)]}
+    example, _cost = presentation_service.example_product_ids(db, shop.id)
+    return {"items": [_stock_json(st, example) for st in sorted(states.values(), key=lambda x: x.name)]}
+
+
+@api.get("/shops/{shop_id}/stock/delist-preview", tags=["склад"])
+def stock_delist_preview(shop_id: str, principal: Principal = Depends(get_principal),
+                         db: DbSession = Depends(get_session)) -> dict:
+    """К-33 А3: предпросмотр автоснятия — «вот товары, которые сняли бы с продажи сейчас» (остаток 0 или снят вручную).
+    Ничего не меняет ни у нас, ни в Kaspi."""
+    shop = shop_for(db, principal, shop_id)
+    states = stock_states(db, shop)
+    example, _cost = presentation_service.example_product_ids(db, shop.id)
+    items = [{**_stock_json(st, example), "reason": "delisted" if st.delisted else "out_of_stock"}
+             for st in sorted(states.values(), key=lambda x: x.name) if st.delisted or st.current <= 0]
+    return {"items": items, "count": len(items), "presentation_mode": bool(shop.presentation_mode),
+            "note": "Предпросмотр: в магазине Kaspi ничего не меняется."}
+
+
+class ExampleCostIn(BaseModel):
+    percent: int = Field(ge=presentation_service.MIN_COST_PCT, le=presentation_service.MAX_COST_PCT)
+
+
+@api.post("/shops/{shop_id}/presentation/cost-percent", tags=["магазины"])
+def presentation_cost_percent(shop_id: str, body: ExampleCostIn, principal: Principal = Depends(get_principal),
+                              db: DbSession = Depends(get_session)) -> dict:
+    """К-33 А3: себестоимость-пример «≈ N % от цены» — меняется прямо на встрече. Только в режиме презентации."""
+    shop = shop_for(db, principal, shop_id)
+    if not shop.presentation_mode:
+        raise ApiError(409, "presentation_off", "Режим презентации не включён.")
+    out = presentation_service.set_cost_pct(db, shop, body.percent, datetime.now(timezone.utc))
+    db.commit()
+    return out
 
 
 @api.get("/shops/{shop_id}/stock/alerts", tags=["склад"])
@@ -1067,6 +1104,7 @@ def stock_alerts(shop_id: str, principal: Principal = Depends(get_principal),
     shop = shop_for(db, principal, shop_id)
     states = stock_states(db, shop)
     rows = {r.product_id: r for r in db.scalars(select(ProductStock).where(ProductStock.shop_id == shop.id)).all()}
+    example, _cost = presentation_service.example_product_ids(db, shop.id)
     items = []
     for st in states.values():
         row = rows.get(st.product_id)
@@ -1074,7 +1112,9 @@ def stock_alerts(shop_id: str, principal: Principal = Depends(get_principal),
             if row is not None:
                 row.last_alert_level = None  # выше порогов — можно снова уведомить при понижении
             continue
-        items.append(_stock_json(st))
+        items.append(_stock_json(st, example))
+        if st.product_id in example:
+            continue  # К-33 А3: пример остатка — без уведомлений
         if row is not None and row.last_alert_level != st.level:
             row.last_alert_level = st.level
             stock_push_mock(shop, st)
@@ -1191,7 +1231,7 @@ def cost_version_create(shop_id: str, product_id: str, body: CostIn,
     values = (_minor(body.purchase), _minor(body.delivery_to_warehouse), _minor(body.packaging), _minor(body.other))
     recent = db.scalar(select(ProductCostVersion).where(
         ProductCostVersion.shop_id == shop.id, ProductCostVersion.product_id == product.id,
-        ProductCostVersion.cancelled.is_(False),
+        ProductCostVersion.cancelled.is_(False), ProductCostVersion.source != presentation_service.EXAMPLE,
         ProductCostVersion.created_at >= datetime.now(timezone.utc) - timedelta(seconds=60),
     ).order_by(ProductCostVersion.created_at.desc()).limit(1))
     if recent is not None and (recent.purchase_minor, recent.delivery_to_warehouse_minor,
@@ -1531,6 +1571,7 @@ def import_apply(shop_id: str, import_id: str, body: ApplyIn, principal: Princip
     today = today_in(shop.timezone)
     for v in data["valid"]:
         product = products[v["sku"]]
+        presentation_service.drop_product_examples(db, shop.id, product.id, cost=True)  # К-33 А3
         eff_date = date.fromisoformat(v["effective_from"]) if v["effective_from"] else None
         has_versions = db.scalar(select(ProductCostVersion.id).where(
             ProductCostVersion.product_id == product.id, ProductCostVersion.cancelled.is_(False)).limit(1))
@@ -2075,6 +2116,10 @@ def kaspi_price_list(shop_id: str, price_key: str, db: DbSession = Depends(get_s
     conn = kaspi_service.find_by_price_key(db, shop_id, price_key) if shop else None
     if conn is None:
         raise ApiError(404, "not_found")
+    if shop.presentation_mode:
+        # К-33 А3: в режиме презентации остатки — пример; в магазин Kaspi ничего не уходит. Временная ошибка без файла:
+        # Kaspi оставит прежний прайс продавца как есть.
+        return Response(status_code=503, headers={"Retry-After": "3600"})
     if shop.id in accounts_service.deactivated_shop_ids(db):
         # К-21: пустой файл или available="no" сняли бы товары продавца с продажи. Отдаём временную ошибку без файла.
         return Response(status_code=503, headers={"Retry-After": "3600"})

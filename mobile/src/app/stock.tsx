@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
 import { ApiError } from '@/api/client';
-import { useProducts, useStockAlerts, useStockList, useStockMutations, type StockItem } from '@/api/hooks';
+import { useProducts, useShops, useStockAlerts, useStockList, useStockMutations, type StockItem } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/Inputs';
 import { Sheet, useToast } from '@/components/ui/Overlays';
@@ -26,6 +26,8 @@ export default function StockScreen() {
   const alerts = useStockAlerts(shopId);
   const products = useProducts(shopId, '30d', null, 'profit_desc', '');
   const mut = useStockMutations(shopId);
+  const shops = useShops(!!shopId);
+  const presentation = !!shops.data?.items.find((x) => x.id === shopId)?.presentation_mode;
   const [mode, setMode] = useState<Mode>(null);
   const [qty, setQty] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +38,8 @@ export default function StockScreen() {
 
   const stockByProduct = new Map((list.data?.items ?? []).map((s) => [s.productId, s]));
   const allProducts = (products.data?.pages ?? []).flatMap((p) => p.items);
+  // К-33 А3: предпросмотр автоснятия — товары, которые сняли бы с продажи сейчас (остаток 0 или снят вручную)
+  const wouldDelist = (list.data?.items ?? []).filter((s) => s.delisted || s.current <= 0);
 
   const submitQty = async () => {
     // Инвентаризация: 0 допустим (товар закончился). Приход: только больше нуля.
@@ -89,6 +93,13 @@ export default function StockScreen() {
           ))}
         </Card>
       )}
+      {presentation && (
+        <Card style={{ gap: spacing.xs }}>
+          <Txt variant="headline">{t('stock.previewTitle', { count: wouldDelist.length })}</Txt>
+          {wouldDelist.map((s) => <Txt key={s.productId} variant="body">{s.name} · {s.current} шт.</Txt>)}
+          <Txt variant="footnote" tone="secondary">{t('stock.previewNote')}</Txt>
+        </Card>
+      )}
       {allProducts.length === 0 && <Txt variant="body" tone="secondary">{t('stock.empty')}</Txt>}
       {allProducts.map((p) => {
         const s = stockByProduct.get(p.product_id);
@@ -98,7 +109,7 @@ export default function StockScreen() {
             <Txt variant="footnote" tone="secondary">{p.sku}</Txt>
             {s ? (
               <>
-                <Txt variant="body">{s.current} шт.</Txt>
+                <Txt variant="body">{s.current} шт.{s.example ? ` · ${t('stock.example')}` : ''}</Txt>
                 {levelText(s) && <Txt variant="body" tone="danger">{levelText(s)}</Txt>}
                 {s.daysLeft !== null && s.current > 0 && <Txt variant="footnote" tone="secondary">{t('stock.daysLeft', { days: s.daysLeft })}</Txt>}
                 {(s.pendingReturns ?? 0) > 0 && (

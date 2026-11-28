@@ -423,6 +423,16 @@ export function useSetVatPayer(shopId: string | null) {
   });
 }
 
+/** К-33 А3: себестоимость-пример «≈ N % от цены» в режиме презентации. */
+export function useExampleCostPct(shopId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (percent: number) =>
+      request<{ cost_pct: number }>(`/shops/${shopId}/presentation/cost-percent`, { method: 'POST', body: { percent } }),
+    onSuccess: () => qc.invalidateQueries(),
+  });
+}
+
 export function useResetDemo() {
   const qc = useQueryClient();
   return useMutation({
@@ -500,6 +510,7 @@ export type StockItem = {
   productId: string; sku: string; name: string; current: number; baseQty: number; soldSince: number;
   returnedSince: number; avgDaily: number; daysLeft: number | null; level: 'out' | 't3' | 't5' | 't10' | null; delisted: boolean;
   pendingReturns?: number;  // К-26: возвраты без подтверждения «вернулся на склад»
+  example?: boolean;  // К-33 А3: остаток — пример (режим презентации)
 };
 
 export function useStockList(shopId: string | null) {

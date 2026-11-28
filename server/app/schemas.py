@@ -270,6 +270,8 @@ class ShopOut(BaseModel):
     language: str
     is_demo: bool
     vat_payer: bool = False  # К-33 А2: «Я плательщик НДС»
+    presentation_mode: bool = False  # К-33 А3: режим презентации (включает владелец)
+    example_cost_pct: int | None = None  # К-33 А3: себестоимость-пример «≈ N % от цены»
 
 
 class ShopsOut(BaseModel):

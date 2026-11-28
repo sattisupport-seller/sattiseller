@@ -114,7 +114,7 @@ export default function ProductScreen() {
               <Line label={t('cost.packaging')} value={formatMoney(data.current_cost.packaging_minor)} />
               <Line label={t('cost.other')} value={formatMoney(data.current_cost.other_minor)} />
               <Txt variant="footnote" tone="tertiary">
-                {t('productDetail.costSource', { src: data.current_cost.source })}
+                {t('productDetail.costSource', { src: sourceLabel(t, data.current_cost.source) })}
                 {data.current_cost.effective_from ? ` · ${formatDayLabel(data.current_cost.effective_from, today, locale)}` : ''}
               </Txt>
             </>
@@ -168,4 +168,11 @@ function Line({ label, value, strong }: { label: string; value: string; strong?:
       <Txt variant={strong ? 'headline' : 'bodyMedium'} numeric>{value}</Txt>
     </View>
   );
+}
+
+// К-33 А3: подпись источника затрат; неизвестный источник — как есть
+function sourceLabel(t: (k: never) => string, src: string): string {
+  const key = `productDetail.sources.${src}`;
+  const label = t(key as never);
+  return label === key ? src : label;
 }

@@ -33,6 +33,7 @@ jest.mock('@/api/hooks', () => {
       data: { items: [{ productId: 'p1', sku: 'D007', name: 'Термокружка', current: 2, baseQty: 2, soldSince: 0,
         returnedSince: 0, avgDaily: 0.5, daysLeft: 4, level: 't3', delisted: false }] },
     }),
+    useShops: () => ({ data: { items: [] } }),  // К-33 А3: экран склада читает режим презентации
     useStockAlerts: () => ({ data: { items: [], endingSoon: [] } }),
     useProducts: () => ({ data: { pages: [{ items: [{ product_id: 'p1', sku: 'D007', name: 'Термокружка' }] }] } }),
     useStockMutations: () => ({

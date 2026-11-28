@@ -131,8 +131,65 @@ async function loadErrors() {
   show("errors-section", true);
 }
 
+// ---------- продавец по номеру (К-21, К-33 А3) ----------
+let sellerNumber = "";
+function sellerCard(v) {
+  const sub = v.subscription ? (v.subscription.state || "—") : "—";
+  const specials = (v.special_access || []).filter((s) => !s.cancelled_at)
+    .map((s) => esc(s.from.slice(0, 10)) + " — " + esc(s.until.slice(0, 10)) + (s.comment ? " · " + esc(s.comment) : "")).join("<br>") || "нет";
+  const pres = v.presentation_mode;
+  return "<table><tbody>" +
+    `<tr><th>Номер</th><td>${esc(v.number)}</td></tr>` +
+    `<tr><th>Аккаунт</th><td>${esc(v.account)} · ${esc(v.email || "—")}</td></tr>` +
+    `<tr><th>Магазин</th><td>${esc(v.shop_name || "—")} · Kaspi: ${esc(v.kaspi_status || "не подключён")}${v.seller_id ? " · ID " + esc(v.seller_id) : ""}</td></tr>` +
+    `<tr><th>Подписка</th><td>${esc(sub)}</td></tr>` +
+    `<tr><th>Доступ без подписки</th><td>${specials}</td></tr>` +
+    `<tr><th>Режим презентации</th><td>${pres ? "включён — пример остатков и себестоимости; прайс в Kaspi не отдаётся" : "выключен"}</td></tr>` +
+    "</tbody></table>" +
+    '<div class="row" style="margin-top:8px">' +
+    `<button class="secondary" data-sa="special" data-months="1">Без подписки 1 мес.</button>` +
+    `<button class="secondary" data-sa="special" data-months="3">3 мес.</button>` +
+    `<button class="secondary" data-sa="special" data-months="6">6 мес.</button>` +
+    `<button class="secondary" data-sa="special-cancel">Отменить доступ без подписки</button>` +
+    `<button class="secondary" data-sa="presentation" data-on="${pres ? 0 : 1}">${pres ? "Выключить режим презентации" : "Включить режим презентации"}</button>` +
+    `<button class="secondary" data-sa="reconnect">Окно нового токена 24 ч</button>` +
+    `<button class="secondary" data-sa="block" data-on="${v.account === "blocked" ? 0 : 1}">${v.account === "blocked" ? "Разблокировать" : "Заблокировать"}</button>` +
+    "</div>";
+}
+
+async function findSeller() {
+  $("seller-error").textContent = "";
+  sellerNumber = $("seller-number").value.trim();
+  if (!sellerNumber) return;
+  try { $("seller-card").innerHTML = sellerCard(await api(`/admin/sellers/${encodeURIComponent(sellerNumber)}`, { admin: true })); }
+  catch (e) { $("seller-card").innerHTML = ""; $("seller-error").textContent = e.message; }
+}
+
+async function sellerAction(t) {
+  const n = encodeURIComponent(sellerNumber);
+  const a = t.dataset.sa;
+  const plan = {
+    "special": [`Выдать доступ без подписки на ${t.dataset.months} мес.?`, `/admin/sellers/${n}/special-access`,
+      () => ({ months: Number(t.dataset.months), comment: prompt("Комментарий (необязательно)", "") || "" })],
+    "special-cancel": ["Отменить доступ без подписки?", `/admin/sellers/${n}/special-access/cancel`, () => ({})],
+    "presentation": [t.dataset.on === "1"
+      ? "Включить режим презентации? Товарам без своих цифр будет показан пример остатков и себестоимости (пометка «пример»). Прайс-лист в Kaspi отдаваться не будет."
+      : "Выключить режим презентации? Все примеры будут удалены, цифры продавца останутся.",
+      `/admin/sellers/${n}/presentation`, () => ({ enabled: t.dataset.on === "1" })],
+    "reconnect": ["Открыть окно нового токена на 24 часа?", `/admin/sellers/${n}/reconnect`, () => ({})],
+    "block": [t.dataset.on === "1" ? "Заблокировать продавца?" : "Разблокировать продавца?", `/admin/sellers/${n}/block`,
+      () => ({ blocked: t.dataset.on === "1" })],
+  }[a];
+  if (!plan || !confirm(plan[0])) return;
+  try {
+    const v = await api(plan[1], { method: "POST", body: { ...plan[2](), confirm: true }, admin: true });
+    $("seller-card").innerHTML = sellerCard(v);
+  } catch (e) { $("seller-error").textContent = e.message; }
+}
+
 async function loadAll() {
   $("panel-error").textContent = "";
+  show("seller-section", true);
   try { await loadStats(); await loadFlags(); await loadUsers(); await loadErrors(); }
   catch (e) { $("panel-error").textContent = e.message; }
 }
@@ -142,6 +199,7 @@ $("verify-code").onclick = verifyCode;
 $("tf-setup").onclick = setupTwoFactor;
 $("tf-enable").onclick = enableTwoFactor;
 $("reload").onclick = loadAll;
+$("seller-find").onclick = findSeller;
 $("logout").onclick = () => { sessionStorage.removeItem("satti-admin-token"); location.reload(); };
 
 document.addEventListener("click", async (ev) => {
@@ -155,6 +213,7 @@ document.addEventListener("click", async (ev) => {
     catch (e) { $("panel-error").textContent = e.message; }
   }
   if (t.dataset.shops) showUserShops(t.dataset.shops);
+  if (t.dataset.sa) sellerAction(t);
 });
 
 if (token) afterSignIn(); else { show("sign-in", true); }
