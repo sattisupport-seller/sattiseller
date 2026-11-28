@@ -8,7 +8,7 @@ type S<K extends keyof components['schemas']> = components['schemas'][K];
 
 export type Period = '7d' | '30d' | '90d' | 'today' | string;
 
-export type ShopSummary = { id: string; name: string; timezone: string; language: 'ru' | 'kk'; is_demo: boolean };
+export type ShopSummary = { id: string; name: string; timezone: string; language: 'ru' | 'kk'; is_demo: boolean; vat_payer?: boolean };
 
 // Обзор, прибыль, налог, комиссии — из схемы сервера
 export type Overview = S<'OverviewOut'>;

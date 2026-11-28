@@ -561,15 +561,18 @@ class ShopPatch(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     timezone: str | None = None
     language: Literal["ru"] | None = None  # К-13: только русский
+    vat_payer: bool | None = None  # К-33 А2: «Я плательщик НДС»
 
 
 @api.patch("/shops/{shop_id}", tags=["магазины"])
 def shops_patch(shop_id: str, body: ShopPatch, principal: Principal = Depends(get_principal),
                 db: DbSession = Depends(get_session)) -> dict:
     shop = shop_for(db, principal, shop_id)
-    if shop.is_demo:
+    changes = body.model_dump(exclude_none=True)
+    # К-33 А3: в демо и на встрече продавец пробует «плательщик НДС» — это можно; остальное в демо менять нельзя
+    if shop.is_demo and set(changes) - {"vat_payer"}:
         raise ApiError(403, "forbidden")
-    for k, v in body.model_dump(exclude_none=True).items():
+    for k, v in changes.items():
         setattr(shop, k, v)
     db.commit()
     reportcache.invalidate(shop.id)  # AUD-12: данные отчётов изменились
@@ -578,7 +581,7 @@ def shops_patch(shop_id: str, body: ShopPatch, principal: Principal = Depends(ge
 
 def _shop_json(shop: Shop) -> dict:
     return {"id": shop.id, "name": shop.name, "timezone": shop.timezone, "language": shop.language,
-            "is_demo": shop.is_demo}
+            "is_demo": shop.is_demo, "vat_payer": bool(shop.vat_payer)}
 
 
 # ---------- отчёты ----------

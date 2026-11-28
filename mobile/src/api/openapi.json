@@ -91,6 +91,11 @@
             "title": "Min Supported Version Ios",
             "type": "string"
           },
+          "onboarding_restart_minutes": {
+            "default": 5,
+            "title": "Onboarding Restart Minutes",
+            "type": "integer"
+          },
           "privacy_url": {
             "default": "https://example.invalid/privacy",
             "title": "Privacy Url",
@@ -1490,6 +1495,11 @@
             ],
             "title": "Name"
           },
+          "onboarding_done": {
+            "default": false,
+            "title": "Onboarding Done",
+            "type": "boolean"
+          },
           "seller_number": {
             "anyOf": [
               {
@@ -2446,6 +2456,19 @@
         "title": "ReplyDraftIn",
         "type": "object"
       },
+      "ReturnConfirmIn": {
+        "properties": {
+          "sellable": {
+            "title": "Sellable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sellable"
+        ],
+        "title": "ReturnConfirmIn",
+        "type": "object"
+      },
       "ReturnOut": {
         "properties": {
           "day": {
@@ -2594,6 +2617,11 @@
           "timezone": {
             "title": "Timezone",
             "type": "string"
+          },
+          "vat_payer": {
+            "default": false,
+            "title": "Vat Payer",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2643,6 +2671,17 @@
               }
             ],
             "title": "Timezone"
+          },
+          "vat_payer": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Payer"
           }
         },
         "title": "ShopPatch",
@@ -2670,6 +2709,17 @@
             "default": false,
             "title": "Accept Terms",
             "type": "boolean"
+          },
+          "authorization_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization Code"
           },
           "id_token": {
             "title": "Id Token",
@@ -5228,7 +5278,59 @@
       }
     },
     "/v1/devices/push-token": {
+      "delete": {
+        "description": "Выход из аккаунта: телефон больше не получает уведомления этого аккаунта.",
+        "operationId": "push_token_delete_v1_devices_push_token_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Push Token Delete",
+        "tags": [
+          "уведомления"
+        ]
+      },
       "post": {
+        "description": "3.4: Expo push token устройства — к аккаунту (демо уведомлений не получает). Повтор — обновление владельца.",
         "operationId": "push_token_v1_devices_push_token_post",
         "parameters": [
           {
@@ -5696,6 +5798,57 @@
         ]
       }
     },
+    "/v1/me/onboarding/complete": {
+      "post": {
+        "description": "Обучение пройдено до конца (часть 2, п.6). Повторное прохождение из профиля отметку не снимает.",
+        "operationId": "onboarding_complete_v1_me_onboarding_complete_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Onboarding Complete V1 Me Onboarding Complete Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Onboarding Complete",
+        "tags": [
+          "пользователь"
+        ]
+      }
+    },
     "/v1/me/reactivation": {
       "post": {
         "description": "К-21: восстановление до конца 30 дней — только при оплаченной подписке 9 900 ₸ (проверена сервером у магазина).\nПодписка в App Store или Google Play сама не отменяется: если она ещё оплачена, восстановление сразу.",
@@ -5908,6 +6061,55 @@
       }
     },
     "/v1/notification-settings": {
+      "get": {
+        "description": "3.4: текущие настройки — экран показывает их, а не «всё выключено».",
+        "operationId": "notification_settings_get_v1_notification_settings_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Notification Settings Get V1 Notification Settings Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Notification Settings Get",
+        "tags": [
+          "уведомления"
+        ]
+      },
       "patch": {
         "operationId": "notification_settings_v1_notification_settings_patch",
         "parameters": [
@@ -8576,6 +8778,85 @@
           }
         },
         "summary": "Stock Relist",
+        "tags": [
+          "склад"
+        ]
+      }
+    },
+    "/v1/shops/{shop_id}/products/{product_id}/stock/returns": {
+      "post": {
+        "description": "К-26: возвраты Kaspi без отметки «вернулся на склад» — продавец подтверждает; годный товар увеличивает остаток.",
+        "operationId": "stock_confirm_returns_v1_shops__shop_id__products__product_id__stock_returns_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shop_id",
+            "required": true,
+            "schema": {
+              "title": "Shop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "product_id",
+            "required": true,
+            "schema": {
+              "title": "Product Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnConfirmIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Stock Confirm Returns V1 Shops  Shop Id  Products  Product Id  Stock Returns Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stock Confirm Returns",
         "tags": [
           "склад"
         ]

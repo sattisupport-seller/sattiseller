@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session as DbSession
 from . import reportcache
 from .config import settings
 from .kaspi_client import PAGE_SIZE, KaspiAuthError, KaspiClient, KaspiOrder, KaspiUnavailable
+from .kaspi_tariffs import DEFAULT_TIER, DELIVERY_FACT_INCLUDES_VAT, with_vat
 from .models import KaspiCatalog, KaspiConnection, Order, OrderItem, Product, Shop, _uid
 
 log = logging.getLogger("satti.kaspi")
@@ -42,7 +43,29 @@ STATE_MAP = {
 }
 DEFAULT_STATUS = "in_progress"
 FIRST_SYNC_DAYS = 90  # ТЗ: при подключении — заказы за 90 дней
-FIRST_STAGE_DAYS = 7  # К-18.3: сначала последние 7 дней (продавец сразу видит данные), остальное — в фоне
+FIRST_STAGE_DAYS = 14  # К-33 А1: сначала последние 14 дней (первые цифры за 1–2 минуты), остальное — в фоне
+DAY_MS = 86_400_000
+# Kaspi: максимальный период поиска заказов — 14 дней. Окно — на 1 мс меньше, чтобы не упереться в границу.
+WINDOW_MS = 14 * DAY_MS - 1
+BACKFILL_PAGE_SLOT = 10_000  # backfill_page = номер окна × 10 000 + страница в окне (без новой колонки)
+
+
+def _windows(since_ms: int, until_ms: int) -> list[tuple[int, int]]:
+    """Период [since, until], разбитый на окна не длиннее 14 дней, от старых к новым."""
+    out = []
+    start = since_ms
+    while start <= until_ms:
+        end = min(start + WINDOW_MS, until_ms)
+        out.append((start, end))
+        start = end + 1
+    return out
+
+
+def _backfill_windows(now_ms: int) -> list[tuple[int, int]]:
+    """Окна догрузки от новых к старым: [now − 90 дн., now − 14 дн.). Новые первыми — продавец быстрее видит свежее."""
+    since = now_ms - FIRST_SYNC_DAYS * DAY_MS
+    until = now_ms - FIRST_STAGE_DAYS * DAY_MS - 1
+    return list(reversed(_windows(since, until)))
 # Повторно читаем заказы за 14 дней до курсора: Kaspi меняет состояние заказа позже (возврат, отмена).
 OVERLAP_MS = 14 * 86_400_000
 UNKNOWN_CATEGORY = "Без категории"
@@ -222,7 +245,11 @@ def _reconcile(db: DbSession, shop: Shop, order: Order, lines: list[tuple[str, i
     delivery_by_pid: dict[str, int | None] = {pid: 0 for pid in fresh}
     if fresh and seller_delivery is not None:
         for i, pid in enumerate(fresh):
-            delivery_by_pid[pid] = seller_delivery * 100 if i == 0 else 0
+            # К-33 А2: Kaspi списывает доставку с НДС; храним сумму с НДС (плательщику отчёт вычтет НДС)
+            fact = seller_delivery * 100
+            if not DELIVERY_FACT_INCLUDES_VAT:
+                fact = with_vat(fact)
+            delivery_by_pid[pid] = fact if i == 0 else 0
     # К-18: при рассрочке/кредите комиссия — ставка рассрочки (тариф продавца), а не ставка категории
     order_day = order.created_at.date() if order.created_at else None
     rate_bp = installment_rate_bp(db, shop.id, order_day) if credit else None
@@ -390,37 +417,39 @@ def _sync_locked(db: DbSession, conn: KaspiConnection, client: KaspiClient, now:
     if conn.cursor_ms is not None:
         since = conn.cursor_ms - OVERLAP_MS
     else:
-        since = _now_ms(now) - FIRST_STAGE_DAYS * 86_400_000  # этап 1 первой загрузки: последние 7 дней
+        since = _now_ms(now) - FIRST_STAGE_DAYS * DAY_MS  # этап 1 первой загрузки: последние 14 дней
     products: dict[str, Product] = {}
     added = updated = pages = items_changed = 0
     newest_overall = 0
     first_load = conn.cursor_ms is None
     stage_total = None
     try:
-        page = 0
-        while True:
-            orders, total = client.list_orders_page(since_ms=since, page=page)
-            if page == 0 and first_load:
-                stage_total = total
-            if not orders:
-                break
-            a, u, c = _apply_page(db, shop, orders, products, now, client)
-            added += a
-            updated += u
-            items_changed += c
-            pages += 1
-            if first_load:
-                conn.load_done = (conn.load_done or 0) + len(orders)
-                if stage_total is not None:
-                    conn.load_total = stage_total
-            newest_overall = max(newest_overall, max(o.created_ms for o in orders))
-            if client.last_point_id and not conn.store_ids:  # подсказка только пока код склада не задан
-                conn.store_hint = client.last_point_id
-            conn.last_error = None
-            db.commit()
-            if len(orders) < PAGE_SIZE:
-                break
-            page += 1
+        for w_since, w_until in _windows(since, _now_ms(now)):  # К-33 А1: Kaspi отдаёт не больше 14 дней за запрос
+            page = 0
+            while True:
+                orders, total = client.list_orders_page(since_ms=w_since, page=page, until_ms=w_until)
+                if page == 0 and first_load and total is not None:
+                    stage_total = (stage_total or 0) + total
+                if not orders:
+                    break
+                a, u, c = _apply_page(db, shop, orders, products, now, client)
+                added += a
+                updated += u
+                items_changed += c
+                pages += 1
+                if first_load:
+                    conn.load_done = (conn.load_done or 0) + len(orders)
+                    if stage_total is not None:
+                        # оценка на 90 дней по первым 14 (уточняется в догрузке; в конце — точное число)
+                        conn.load_total = max(conn.load_done, -(-stage_total * FIRST_SYNC_DAYS // FIRST_STAGE_DAYS))
+                newest_overall = max(newest_overall, max(o.created_ms for o in orders))
+                if client.last_point_id and not conn.store_ids:  # подсказка только пока код склада не задан
+                    conn.store_hint = client.last_point_id
+                conn.last_error = None
+                db.commit()
+                if len(orders) < PAGE_SIZE:
+                    break
+                page += 1
         # курсор двигаем только когда весь проход завершён
         if newest_overall:
             conn.cursor_ms = max(conn.cursor_ms or 0, newest_overall)
@@ -448,47 +477,51 @@ def _sync_locked(db: DbSession, conn: KaspiConnection, client: KaspiClient, now:
         raise
     conn.last_sync_at = now
     conn.status = "active"
+    skipped = getattr(client, "skipped", 0)
+    if skipped:
+        conn.last_error = (f"Пропущено записей Kaspi в непонятном формате: {skipped}. Остальные данные загружены; "
+                           "мы уже разбираемся.")[:200]
     db.add(conn)
     db.commit()
     reportcache.invalidate(shop.id)  # AUD-12: появились новые заказы
-    return {"pages": pages, "added": added, "updated": updated, "items_changed": items_changed}
+    return {"pages": pages, "added": added, "updated": updated, "items_changed": items_changed, "skipped": skipped}
 
 
 def _backfill_pass(db: DbSession, shop: Shop, conn: KaspiConnection, client: KaspiClient, now: datetime,
                    products: dict[str, Product]) -> dict:
-    """Догрузка заказов за 90 дней без последних 7 (К-18.3). Страница сохраняется после каждой, поэтому
-    следующий запуск продолжает с неё; заказы не дублируются. Прогресс: load_done / load_total."""
-    since = _now_ms(now) - FIRST_SYNC_DAYS * 86_400_000
-    until = _now_ms(now) - FIRST_STAGE_DAYS * 86_400_000
-    page = conn.backfill_page or 0
+    """Догрузка заказов за 90 дней без последних 14 (К-18.3, К-33 А1): окнами по 14 дней от новых к старым.
+    Позиция (окно, страница) сохраняется после каждой страницы — после обрыва следующий запуск продолжает с неё;
+    заказы не дублируются (уникальность по номеру). Прогресс: load_done / load_total (оценка до конца догрузки)."""
+    windows = _backfill_windows(_now_ms(now))
+    state = conn.backfill_page or 0
+    w_idx, page = divmod(state, BACKFILL_PAGE_SLOT)
     added = updated = items_changed = pages = 0
-    while True:
+    while w_idx < len(windows):
+        since, until = windows[w_idx]
         orders, total = client.list_orders_page(since_ms=since, page=page, until_ms=until)
         if page == 0 and total is not None:
-            # прогресс: всего = этап 1 (7 дней) + догрузка. При повторе страницы 0 после сбоя возможна погрешность
-            conn.load_total = (conn.load_total or 0) + total
-        if not orders:
-            conn.backfill_done = True
-            conn.backfill_page = 0
-            db.add(conn)
-            db.commit()
-            break
-        a, u, c = _apply_page(db, shop, orders, products, now, client)
-        added += a
-        updated += u
-        items_changed += c
-        pages += 1
-        conn.load_done = (conn.load_done or 0) + len(orders)
-        conn.backfill_page = page + 1
+            covered = min(FIRST_SYNC_DAYS, FIRST_STAGE_DAYS + (w_idx + 1) * 14)
+            seen = (conn.load_done or 0) + total
+            conn.load_total = max(seen, -(-seen * FIRST_SYNC_DAYS // covered))
+        if orders:
+            a, u, c = _apply_page(db, shop, orders, products, now, client)
+            added += a
+            updated += u
+            items_changed += c
+            pages += 1
+            conn.load_done = (conn.load_done or 0) + len(orders)
+        if not orders or len(orders) < PAGE_SIZE:
+            w_idx, page = w_idx + 1, 0
+        else:
+            page += 1
+        conn.backfill_page = w_idx * BACKFILL_PAGE_SLOT + page
         db.add(conn)
         db.commit()
-        if len(orders) < PAGE_SIZE:
-            conn.backfill_done = True
-            conn.backfill_page = 0
-            db.add(conn)
-            db.commit()
-            break
-        page += 1
+    conn.backfill_done = True
+    conn.backfill_page = 0
+    conn.load_total = conn.load_done  # догрузка закончена — число точное
+    db.add(conn)
+    db.commit()
     return {"added": added, "updated": updated, "items_changed": items_changed, "pages": pages}
 
 
@@ -632,7 +665,9 @@ SYNC_EVERY = 15 * 60  # ТЗ: новые заказы — каждые 15 мин
 
 
 INSTALLMENT_CATEGORY = "Рассрочка Kaspi"  # категория тарифа в настройках комиссий продавца
-INSTALLMENT_DEFAULT_BP = 1090  # 10,9% — ставка продажи в рассрочку по официальной странице Kaspi (К-18); продавец может изменить
+# К-33 А2: 10,9 % — это основная ставка БЕЗ НДС, а не рассрочка. Заказ в рассрочку 0-0-24 — акционная ставка
+# основной группы с НДС (13,0 %); продавец может изменить под условия конкретной акции.
+INSTALLMENT_DEFAULT_BP = DEFAULT_TIER.promo_bp
 
 
 def installment_rate_bp(db: DbSession, shop_id: str, day: date | None = None) -> int:

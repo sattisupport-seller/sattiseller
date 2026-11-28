@@ -269,6 +269,7 @@ class ShopOut(BaseModel):
     timezone: str
     language: str
     is_demo: bool
+    vat_payer: bool = False  # К-33 А2: «Я плательщик НДС»
 
 
 class ShopsOut(BaseModel):

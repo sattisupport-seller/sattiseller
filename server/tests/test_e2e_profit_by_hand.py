@@ -1,11 +1,13 @@
-"""К-30 п.2: прибыль, сверенная вручную до тенге (пример — docs/FEATURE_CHECK.md, «Ручная сверка прибыли»).
+"""К-30 п.2, пересчитано в К-33 А2: прибыль, сверенная вручную до тенге (docs/FEATURE_CHECK.md, «Ручная сверка прибыли»).
 
-Kaspi (мок): три заказа. Комиссия категории 12 %, рассрочка 10,9 % (тариф продавца по умолчанию), налог 3 %,
-себестоимость K0 = 2 000 ₸, K1 = 3 000 ₸.
-  A: выдан, 2 × K0 по 5 000 ₸, доставку оплачивает продавец 500 ₸ → 10 000 − 4 000 − 1 200 − 500 − 300 = 4 000 ₸
-  B: выдан, рассрочка, 1 × K1 за 8 000 ₸ → 8 000 − 3 000 − 872 − 0 − 240 = 3 888 ₸
-  C: возвращён на склад, 1 × K0 за 5 000 ₸ → продажа 2 250 ₸, возврат −5 000 + 2 000 + 600 + 150 = −2 250 ₸ → 0 ₸
-Итог: 7 888 ₸; чистые продажи 23 000 − 5 000 = 18 000 ₸.
+Kaspi (мок): три заказа. Продавец не плательщик НДС. Комиссия категории 12,5 % с НДС (основная группа 2026),
+рассрочка 0-0-24 — 13,0 % с НДС (ставка по умолчанию), налог 3 %, себестоимость K0 = 2 000 ₸, K1 = 3 000 ₸.
+Доставка Kaspi: deliveryCostForSeller = 500 ₸ без НДС → продавцу списывается 580 ₸ с НДС 16 %.
+  A: выдан, 2 × K0 по 5 000 ₸, доставка 580 ₸ → 10 000 − 4 000 − 1 250 − 580 − 300 = 3 870 ₸
+  B: выдан, рассрочка, 1 × K1 за 8 000 ₸ → 8 000 − 3 000 − 1 040 − 0 − 240 = 3 720 ₸
+  C: возвращён на склад, 1 × K0 за 5 000 ₸ → продажа 5 000 − 2 000 − 625 − 150 = 2 225 ₸,
+     возврат −5 000 + 2 000 + 625 + 150 = −2 225 ₸ → 0 ₸
+Итог: 7 590 ₸; чистые продажи 23 000 − 5 000 = 18 000 ₸.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -49,11 +51,11 @@ def test_profit_matches_hand_calculation_to_the_tenge(client, env, monkeypatch):
         {"product_id": products["K1"], "purchase": "3000", "stock_qty": 5}], "apply_to_history": True})
     assert r.status_code == 200, r.text
     assert client.post(f"/v1/shops/{shop_id}/commissions", headers=headers,
-                       json={"category": "Посуда для кухни", "rate_percent": "12"}).status_code == 201
+                       json={"category": "Посуда для кухни", "rate_percent": "12,5"}).status_code == 201
     assert client.post(f"/v1/shops/{shop_id}/tax", headers=headers,
                        json={"enabled": True, "rate_percent": "3"}).status_code == 201
 
     kpi = client.get(f"/v1/shops/{shop_id}/overview?period=30d", headers=headers).json()["kpi"]
     assert kpi["coverage_bp"] == 10000, kpi  # все строки посчитаны полностью
-    assert kpi["profit_minor"] == 7888 * T, kpi
+    assert kpi["profit_minor"] == 7590 * T, kpi
     assert kpi["net_sales_minor"] == 18000 * T, kpi

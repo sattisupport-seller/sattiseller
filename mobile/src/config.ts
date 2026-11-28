@@ -13,8 +13,29 @@ export function checkApiUrl(url: string, isDev: boolean): string {
   return url;
 }
 
+/**
+ * К-33 А0: в разработке без EXPO_PUBLIC_API_URL адрес сервера берётся из адреса Metro (hostUri «172.20.10.2:8081»):
+ * тот же компьютер, порт 8000. Сменилась точка доступа — перезапускать с новым адресом не нужно.
+ */
+export function apiUrlFromHostUri(hostUri: string | null | undefined, port = 8000): string | null {
+  if (!hostUri) return null;
+  const host = hostUri.replace(/^[a-z]+:\/\//i, '').split('/')[0].replace(/:\d+$/, '');
+  if (!host) return null;
+  return `http://${host}:${port}/v1`;
+}
+
+function metroHostUri(): string | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Constants = require('expo-constants').default;
+    return Constants?.expoConfig?.hostUri ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export const API_URL: string = checkApiUrl(
-  process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000/v1',
+  process.env.EXPO_PUBLIC_API_URL ?? (__DEV__ ? apiUrlFromHostUri(metroHostUri()) : null) ?? 'http://localhost:8000/v1',
   __DEV__,
 );
 

@@ -413,6 +413,16 @@ export function useCreateShop() {
   });
 }
 
+/** К-33 А2: «Я плательщик НДС» — меняет расчёт прибыли (выручка, комиссия и доставка без НДС). */
+export function useSetVatPayer(shopId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vat_payer: boolean) =>
+      request<ShopSummary>(`/shops/${shopId}`, { method: 'PATCH', body: { vat_payer } }),
+    onSuccess: () => qc.invalidateQueries(),
+  });
+}
+
 export function useResetDemo() {
   const qc = useQueryClient();
   return useMutation({

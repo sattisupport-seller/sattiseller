@@ -118,7 +118,7 @@ def test_hundred_products_many_pages(client, demo, kaspi_on, mock):
     _connect(client, demo)
     mock.generate(250, now=datetime.now(timezone.utc), products=100)
     stats = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"]).json()
-    assert stats["added"] == 250 and stats["pages"] >= 3  # этап 1 (7 дней) и догрузка 90 дней — страницами
+    assert stats["added"] == 250 and stats["pages"] >= 3  # этап 1 (14 дней) и догрузка 90 дней — окнами и страницами
     with DbSession(engine) as db:
         assert db.query(Product).filter(Product.shop_id == demo["shop_id"], Product.sku.like("K%")).count() == 100
 
@@ -126,7 +126,9 @@ def test_hundred_products_many_pages(client, demo, kaspi_on, mock):
 def test_failure_in_the_middle_keeps_progress_and_resumes_without_duplicates(client, demo, kaspi_on, mock):
     _connect(client, demo)
     mock.generate(250, now=datetime.now(timezone.utc))
-    mock.fail_on_page = 1
+    # К-33 А1: запросы идут окнами по 14 дней; этап 1 и два окна догрузки прошли, на третьем окне Kaspi упал
+    mock.list_requests = 0
+    mock.fail_list_from = 4
     r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
     assert r.status_code == 503
     saved = _count_kaspi_orders(demo["shop_id"])
@@ -134,9 +136,9 @@ def test_failure_in_the_middle_keeps_progress_and_resumes_without_duplicates(cli
     with DbSession(engine) as db:
         conn = db.get(KaspiConnection, demo["shop_id"])
         # К-17.3: курсор двигается только после полного прохода; ошибка записана; догрузка продолжится со страницы
-        assert conn.cursor_ms is not None and conn.last_error  # этап 1 (7 дней) завершён, курсор стоит
-        assert conn.backfill_done is False and conn.backfill_page >= 1
-    mock.fail_on_page = None
+        assert conn.cursor_ms is not None and conn.last_error  # этап 1 (14 дней) завершён, курсор стоит
+        assert conn.backfill_done is False and conn.backfill_page >= kaspi_service.BACKFILL_PAGE_SLOT  # окно ≥ 1
+    mock.fail_list_from = None
     r = client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
     assert r.status_code == 200, r.text
     assert _count_kaspi_orders(demo["shop_id"]) == 250
@@ -535,11 +537,11 @@ def test_seller_delivery_is_an_expense_and_credit_orders_use_installment_rate(cl
     with DbSession(engine) as db:
         delivery_order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000000").one()
         first_item = db.query(_OI).filter(_OI.order_id == delivery_order.id).first()
-        assert first_item.buyer_delivery_minor == 50_000  # 500 тенге на первой позиции
+        assert first_item.buyer_delivery_minor == 58_000  # 500 ₸ без НДС → 580 ₸ с НДС на первой позиции (К-33 А2)
         credit_order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000001").one()
         items = db.query(_OI).filter(_OI.order_id == credit_order.id).all()
         assert items and all(it.buyer_delivery_minor == 0 for it in items)  # без поля доставки — 0 (К-30)
-        assert all(it.commission_rate_bp == 1090 for it in items)  # рассрочка — тариф 10,9 % (К-18)
+        assert all(it.commission_rate_bp == 1300 for it in items)  # рассрочка 0-0-24 — 13,0 % с НДС (К-33 А2)
         plain = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000002").one()
         assert all(it.buyer_delivery_minor == 0 for it in db.query(_OI).filter(_OI.order_id == plain.id).all()[1:])
 
@@ -654,7 +656,7 @@ def test_installment_orders_use_seller_installment_rate(client, demo, kaspi_on, 
     with DbSession(engine) as db:
         credit = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000001").one()
         items = db.query(_OI).filter(_OI.order_id == credit.id).all()
-        assert items and all(it.commission_rate_bp == 1090 for it in items)  # 10,9% по умолчанию
+        assert items and all(it.commission_rate_bp == 1300 for it in items)  # 13,0 % по умолчанию (К-33 А2)
         plain = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000002").one()
         assert all(it.commission_rate_bp is None for it in db.query(_OI).filter(_OI.order_id == plain.id).all())
         db.add(_CP(shop_id=demo["shop_id"], category=kaspi_service.INSTALLMENT_CATEGORY, rate_bp=1350,
@@ -675,7 +677,7 @@ def test_installment_orders_use_seller_installment_rate(client, demo, kaspi_on, 
         new_order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC90000001").one()
         assert {it.commission_rate_bp for it in db.query(_OI).filter(_OI.order_id == new_order.id).all()} == {1350}
         old_order = db.query(Order).filter(Order.shop_id == demo["shop_id"], Order.number == "KC00000001").one()
-        assert {it.commission_rate_bp for it in db.query(_OI).filter(_OI.order_id == old_order.id).all()} == {1090}
+        assert {it.commission_rate_bp for it in db.query(_OI).filter(_OI.order_id == old_order.id).all()} == {1300}
 
 
 def test_first_load_shows_progress_and_completes_90_days(client, demo, kaspi_on, mock):
@@ -690,17 +692,21 @@ def test_first_load_shows_progress_and_completes_90_days(client, demo, kaspi_on,
 
 
 def test_first_seven_days_are_loaded_before_the_rest(client, demo, kaspi_on, mock):
-    """К-18.3: если догрузка оборвалась, заказы последних 7 дней уже есть — продавец видит данные."""
+    """К-18.3 / К-33 А1: если догрузка оборвалась, заказы последних 14 дней уже есть — продавец видит данные."""
     _connect(client, demo)
     mock.generate(250, now=datetime.now(timezone.utc), days=60, products=5)
-    mock.fail_on_page = 1  # первая страница этапа 2 падает
+    mock.list_requests = 0
+    mock.fail_list_from = 2  # этап 1 (одно окно 14 дней) прошёл, первый запрос догрузки падает
     client.post(f"/v1/shops/{demo['shop_id']}/kaspi/sync", headers=demo["headers"])
-    recent = datetime.now(timezone.utc) - timedelta(days=7)
+    recent = datetime.now(timezone.utc) - timedelta(days=14)
     with DbSession(engine) as db:
         from app.models import Order as _O
-        newest = db.query(_O).filter(_O.shop_id == demo["shop_id"], _O.created_at >= recent).count()
-    assert newest >= 1
-    mock.fail_on_page = None
+        newest = db.query(_O).filter(_O.shop_id == demo["shop_id"], _O.number.like("KC%"),
+                                     _O.created_at >= recent).count()
+    expected = sum(1 for o in mock.orders if o["attributes"]["creationDate"] >= int(recent.timestamp() * 1000))
+    assert newest == expected > 0
+    assert _count_kaspi_orders(demo["shop_id"]) < 250  # остальное — в догрузке
+    mock.fail_list_from = None
 
 
 def test_main_scenario_first_day_connect_import_costs_profit_by_product(client, demo, kaspi_on, mock):

@@ -19,6 +19,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -99,6 +100,8 @@ class Shop(Base):
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Almaty")
     language: Mapped[str] = mapped_column(String(8), default="ru")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # К-33 А2: «Я плательщик НДС». Плательщик: выручка без НДС, комиссия и доставка без НДС (НДС к зачёту).
+    vat_payer: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     products: Mapped[list["Product"]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
     orders: Mapped[list["Order"]] = relationship(cascade="all, delete-orphan", passive_deletes=True)

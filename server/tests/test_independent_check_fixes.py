@@ -118,7 +118,7 @@ def test_d5_future_installment_rate_does_not_apply_to_todays_order(client, env, 
     with DbSession(engine) as db:
         order = db.scalar(select(Order).where(Order.number == "CR1"))
         item = db.scalar(select(OrderItem).where(OrderItem.order_id == order.id))
-        assert item.commission_rate_bp == 1090  # 10,9 % по умолчанию: тариф с будущей даты ещё не действует
+        assert item.commission_rate_bp == 1300  # 13,0 % по умолчанию (К-33 А2): тариф с будущей даты ещё не действует
 
 
 def test_d7_period_with_only_a_return_shows_negative_profit(client, env, monkeypatch):  # noqa: F811

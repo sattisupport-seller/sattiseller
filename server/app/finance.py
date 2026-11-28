@@ -27,6 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Optional
 
+from .kaspi_tariffs import net_rate_bp, without_vat
 from .money import apply_bp, round_half_up_div
 
 
@@ -53,6 +54,9 @@ class SaleLine:
     commission_rate_bp: Optional[int]  # None — ставка неизвестна
     returns: list[Return] = field(default_factory=list)
     tax_rate_bp: Optional[int] = None  # None — налог не учитывается
+    # К-33 А2: плательщик НДС — выручка = цена / 1,16, комиссия по ставке без НДС (таблица Kaspi), доставка без НДС.
+    # Ставка и доставка в данных — с НДС (как их платит неплательщик).
+    vat_payer: bool = False
 
 
 @dataclass(frozen=True)
@@ -101,10 +105,17 @@ def return_is_known(ret: Return) -> bool:
 
 def sale_result(line: SaleLine) -> SaleResult:
     """Прибыль самой продажи, без возвратов."""
-    gross = line.unit_price_minor * line.qty
+    price_total = line.unit_price_minor * line.qty
     landed = None if line.unit_cost_minor is None else line.unit_cost_minor * line.qty
-    commission = None if line.commission_rate_bp is None else apply_bp(gross, line.commission_rate_bp)
-    delivery = line.buyer_delivery_minor
+    if line.vat_payer:
+        gross = without_vat(price_total)
+        commission = None if line.commission_rate_bp is None else apply_bp(price_total,
+                                                                           net_rate_bp(line.commission_rate_bp))
+        delivery = None if line.buyer_delivery_minor is None else without_vat(line.buyer_delivery_minor)
+    else:
+        gross = price_total
+        commission = None if line.commission_rate_bp is None else apply_bp(gross, line.commission_rate_bp)
+        delivery = line.buyer_delivery_minor
     tax = 0 if line.tax_rate_bp is None else apply_bp(gross, line.tax_rate_bp)
     profit = None
     if None not in (landed, commission, delivery):

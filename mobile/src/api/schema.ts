@@ -666,9 +666,16 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Push Token */
+        /**
+         * Push Token
+         * @description 3.4: Expo push token устройства — к аккаунту (демо уведомлений не получает). Повтор — обновление владельца.
+         */
         post: operations["push_token_v1_devices_push_token_post"];
-        delete?: never;
+        /**
+         * Push Token Delete
+         * @description Выход из аккаунта: телефон больше не получает уведомления этого аккаунта.
+         */
+        delete: operations["push_token_delete_v1_devices_push_token_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -803,6 +810,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/me/onboarding/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Onboarding Complete
+         * @description Обучение пройдено до конца (часть 2, п.6). Повторное прохождение из профиля отметку не снимает.
+         */
+        post: operations["onboarding_complete_v1_me_onboarding_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/me/reactivation": {
         parameters: {
             query?: never;
@@ -872,7 +899,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Notification Settings Get
+         * @description 3.4: текущие настройки — экран показывает их, а не «всё выключено».
+         */
+        get: operations["notification_settings_get_v1_notification_settings_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1425,6 +1456,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/shops/{shop_id}/products/{product_id}/stock/returns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stock Confirm Returns
+         * @description К-26: возвраты Kaspi без отметки «вернулся на склад» — продавец подтверждает; годный товар увеличивает остаток.
+         */
+        post: operations["stock_confirm_returns_v1_shops__shop_id__products__product_id__stock_returns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/shops/{shop_id}/profit-breakdown": {
         parameters: {
             query?: never;
@@ -1667,6 +1718,11 @@ export interface components {
              * @default 1.0.0
              */
             min_supported_version_ios: string;
+            /**
+             * Onboarding Restart Minutes
+             * @default 5
+             */
+            onboarding_restart_minutes: number;
             /**
              * Privacy Url
              * @default https://example.invalid/privacy
@@ -2183,6 +2239,11 @@ export interface components {
             locale: string;
             /** Name */
             name?: string | null;
+            /**
+             * Onboarding Done
+             * @default false
+             */
+            onboarding_done: boolean;
             /** Seller Number */
             seller_number?: string | null;
             /**
@@ -2486,6 +2547,11 @@ export interface components {
              */
             tone: "polite" | "short";
         };
+        /** ReturnConfirmIn */
+        ReturnConfirmIn: {
+            /** Sellable */
+            sellable: boolean;
+        };
         /** ReturnOut */
         ReturnOut: {
             /** Day */
@@ -2548,6 +2614,11 @@ export interface components {
             name: string;
             /** Timezone */
             timezone: string;
+            /**
+             * Vat Payer
+             * @default false
+             */
+            vat_payer: boolean;
         };
         /** ShopPatch */
         ShopPatch: {
@@ -2557,6 +2628,8 @@ export interface components {
             name?: string | null;
             /** Timezone */
             timezone?: string | null;
+            /** Vat Payer */
+            vat_payer?: boolean | null;
         };
         /** ShopsOut */
         ShopsOut: {
@@ -2570,6 +2643,8 @@ export interface components {
              * @default false
              */
             accept_terms: boolean;
+            /** Authorization Code */
+            authorization_code?: string | null;
             /** Id Token */
             id_token: string;
             /** Nonce */
@@ -3947,6 +4022,39 @@ export interface operations {
             };
         };
     };
+    push_token_delete_v1_devices_push_token_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_v1_health_get: {
         parameters: {
             query?: never;
@@ -4199,6 +4307,37 @@ export interface operations {
             };
         };
     };
+    onboarding_complete_v1_me_onboarding_complete_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     reactivation_v1_me_reactivation_post: {
         parameters: {
             query?: never;
@@ -4306,6 +4445,37 @@ export interface operations {
                 "application/json": components["schemas"]["TermsIn"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    notification_settings_get_v1_notification_settings_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -5655,6 +5825,44 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stock_confirm_returns_v1_shops__shop_id__products__product_id__stock_returns_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                shop_id: string;
+                product_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReturnConfirmIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

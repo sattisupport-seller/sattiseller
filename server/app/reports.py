@@ -37,6 +37,7 @@ from .models import (
     TaxRate,
 )
 from . import reportcache
+from .kaspi_tariffs import net_rate_bp, without_vat
 from .money import apply_bp, round_half_up_div
 from .periods import Period
 
@@ -239,6 +240,7 @@ def _tax_on_return(refund: int | None, rates: list[TaxRate], day: date) -> int:
 
 def build_facts(data: ShopData) -> list[ItemFact]:
     facts: list[ItemFact] = []
+    vat_payer = bool(getattr(data.shop, "vat_payer", False))
     for order in data.orders:
         sale_day = local_day(order.completed_at, data.tz) if order.completed_at else None
         created_day = local_day(order.created_at, data.tz)
@@ -266,6 +268,7 @@ def build_facts(data: ShopData) -> list[ItemFact]:
                 commission_rate_bp=rate,
                 returns=[],
                 tax_rate_bp=tax_rate,
+                vat_payer=vat_payer,
             )
             sale = sale_result(line)
             returns: list[ReturnFact] = []
@@ -273,16 +276,23 @@ def build_facts(data: ShopData) -> list[ItemFact]:
                 # К-30: комиссия к возврату не указана (возврат Kaspi по обычному заказу) — по ставке продажи на дату
                 # заказа. Ставка известна на момент отчёта, даже если продавец задал её после синхронизации.
                 commission_back = ev.commission_returned_minor
+                if vat_payer and commission_back is not None:
+                    commission_back = without_vat(commission_back)
                 if commission_back is None and ev.refund_minor is not None and rate is not None:
-                    commission_back = apply_bp(ev.refund_minor, rate)
+                    commission_back = apply_bp(ev.refund_minor, net_rate_bp(rate) if vat_payer else rate)
+                refund = ev.refund_minor
+                delivery_back, reverse = ev.delivery_returned_minor, ev.reverse_delivery_minor
+                if vat_payer:  # К-33 А2: плательщик НДС — суммы возврата без НДС
+                    refund, delivery_back, reverse = (None if v is None else without_vat(v)
+                                                      for v in (refund, delivery_back, reverse))
                 raw = Return(
                     returned_qty=ev.returned_qty,
-                    refund_minor=ev.refund_minor,
+                    refund_minor=refund,
                     commission_returned_minor=commission_back,
-                    delivery_returned_minor=ev.delivery_returned_minor,
-                    reverse_delivery_minor=ev.reverse_delivery_minor,
+                    delivery_returned_minor=delivery_back,
+                    reverse_delivery_minor=reverse,
                     goods_sellable=ev.goods_sellable,
-                    tax_returned_minor=_tax_on_return(ev.refund_minor, data.tax_rates,
+                    tax_returned_minor=_tax_on_return(refund, data.tax_rates,
                                                       local_day(ev.confirmed_at, data.tz)),
                 )
                 known = return_is_known(raw)
@@ -290,7 +300,7 @@ def build_facts(data: ShopData) -> list[ItemFact]:
                 returns.append(ReturnFact(
                     day=local_day(ev.confirmed_at, data.tz),
                     qty=ev.returned_qty,
-                    refund=ev.refund_minor or 0,
+                    refund=refund or 0,
                     delta=delta,
                     known=known and delta is not None,
                     raw=raw,
@@ -299,7 +309,7 @@ def build_facts(data: ShopData) -> list[ItemFact]:
                 product_id=product.id, sku=product.sku, name=product.name, category=product.category,
                 order_id=order.id, order_number=order.number, status=order.status,
                 created_day=created_day, sale_day=sale_day, qty=item.qty,
-                unit_price=item.unit_price_minor, gross=item.unit_price_minor * item.qty,
+                unit_price=item.unit_price_minor, gross=sale.gross_minor,
                 unit_cost=unit_cost, rate_bp=rate, rate_source=rate_source,
                 cost_source=cost_version.source if cost_version else None,
                 sale_profit=sale.profit_minor, landed=sale.landed_minor,

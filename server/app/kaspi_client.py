@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 
@@ -23,6 +24,9 @@ ORDERS_PATH = "orders"
 PAGE_SIZE = 100
 MIN_INTERVAL_SECONDS = 0.25
 MAX_ATTEMPTS = 4
+MAX_PERIOD_MS = 14 * 86_400_000  # документация Kaspi (API по заказам): максимальный период поиска — 14 дней
+
+log = logging.getLogger("satti.kaspi")
 
 
 class KaspiError(Exception):
@@ -103,6 +107,7 @@ class KaspiClient:
                  min_interval: float = MIN_INTERVAL_SECONDS, max_attempts: int = MAX_ATTEMPTS,
                  sleep=time.sleep, clock=time.monotonic) -> None:
         # Content-Type — как в примерах документации Kaspi (JSON:API)
+        self.skipped = 0  # К-33 А1: сколько записей Kaspi пропущено из-за неожиданного формата
         self.last_point_id: str | None = None  # подсказка кода склада из связи позиции (deliveryPointOfService)
         self._sku_by_entry: dict[str, str | None] = {}
         self._sku_by_master: dict[str, str | None] = {}
@@ -168,7 +173,23 @@ class KaspiClient:
             params["filter[orders][creationDate][$le]"] = until_ms  # документация Kaspi: [$le]
         body = self._get(ORDERS_PATH, params)
         total = (body.get("meta") or {}).get("totalCount")
-        return [parse_order(item) for item in body.get("data", [])], (int(total) if total is not None else None)
+        try:
+            total_n = int(total) if total is not None else None
+        except (TypeError, ValueError):
+            total_n = None
+        return self._parse_each(body.get("data", []), parse_order, "order"), total_n
+
+    def _parse_each(self, items, parse, kind: str):
+        """К-33 А1: странная запись не роняет загрузку — пропускаем, пишем в журнал (без данных покупателя и токена)."""
+        out = []
+        for item in items if isinstance(items, list) else []:
+            try:
+                out.append(parse(item))
+            except (KeyError, TypeError, ValueError, AttributeError) as exc:
+                self.skipped += 1
+                ident = item.get("id") if isinstance(item, dict) else None
+                log.warning("kaspi %s skipped: id=%s %s", kind, ident, type(exc).__name__)
+        return out
 
     def order_entries(self, order_code: str) -> list[OrderEntry]:
         """Позиции заказа: GET /orders/{code}/entries (документация: раздел «Состав заказа», q3203)."""
@@ -177,7 +198,7 @@ class KaspiClient:
             point = ((item.get("relationships") or {}).get("deliveryPointOfService") or {}).get("data") or {}
             if point.get("id"):
                 self.last_point_id = str(point["id"])
-        return [parse_entry(item) for item in body.get("data", [])]
+        return self._parse_each(body.get("data", []), parse_entry, "entry")
 
     def entry_sku(self, entry_id: str) -> str | None:
         """Артикул продавца для позиции: orderentries/{id}/product → masterproducts/{id}/merchantProduct.

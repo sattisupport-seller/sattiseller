@@ -31,6 +31,12 @@ class MockKaspi:
     fail_script: list[int] = field(default_factory=list)  # статусы ошибок по очереди, перед нормальным ответом
     requests_seen: int = 0
     fail_on_page: int | None = None  # эта страница отвечает 500 (сбой посреди синхронизации)
+    # К-33 А1: как у Kaspi — период поиска заказов не больше 14 дней (иначе 400). None — без проверки.
+    max_period_ms: int | None = 14 * DAY_MS
+    methods_seen: list = field(default_factory=list)  # (метод, путь) каждого запроса — для теста «только чтение»
+    bad_period_requests: int = 0
+    fail_list_from: int | None = None  # начиная с этого по счёту запроса списка заказов (с 1) — 500 (Kaspi упал)
+    list_requests: int = 0
 
     def generate(self, count: int, *, now: datetime, days: int = 60, state_cycle=None, products: int | None = None) -> None:
         """Создаёт count заказов, равномерно за последние days дней. Товары — K0..K{products-1}."""
@@ -78,6 +84,7 @@ class MockKaspi:
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests_seen += 1
+        self.methods_seen.append((request.method, request.url.path))
         if request.headers.get(kaspi_client.AUTH_HEADER) != self.token:
             return httpx.Response(401, json={"error": "unauthorized"})
         path = request.url.path
@@ -110,16 +117,27 @@ class MockKaspi:
         if not path.endswith("/" + kaspi_client.ORDERS_PATH):
             return httpx.Response(404, json={"error": "not found"})
         q = request.url.params
+        if "filter[orders][code]" not in q:
+            self.list_requests += 1
+            if self.fail_list_from is not None and self.list_requests >= self.fail_list_from:
+                return httpx.Response(500, json={"error": "down"})
         if "filter[orders][code]" in q:  # заказ по номеру (К-19)
             code = q["filter[orders][code]"]
             return self._json({"data": [o for o in self.orders if o["id"] == code]})
         since = int(q.get("filter[orders][creationDate][$ge]", "0"))
         until = q.get("filter[orders][creationDate][$le]")
+        if self.max_period_ms is not None:
+            until_eff = int(until) if until is not None else int(datetime.now(timezone.utc).timestamp() * 1000)
+            if until_eff - since > self.max_period_ms:
+                self.bad_period_requests += 1
+                return httpx.Response(400, json={"error": "max search period is 14 days"})
         page = int(q.get("page[number]", "0"))
         size = int(q.get("page[size]", str(kaspi_client.PAGE_SIZE)))
-        rows = sorted((o for o in self.orders if o["attributes"]["creationDate"] >= since
-                       and (until is None or o["attributes"]["creationDate"] <= int(until))),
-                      key=lambda o: o["attributes"]["creationDate"])
+        # заказ без даты (странные данные) попадает в любое окно — клиент должен его пропустить, а не упасть
+        def _created(o):
+            return o["attributes"].get("creationDate", since)
+        rows = sorted((o for o in self.orders if _created(o) >= since
+                       and (until is None or _created(o) <= int(until))), key=_created)
         chunk = rows[page * size:(page + 1) * size]
         return self._json({"data": chunk, "meta": {"totalCount": len(rows), "pageCount": -(-len(rows) // size)}})
 

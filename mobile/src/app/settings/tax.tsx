@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ScrollView, Switch, View } from 'react-native';
 
-import { useSaveTax, useTax } from '@/api/hooks';
+import { useSaveTax, useSetVatPayer, useShops, useTax } from '@/api/hooks';
 import { ApiError } from '@/api/client';
 import { Button } from '@/components/ui/Button';
 import { TextField } from '@/components/ui/Inputs';
@@ -21,6 +21,9 @@ export default function TaxScreen() {
   const { shopId } = useSession();
   const tax = useTax(shopId);
   const save = useSaveTax(shopId);
+  const shops = useShops();
+  const setVat = useSetVatPayer(shopId);
+  const vatPayer = shops.data?.items.find((s) => s.id === shopId)?.vat_payer ?? false;
   const [draft, setDraft] = useState<{ enabled: boolean; rate: string } | null>(null);
   const [from, setFrom] = useState<'all' | 'today'>('all');
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +61,27 @@ export default function TaxScreen() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: 48, gap: spacing.md }} style={{ backgroundColor: colors.bg }}>
+      <Card style={{ gap: spacing.sm }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 }}>
+          <Txt variant="body" style={{ flex: 1 }}>{t('tax.vatPayer')}</Txt>
+          <Switch
+            accessibilityLabel={t('tax.vatPayer')}
+            value={vatPayer}
+            disabled={setVat.isPending || shops.isLoading}
+            onValueChange={async (v) => {
+              try {
+                await setVat.mutateAsync(v);
+                toast.show(t('tax.vatPayerSaved'));
+              } catch (e) {
+                toast.show(e instanceof ApiError ? e.message : t('common.unknownError'));
+              }
+            }}
+            trackColor={{ false: colors.borderStrong, true: colors.primary }}
+          />
+        </View>
+        <Txt variant="footnote" tone="secondary">{t('tax.vatPayerHint')}</Txt>
+      </Card>
+
       <Txt variant="footnote" tone="secondary">{t('tax.hint')}</Txt>
 
       <Card style={{ gap: spacing.md }}>
