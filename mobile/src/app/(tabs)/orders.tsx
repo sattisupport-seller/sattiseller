@@ -16,6 +16,7 @@ import { useTheme } from '@/theme/useTheme';
 import {
   formatCount, formatDayLabel, formatMoney, formatOrderNumber, formatPeriodRange, formatTimeAlmaty, todayAlmaty,
 } from '@/lib/format';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Preset = '7d' | '30d' | '90d' | 'today';
 const STATUS_TONE: Record<string, Tone> = {
@@ -36,6 +37,7 @@ const STATUS_FILTER: { key: string | null; labelKey: 'chipAll' | 'chipCompleted'
 
 // Список заказов по дням (docs/design.md, 12.6): поиск, фильтры по статусу и периоду, подгрузка по курсору.
 export default function OrdersScreen() {
+  const insets = useSafeAreaInsets();  // К-35 п.5: шапка не под строкой состояния и «островком»
   const { t, locale } = useI18n();
   const { colors, spacing } = useTheme();
   const router = useRouter();
@@ -63,7 +65,7 @@ export default function OrdersScreen() {
   const periodLabel = preset === '7d' ? t('overview.period7') : preset === '30d' ? t('overview.period30') : preset === '90d' ? t('overview.period90') : t('overview.periodToday');
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top }}>
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 120, paddingTop: spacing.sm }}
         showsVerticalScrollIndicator={false}

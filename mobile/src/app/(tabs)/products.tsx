@@ -17,6 +17,7 @@ import { downloadAndShare } from '@/lib/download';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
 import { formatCount, formatMoney, formatPercentBp } from '@/lib/format';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Preset = '7d' | '30d' | '90d';
 type Sort = 'profit_desc' | 'profit_asc' | 'sales' | 'margin' | 'name';
@@ -33,6 +34,7 @@ const SORTS: Sort[] = ['profit_desc', 'profit_asc', 'sales', 'margin', 'name'];
 
 // Список товаров (docs/design.md, 12.8): покрытие, фильтры, сортировка, поиск.
 export default function ProductsScreen() {
+  const insets = useSafeAreaInsets();  // К-35 п.5: шапка не под строкой состояния и «островком»
   const { t, locale } = useI18n();
   const { colors, spacing } = useTheme();
   const toast = useToast();
@@ -53,7 +55,7 @@ export default function ProductsScreen() {
   const noCostCount = (pages[0] as { no_cost_count?: number } | undefined)?.no_cost_count ?? (coverage ? coverage.total - coverage.complete : 0);
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top }}>
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 120, paddingTop: spacing.sm }}
         showsVerticalScrollIndicator={false}

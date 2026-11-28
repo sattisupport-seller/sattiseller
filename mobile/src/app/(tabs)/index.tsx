@@ -21,11 +21,13 @@ import {
   formatCount, formatDayLabel, formatMoney, formatMoneyShort, formatPercentBp, formatPeriodRange,
   formatTimeAlmaty, todayAlmaty,
 } from '@/lib/format';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Preset = '7d' | '30d' | '90d' | 'today';
 
 // Обзор (docs/design.md, 12.4): период, KPI 2×2, график, «требует внимания», лучшие товары, помощник.
 export default function OverviewScreen() {
+  const insets = useSafeAreaInsets();  // К-35 п.5: шапка не под строкой состояния и «островком»
   const { t, locale } = useI18n();
   const assistantOn = useAssistantEnabled();
   const { colors, spacing, radii } = useTheme();
@@ -81,7 +83,7 @@ export default function OverviewScreen() {
     : 0;
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top }}>
       <ScreenScroll refreshing={isRefetching} onRefresh={() => refetch()}>
         <TabHeader
           title={t('overview.title')}

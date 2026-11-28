@@ -16,9 +16,11 @@ import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
 import { SUPPORT_EMAIL } from '@/config';
 import { downloadAndShare } from '@/lib/download';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Профиль (docs/design.md, 12.16): аккаунт или демо, магазин, данные, настройки, помощь, выход.
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();  // К-35 п.5: шапка не под строкой состояния и «островком»
   const { t } = useI18n();
   const { colors, spacing } = useTheme();
   const router = useRouter();
@@ -40,7 +42,7 @@ export default function ProfileScreen() {
   const themeLabel = themeMode === 'system' ? t('settings.system') : themeMode === 'light' ? t('settings.light') : t('settings.dark');
 
   return (
-    <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 120, paddingTop: spacing.sm }} style={{ backgroundColor: colors.bg }} showsVerticalScrollIndicator={false}>
+    <ScrollView contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 120, paddingTop: spacing.sm }} style={{ backgroundColor: colors.bg, paddingTop: insets.top }} showsVerticalScrollIndicator={false}>
       <TabHeader title={t('profile.title')} />
 
       {isDemo ? (

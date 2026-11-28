@@ -18,6 +18,7 @@ import { useSession } from '@/session/SessionProvider';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/theme/useTheme';
 import { formatTimeAlmaty } from '@/lib/format';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Msg =
   | { id: string; role: 'user'; text: string }
@@ -32,6 +33,7 @@ const EXAMPLES = [
 
 // Помощник (docs/design.md, 12.13): ответы с основаниями, согласие перед первым вопросом, жалоба на ответ.
 export default function AssistantScreen() {
+  const insets = useSafeAreaInsets();  // К-35 п.5: шапка не под строкой состояния и «островком»
   const { t } = useI18n();
   const { colors, spacing, radii } = useTheme();
   const router = useRouter();
@@ -102,7 +104,7 @@ export default function AssistantScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.bg, paddingTop: insets.top }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, paddingTop: spacing.sm }}
@@ -180,9 +182,18 @@ export default function AssistantScreen() {
 
       <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.sm, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.divider, gap: spacing.sm }}>
         {hasChat ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {EXAMPLES.slice(0, 3).map((e) => <Chip key={e} label={e} selected={false} onPress={() => send(e)} />)}
-          </ScrollView>
+          <>
+            {/* К-35 п.3: карточка и ответ покупателю — всегда под рукой, без возврата к началу чата */}
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <Button title={t('assistant.cardProduct')} size="S" variant="secondary" icon={<FileText size={16} color={colors.textPrimary} />}
+                onPress={() => router.push('/assistant/product-draft')} />
+              <Button title={t('assistant.cardReply')} size="S" variant="secondary" icon={<MessageCircle size={16} color={colors.textPrimary} />}
+                onPress={() => router.push('/assistant/reply-draft')} />
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {EXAMPLES.slice(0, 3).map((e) => <Chip key={e} label={e} selected={false} onPress={() => send(e)} />)}
+            </ScrollView>
+          </>
         ) : null}
         <Txt variant="footnote" tone={remaining <= 5 ? 'warning' : 'tertiary'}>{t('assistant.remaining', { count: remaining })}</Txt>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm }}>
