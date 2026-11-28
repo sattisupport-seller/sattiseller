@@ -89,8 +89,9 @@ Invoke-Step "Миграции PostgreSQL: вверх → проверка мод
 Invoke-Step "pytest сервера на PostgreSQL" {
     $env:SATTI_TEST_DATABASE_URL = "$pgUrl/satti_test"
     $env:PYTHONIOENCODING = "utf-8"
+    $env:SATTI_PG_BIN = $PgBin  # К-33 Б3: копии на PostgreSQL (pg_dump → шифрование → восстановление → сверка)
     Push-Location $server
-    try { & $py -m pytest -q --no-header -p no:cacheprovider } finally { Pop-Location; Remove-Item Env:SATTI_TEST_DATABASE_URL -ErrorAction SilentlyContinue }
+    try { & $py -m pytest -q --no-header -p no:cacheprovider } finally { Pop-Location; Remove-Item Env:SATTI_TEST_DATABASE_URL, Env:SATTI_PG_BIN -ErrorAction SilentlyContinue }
 }
 
 Invoke-Step "ruff (линтер)" { Push-Location $server; try { & (Join-Path $server ".venv\Scripts\ruff.exe") check app tests } finally { Pop-Location } }

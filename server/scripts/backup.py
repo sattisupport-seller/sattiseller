@@ -101,17 +101,54 @@ COUNT_TABLES = ("users", "shops", "products", "orders", "order_items", "product_
 
 
 def table_counts(url: str) -> dict[str, int]:
-    """Число строк ключевых таблиц — для сверки после восстановления (ежедневная проверка копии, п.9)."""
+    """Число строк в каждой таблице базы — для сверки после восстановления (ежедневная проверка копии, п.9).
+    К-33 Б3: раньше — только 7 таблиц (COUNT_TABLES); теперь все таблицы, включая добавленные позже."""
     from sqlalchemy import create_engine, inspect, text
 
     engine = create_engine(url)
     try:
-        existing = set(inspect(engine).get_table_names())
+        tables = sorted(inspect(engine).get_table_names())
         with engine.connect() as conn:
-            return {t: int(conn.execute(text(f"SELECT COUNT(*) FROM {t}")).scalar() or 0)  # noqa: S608 — имена из списка
-                    for t in COUNT_TABLES if t in existing}
+            return {t: int(conn.execute(text(f'SELECT COUNT(*) FROM "{t}"')).scalar() or 0)  # noqa: S608 — имена из схемы
+                    for t in tables}
     finally:
         engine.dispose()
+
+
+def table_checksums(url: str) -> dict[str, str]:
+    """К-33 Б3: контрольная сумма содержимого каждой таблицы — sha256 всех строк по порядку первичного ключа
+    (у таблицы без ключа — по всем колонкам). Совпадение числа строк не ловит испорченные значения; это — ловит.
+    Строки читаются потоком, память не растёт с размером таблицы."""
+    from sqlalchemy import MetaData, create_engine, select
+
+    engine = create_engine(url)
+    try:
+        meta = MetaData()
+        meta.reflect(bind=engine)
+        out: dict[str, str] = {}
+        with engine.connect() as conn:
+            for name in sorted(meta.tables):
+                table = meta.tables[name]
+                order = list(table.primary_key.columns) or list(table.columns)
+                digest = hashlib.sha256()
+                result = conn.execution_options(stream_results=True, yield_per=5000).execute(
+                    select(table).order_by(*order))
+                for row in result:
+                    digest.update(repr(tuple(_normal(v) for v in row)).encode("utf-8"))
+                    digest.update(b"\n")
+                out[name] = digest.hexdigest()
+        return out
+    finally:
+        engine.dispose()
+
+
+def _normal(value):
+    """Значение в виде, одинаковом до и после восстановления (время — в UTC ISO, дробные — строкой)."""
+    if isinstance(value, datetime):
+        return (value if value.tzinfo else value.replace(tzinfo=timezone.utc)).astimezone(timezone.utc).isoformat()
+    if isinstance(value, (bytes, memoryview)):
+        return hashlib.sha256(bytes(value)).hexdigest()
+    return value if isinstance(value, (int, str, bool, type(None))) else str(value)
 
 
 def build_archive(db_kind: str, tmp: Path) -> bytes:
@@ -133,7 +170,7 @@ def build_archive(db_kind: str, tmp: Path) -> bytes:
             members["secret_key"] = hashlib.sha256(data).hexdigest()
         manifest = json.dumps({"format": FORMAT_VERSION, "db": db_kind,
                                "created": datetime.now(timezone.utc).isoformat(), "sha256": members,
-                               "counts": table_counts(_db_url())},
+                               "counts": table_counts(_db_url()), "checksums": table_checksums(_db_url())},
                               ensure_ascii=False).encode("utf-8")
         info = tarfile.TarInfo("manifest.json")
         info.size = len(manifest)
@@ -278,6 +315,11 @@ def verify(scratch_url: str, now: datetime | None = None) -> list[str]:
             for table, expected in (manifest.get("counts") or {}).items():
                 if got.get(table) != expected:
                     problems.append(f"таблица {table}: в копии {expected}, после восстановления {got.get(table)}")
+            # К-33 Б3: содержимое, а не только число строк (в старых копиях контрольных сумм нет — пропускаем)
+            sums = table_checksums(scratch_url) if manifest.get("checksums") else {}
+            for table, expected in (manifest.get("checksums") or {}).items():
+                if sums.get(table) != expected:
+                    problems.append(f"таблица {table}: содержимое после восстановления не совпадает с копией")
     except (SystemExit, Exception) as exc:  # noqa: BLE001 — любая ошибка проверки = проблема для владельца
         problems.append(f"восстановление не удалось: {exc}")
     if problems:
